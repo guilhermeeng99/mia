@@ -160,9 +160,11 @@ function. Throughout: **never add words; when uncertain, keep the text.**
 3. **Stutter / false-start / immediate-repeat collapse.** Consecutive duplicate tokens (and short
    dangling false starts) are collapsed to a single instance, case-insensitively: `the the cat` →
    `the cat`; `eu eu fui` → `eu fui`; broken-word stutters `th-the` / `wh-what` →
-   `the` / `what`. Only **adjacent** repeats collapse; a legitimately repeated word separated by
-   other tokens ("very very good" is intentional emphasis → **kept** by default; configurable is
-   out of scope). Repeats spanning a punctuation/sentence boundary are **not** collapsed.
+   `the` / `what`. Only **adjacent** repeats collapse; a repeat separated by other tokens
+   (`good, very good` — non-adjacent) is **kept**. Repeats spanning a punctuation/sentence boundary
+   are **not** collapsed (`good. good morning` stays). Note: deliberate adjacent emphasis
+   ("very very") also collapses — the conservative tradeoff favours de-stuttering; a future opt-out
+   is out of scope.
 4. **Whitespace normalization.** Collapse runs of spaces/tabs to a single space; trim leading and
    trailing whitespace per line; remove spaces immediately *before* `.,;:?!` and *inside*
    parentheses/quotes; ensure exactly one space after sentence punctuation (none before a closing

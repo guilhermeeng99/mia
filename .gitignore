@@ -2,6 +2,10 @@
 /app/src-tauri/target/
 /app/src-tauri/gen/
 
+# Mobile icons (Windows-only v1 — tauri icon also emits android/ios sets we don't ship)
+/app/src-tauri/icons/android/
+/app/src-tauri/icons/ios/
+
 # Fetched native binaries + downloaded models (acquired at build/runtime, never committed)
 /app/src-tauri/binaries/
 /app/src-tauri/models/

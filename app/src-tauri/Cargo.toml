@@ -1,0 +1,30 @@
+[package]
+name = "mia"
+version = "0.1.0"
+description = "MIA — local voice-to-text dictation for Windows"
+authors = ["Guilherme Passos"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/guilhermeeng99/mia"
+
+# The Tauri app is a library (so it can target mobile later) driven by a thin main.rs.
+[lib]
+name = "mia_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+
+# Release profile: small, optimized installer binary.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

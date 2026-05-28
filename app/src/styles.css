@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/*
+  MIA design tokens — "Calm Focus" (see docs/specs/design-system.md).
+  Tailwind v4 CSS-first config: every token here generates utilities
+  (bg-*, text-*, border-*, font-*, shadow-*, text-{scale}). Never use raw hex
+  in components — always the generated utility.
+*/
+@theme {
+  /* ── Font ─────────────────────────────────────────────────────────────── */
+  --font-gilroy:
+    "Montserrat", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+
+  /* ── Light theme — Settings/Hub (Calendly "Sky Blueprint") ────────────── */
+  --color-midnight-indigo: #0b3558; /* primary text, headings */
+  --color-action-blue: #006bff; /* THE one action color */
+  --color-slate-blue: #476788; /* secondary text, icon fills */
+  --color-steel-gray: #a6bbd1; /* tertiary / disabled / fine borders */
+  --color-platinum-tint: #d4e0ed; /* inactive field borders, dividers */
+  --color-cloud-mist: #f8f9fb; /* window / section background */
+  --color-snow-white: #ffffff; /* card surfaces */
+  --color-text-black: #0a0a0a; /* body text (never pure #000) */
+  --color-success: #1a7f4b; /* success status */
+  --color-danger: #c2362f; /* error status */
+
+  /* ── Mic HUD — dark, translucent (HUD-only tokens) ────────────────────── */
+  --color-hud-bg: rgba(11, 53, 88, 0.92);
+  --color-hud-bg-solid: #0b3558;
+  --color-hud-text: #ffffff;
+  --color-hud-text-dim: rgba(255, 255, 255, 0.64);
+  --color-hud-accent: #006bff; /* the "listening" accent (same action color) */
+  --color-hud-wave: rgba(0, 107, 255, 0.85);
+  --color-hud-success: #1a7f4b;
+  --color-hud-danger: #c2362f;
+  --color-hud-border: rgba(255, 255, 255, 0.08);
+
+  /* ── Typography scale (size + line height) ────────────────────────────── */
+  --text-body: 14px;
+  --text-body--line-height: 1.71;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 1.6;
+  --text-subheading: 18px;
+  --text-subheading--line-height: 1.6;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.4;
+  --text-heading-lg: 28px;
+  --text-heading-lg--line-height: 1.2;
+  --text-display-sm: 38px;
+  --text-display-sm--line-height: 1.21;
+
+  /* ── Elevation — soft, slate-tinted ───────────────────────────────────── */
+  --shadow-sm:
+    0 1px 2px rgba(71, 103, 136, 0.1), 0 2px 8px rgba(71, 103, 136, 0.08);
+  --shadow-sm-2:
+    0 1px 2px rgba(71, 103, 136, 0.08), 0 2px 4px rgba(71, 103, 136, 0.1),
+    0 8px 24px rgba(71, 103, 136, 0.12);
+  --shadow-hud: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-gilroy);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The HUD window is transparent so the translucent pill floats over other apps. */
+body.hud {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
