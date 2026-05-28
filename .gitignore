@@ -1,0 +1,33 @@
+# Rust / Tauri
+/app/src-tauri/target/
+/app/src-tauri/gen/
+
+# Fetched native binaries + downloaded models (acquired at build/runtime, never committed)
+/app/src-tauri/binaries/
+/app/src-tauri/models/
+
+# Node / Bun / Vite
+node_modules/
+/app/node_modules/
+/app/dist/
+.vite/
+*.tsbuildinfo
+
+# Bun
+.bun/
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+bun-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+.DS_Store
