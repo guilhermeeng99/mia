@@ -137,7 +137,7 @@ Rules:
 | Shell | Tauri 2 (Rust) + OS WebView2 |
 | UI | Svelte 5 (runes) + TypeScript (`strict`) + Vite |
 | Styling | Tailwind CSS v4 (tokens in a single `@theme` block) |
-| STT engine | `whisper.cpp` — warm `whisper-rs` in-process (default), `whisper-server` (fallback) |
+| STT engine | `whisper.cpp` — warm `whisper-server` sidecar (MVP default, cmake-free); `whisper-rs` in-process (later optimization) |
 | Models | OpenAI Whisper (MIT), fetched on demand from Hugging Face; small CPU build bundled |
 | GPU | optional NVIDIA **CUDA** engine downloaded on demand (~7–10× faster) |
 | Anti-hallucination | Silero VAD + greedy (temp 0, `--no-fallback`) + `--max-context 0` (always on) |

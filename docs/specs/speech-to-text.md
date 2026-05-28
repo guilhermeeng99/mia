@@ -10,7 +10,7 @@ The **STT engine** is the recognition stage of MIA's dictation pipeline (hotkey 
 **Scope decisions** (locked at design time — 2026-05-28):
 
 - **Engine — Whisper via whisper.cpp.** Chosen for faithful **Brazilian Portuguese**: Whisper is trained on broad multilingual data with strong pt-BR coverage, whereas NVIDIA's Parakeet/Canary are trained on **European** Portuguese (NVIDIA's own model cards note the pt-BR drop) and Parakeet is ASR-only. Whisper also covers ~99 languages, is MIT-licensed, and integrates as a clean self-contained engine ([ADR-003](architecture.md#adr-003-whisper-whispercpp-as-the-stt-engine)).
-- **Warm/resident model — NOT cold per-utterance spawn.** Live dictation cannot pay a multi-second model load on every push-to-talk. The model loads **once** and stays in RAM. Default mechanism: **whisper-rs in-process** (lowest latency, no IPC, no shell capability); documented fallback: **whisper-server** (whisper.cpp's HTTP server) as a spawned sidecar. This is the **key divergence from Toolzy**, which cold-spawns `whisper-cli` per run ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)).
+- **Warm/resident model — NOT cold per-utterance spawn.** Live dictation cannot pay a multi-second model load on every push-to-talk. The model loads **once** and stays in RAM. **MVP default mechanism: `whisper-server`** (whisper.cpp's HTTP server) spawned as a warm sidecar that MIA POSTs PCM to — chosen because it is **cmake-free** (a prebuilt binary, fetched via Toolzy's pattern) and builds out of the box, while still loading the model only once. **Later optimization: `whisper-rs` in-process** (lowest latency, no IPC/localhost hop, no shell capability), deferred because it builds whisper.cpp via cmake. Both sit behind one `SttBackend` trait. Either way this is the **key divergence from Toolzy**, which cold-spawns `whisper-cli` per run ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)). _(Revised 2026-05-28 — the build-toolchain audit found cmake absent; see ADR-004's revision note.)_
 - **No ffmpeg, no temp WAV, no file output on the live path.** `cpal` already captures exactly the 16 kHz mono PCM Whisper wants, so Toolzy's `preprocess_to_wav` / `temp_wav_path` / `transcript_output_path` / `build_result` machinery is **skipped** (reusable verbatim by a deferred Phase 5 file-transcription feature — see [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)). The transcript goes straight to cleanup + injection, never to disk; audio stays in memory ([ADR-001](architecture.md#adr-001-native-on-device-privacy-first)).
 - **Model choice favours latency (dictation), not max fidelity (Toolzy).** Toolzy defaults to `large-v3` (slowest, most faithful) because correctness-over-speed is its goal. **MIA's live default favours responsiveness** — `small` (CPU) / `medium` as the recommended balance, with `large-v3-turbo` and `large-v3` selectable for users who want more accuracy and can afford the latency or have the CUDA engine. A two-second wait is fine for a one-off file transcription; it is unacceptable when typing at the cursor. See §4 and rule 6.
 - **Anti-hallucination defaults are fixed, always on, never user-tunable.** Every recognition runs with **Silero VAD** + **greedy decoding (temperature 0)** + **`--no-fallback`** (no temperature ladder) + **`--max-context 0`** (no previous-text conditioning). These prevent Whisper's known failure mode (inventing/looping text over silence or between utterances) and are pinned engine settings, not knobs ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
@@ -31,7 +31,7 @@ MIA is a live dictation app, so the engine is framed around **audio in → text 
 | **Target** | The dictation pipeline (in-process). Not a window — injection is a separate stage. |
 | **Language** | Auto-detect (default) or forced; **pt-BR** and **English** first-class; ~99 Whisper languages supported. |
 
-Engine: **whisper.cpp** via **whisper-rs** in-process (default) or **whisper-server** sidecar (fallback); **Silero VAD** (`ggml-silero-v6.2.0.bin`) gates silence inside Whisper *and* is reused for live endpointing in [audio-capture.md](audio-capture.md) — the same downloaded `.bin`. The audio buffer **never touches disk** (ADR-001): samples flow from the cpal ring buffer straight into the warm model.
+Engine: **whisper.cpp** via a warm **whisper-server** sidecar (MVP default, cmake-free) or **whisper-rs** in-process (later optimization); **Silero VAD** (`ggml-silero-v6.2.0.bin`) gates silence inside Whisper *and* is reused for live endpointing in [audio-capture.md](audio-capture.md) — the same downloaded `.bin`. The audio buffer **never touches disk** (ADR-001): samples flow from the cpal ring buffer straight into the warm model.
 
 ---
 
@@ -41,7 +41,7 @@ Rust is the engine; the Svelte UI is a thin webview that only calls typed `invok
 
 **Module**: `app/src-tauri/src/stt.rs` (adapted from Toolzy's `transcription.rs`).
 
-The warm model lives in managed Tauri `State` so it is loaded once and shared. The latency-critical `transcribe_chunk` is **not** a `#[tauri::command]` on the hot path in v1 — it is called **in-process by the dictation orchestrator** ([dictation.md](dictation.md)) so an utterance never round-trips through the webview. The commands below are the lifecycle/management surface the UI does drive (warm-up at onboarding, model picker, GPU gate).
+The warm model lives in managed Tauri `State` so it is loaded once and shared. The latency-critical `transcribe_chunk` is **not** a `#[tauri::command]` on the hot path in v1 — it is called **in-process by the dictation orchestrator** ([dictation.md](dictation.md)) so an utterance never round-trips through the webview. In the **MVP default** (`whisper-server` backend) `transcribe_chunk` POSTs the PCM to the warm local server on `127.0.0.1` and parses the JSON reply; the **in-process optimization** (`whisper-rs`) later removes even that localhost hop. Both are hidden behind the `SttBackend` trait, so the orchestrator code is identical. The commands below are the lifecycle/management surface the UI drives (warm-up at onboarding, model picker, GPU gate).
 
 ```rust
 // app/src-tauri/src/stt.rs
@@ -149,7 +149,7 @@ Every user-facing parameter; the anti-hallucination settings are **fixed**, not 
 |---|---|---|---|---|
 | Model | enum id | see registry below | `small` (live) | accuracy ↔ latency/RAM trade-off; warmed once |
 | Language | code or auto | `auto` + ~99 codes | `auto` | force vs detect source language; pt-BR + English first-class |
-| Backend | enum | `whisperRs` · `whisperServer` | `whisperRs` | in-process (default) vs sidecar fallback; advanced/diagnostic |
+| Backend | enum | `whisperServer` · `whisperRs` | `whisperServer` | warm sidecar (MVP default, cmake-free) vs in-process (later optimization); advanced/diagnostic |
 | GPU engine | bool (gated) | on if installed + NVIDIA | off until downloaded | use CUDA build when present (≈7–10× faster) |
 
 **Model registry** (ggml, fetched from `huggingface.co/ggerganov/whisper.cpp` — same registry shape as Toolzy, re-tuned default):
@@ -215,7 +215,7 @@ Hub/onboarding (model lifecycle):
 | Download interrupted (offline/cancel) | `.part` discarded; `Err("download failed: …")`; no partial model/engine (rule 11) |
 | NVIDIA driver absent | CUDA engine never offered (`gpu_present=false`); CPU build serves, transparently |
 | CUDA engine installed but model is `large-v3` on a weak GPU | still runs; latency is the user's chosen trade-off (rule 6) |
-| whisper-rs in-process load fails | fall back to spawning **whisper-server**; surface `Err("whisper engine failed: …")` only if both fail |
+| warm `whisper-server` fails to spawn / not reachable | surface `Err("whisper engine failed: …")`; if the user opted into `whisper-rs` and it fails to load, fall back to spawning `whisper-server` |
 | Hotkey released mid-transcription | in-flight `transcribe_chunk` result discarded; warm model untouched; never inject stale text (§5, [dictation.md](dictation.md)) |
 | Re-`warm_model` same model | no-op (already warm, rule 1) |
 

@@ -143,11 +143,23 @@ transcription, **fatal** for repeated short utterances. This is the single laten
 divergence from Toolzy, and the hardest part of the system.
 
 **Decision.** Keep the STT model **resident (warm)**: load it **once** and reuse it for every
-utterance. The **default mechanism is `whisper-rs` in-process** — the whisper.cpp model lives in
-MIA's own process memory, so each utterance is pure inference with **zero load cost**. The
-**documented fallback is `whisper-server`** (whisper.cpp's HTTP server) running as a local
-sidecar that MIA POSTs PCM to — used when in-process linking hits a build/ABI edge case (e.g. a
-GPU build mismatch). Both expose the same internal Rust trait; the backend is runtime-selected.
+utterance. Two backends sit behind one internal `SttBackend` trait, runtime-selected:
+
+- **MVP default — `whisper-server` sidecar.** whisper.cpp's bundled HTTP server runs as a local
+  sidecar with the model loaded **once**; MIA POSTs captured PCM/WAV to `127.0.0.1` and reads the
+  text back. It needs **no C++/cmake build** — a prebuilt binary is fetched (reusing Toolzy's
+  `fetch-binaries.mjs` pattern), so it builds out of the box on the reference machine (which has
+  no cmake) and still satisfies the warm requirement: each utterance pays **inference only**, not
+  a model reload. The localhost HTTP hop is negligible for short dictation utterances.
+- **Optimization — `whisper-rs` in-process.** The whisper.cpp model linked directly into MIA's
+  process, so each utterance is pure inference with **zero IPC hop** — the lowest-latency option.
+  Deferred because `whisper-rs` builds whisper.cpp via **cmake** (absent on the reference machine;
+  the CUDA variant also needs the CUDA toolkit). Enabled later behind the same trait once the
+  C++/cmake chain is set up.
+
+> **Revised 2026-05-28** from the original "in-process default" after the build-toolchain audit
+> found **cmake absent**. The `SttBackend` trait makes the default a swap, not a rewrite, so the
+> in-process optimization can land later without touching the dictation pipeline.
 
 The warm model has an explicit **lifecycle**:
 - **load** — on first dictation (or eagerly after onboarding's model-download gate); reports
@@ -165,8 +177,8 @@ see [ADR-007](#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engi
 **Consequences.**
 - ✅ **Sub-utterance latency** — repeated dictations pay inference only, not model load.
 - ✅ `whisper-rs` in-process is the lowest-latency option (no IPC/HTTP hop, no WAV round-trip).
-- ✅ The server fallback keeps the system shippable if in-process linking is troublesome on a
-  given GPU/toolchain combination — same trait, swappable backend.
+- ✅ The `whisper-server` sidecar is the cmake-free **MVP default** — a prebuilt binary (Toolzy
+  fetch pattern), no C++ build; the shared trait makes swapping in `whisper-rs` later additive.
 - ⚠️ A resident model holds significant **RAM** for the app's lifetime — hence the
   unload-on-idle option and a sensible default model size.
 - ⚠️ In-process inference must run **off the UI/command path** on a dedicated worker so audio
