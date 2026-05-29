@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { listInputDevices, testMicrophone, type AudioDevice } from "../audio";
   import { injectText } from "../inject";
+  import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import {
     downloadWhisperModel,
     gpuEngineStatus,
@@ -38,10 +39,23 @@
   let injectMsg = $state<string | null>(null);
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
+  let general = $state<GeneralSettings | null>(null);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
     error = String(e);
+  }
+
+  // The dictation language is read from settings at transcribe time, so persisting
+  // the choice here is all that's needed — no warm-engine restart (speech-to-text.md).
+  async function setLanguage(value: string) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, defaultLanguage: value as GeneralSettings["defaultLanguage"] } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
   }
 
   async function loadModels() {
@@ -53,6 +67,7 @@
     loadModels().catch(fail);
     warmStatus().then((w) => (warm = w)).catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
+    getSettings().then((s) => (general = s.general)).catch(fail);
   });
 
   async function download(id: string) {
@@ -138,6 +153,28 @@
         {#if micMsg}
           <span class="text-body text-slate-blue">{micMsg}</span>
         {/if}
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Idioma do ditado</h2>
+      <p class="mt-1 text-body text-slate-blue">
+        Automático detecta a fala; fixar pt-BR ou inglês melhora a precisão.
+      </p>
+      <div class="mt-4">
+        <Field label="Idioma">
+          <select
+            value={general?.defaultLanguage ?? "auto"}
+            disabled={!general}
+            onchange={(e) => setLanguage((e.currentTarget as HTMLSelectElement).value)}
+            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
+                   text-midnight-indigo min-h-[40px]"
+          >
+            <option value="auto">Automático</option>
+            <option value="pt">Português (pt-BR)</option>
+            <option value="en">English</option>
+          </select>
+        </Field>
       </div>
     </Card>
 
