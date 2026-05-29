@@ -1,39 +1,150 @@
 name: Release
 
-# Tag a version (e.g. `v0.1.0`) to build + publish the signed Windows installer
-# to a draft GitHub Release (ADR-009). Requires repo secrets:
-#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (minisign, for the
-#   updater's latest.json). GITHUB_TOKEN is provided automatically.
+# On every push to main: run CI (Biome + app build + clippy + cargo test) and ONLY if
+# it passes, bump the patch version, tag, build the Windows installer (whisper engine
+# bundled), and publish a signed GitHub Release (ADR-009). PRs run CI only. The release
+# job skips the bot's own bump commit (`chore(release):`). Mirrors Toolzy's release flow.
+#
+# Requires repo secrets (already set): TAURI_SIGNING_PRIVATE_KEY +
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD (minisign, for the updater's latest.json).
+# GITHUB_TOKEN is provided automatically.
+
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build + publish Windows installer
+  ci:
+    name: ci (lint · build · test)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: oven-sh/setup-bun@v2
+
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
-      - name: Install dependencies
+
+      - name: Lint + format (Biome)
+        working-directory: app
+        run: bunx @biomejs/biome@1.9.4 ci .
+
+      - name: Install app dependencies
         working-directory: app
         run: bun install
-      - name: Fetch whisper binaries + sibling DLLs
+
+      # Build the webview first: `generate_context!` embeds `dist`, so it must exist
+      # before the Rust engine compiles for clippy/test.
+      - name: Build app (svelte-check + Vite)
+        working-directory: app
+        run: bun run build
+
+      # tauri-build validates bundle.resources (binaries/*), so the whisper engine +
+      # sibling DLLs must be present before the Rust crate compiles.
+      - name: Fetch bundled binaries (whisper-server + DLLs)
         working-directory: app
         run: node scripts/fetch-binaries.mjs
-      - uses: tauri-apps/tauri-action@v0
+
+      - name: Clippy (Rust lints, warnings = errors)
+        run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Cargo test (Rust engine)
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml
+
+  release:
+    name: bump · build · publish
+    runs-on: windows-latest
+    needs: [ci]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release):')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(jq -r .version app/src-tauri/tauri.conf.json)
+          IFS=. read -r major minor patch <<< "$current"
+          next="${major}.${minor}.$((patch + 1))"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          tmp=$(mktemp)
+          jq --arg v "$next" '.version = $v' app/src-tauri/tauri.conf.json > "$tmp"
+          mv "$tmp" app/src-tauri/tauri.conf.json
+          sed -i -E "0,/^version = \".*\"$/ s//version = \"$next\"/" app/src-tauri/Cargo.toml
+          # Keep the app manifest in lockstep (cosmetic, but avoids version drift).
+          tmp=$(mktemp)
+          jq --arg v "$next" '.version = $v' app/package.json > "$tmp"
+          mv "$tmp" app/package.json
+          echo "bumped $current -> $next"
+
+      - name: Commit, tag, push
+        shell: bash
+        run: |
+          set -euo pipefail
+          next="${{ steps.bump.outputs.next }}"
+          git add app/src-tauri/tauri.conf.json app/src-tauri/Cargo.toml app/package.json
+          git commit -m "chore(release): v${next} [skip ci]"
+          git tag "v${next}"
+          git push origin main
+          git push origin "v${next}"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install app dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Fetch bundled binaries (whisper-server + DLLs)
+        working-directory: app
+        run: node scripts/fetch-binaries.mjs
+
+      - name: Build & publish installer
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the build + emits latest.json so the in-app updater can verify updates.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
-          tagName: ${{ github.ref_name }}
-          releaseName: "MIA ${{ github.ref_name }}"
-          releaseDraft: true
+          tagName: v${{ steps.bump.outputs.next }}
+          releaseName: 'MIA v${{ steps.bump.outputs.next }}'
+          releaseBody: |
+            Auto-released from `main` @ ${{ github.sha }}.
+
+            Download the installer (`.exe` NSIS) for Windows and run it. The Whisper
+            engine + DLLs are bundled; Whisper models download on first use.
+
+            > **First install:** MIA is unsigned, so Windows SmartScreen may warn
+            > "Unrecognized app". Click **More info → Run anyway**.
+          releaseDraft: false
           prerelease: false
