@@ -59,6 +59,10 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Signed in-app auto-update (GitHub Releases + minisign-verified latest.json,
+        // ADR-009). `process` provides the relaunch into the freshly-installed version.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).

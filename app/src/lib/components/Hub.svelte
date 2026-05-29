@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { listInputDevices, testMicrophone, type AudioDevice } from "../audio";
   import { injectText } from "../inject";
+  import { checkForUpdate, installUpdate, type Update } from "../update";
   import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../hotkey";
   import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import {
@@ -45,10 +46,37 @@
   let hotkey = $state<HotkeyConfig | null>(null);
   let recording = $state(false);
   let hotkeyError = $state<string | null>(null);
+  let update = $state<Update | null>(null);
+  let updateMsg = $state<string | null>(null);
+  let updateBusy = $state(false);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
     error = String(e);
+  }
+
+  async function checkUpdates() {
+    updateBusy = true;
+    updateMsg = null;
+    update = null;
+    try {
+      const u = await checkForUpdate();
+      update = u;
+      updateMsg = u ? null : "Você está na versão mais recente.";
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function applyUpdate() {
+    if (!update) return;
+    updateBusy = true;
+    try {
+      await installUpdate(update); // relaunches on success
+    } catch (e) {
+      updateMsg = String(e);
+      updateBusy = false;
+    }
   }
 
   // Map a KeyboardEvent.code to MIA's canonical key token (matches the Rust parser).
@@ -284,6 +312,25 @@
             label="Abrir o MIA ao iniciar o Windows"
             onchange={setLaunchAtLogin}
           />
+        {/if}
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Atualizações</h2>
+      <p class="mt-1 text-body text-slate-blue">
+        Atualização assinada via GitHub Releases — verificada por minisign antes de instalar.
+      </p>
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="secondary" disabled={updateBusy} onclick={checkUpdates}>
+          {updateBusy ? "Verificando…" : "Procurar atualizações"}
+        </Button>
+        {#if update}
+          <Pill tone="action">nova versão {update.version}</Pill>
+          <Button disabled={updateBusy} onclick={applyUpdate}>Instalar e reiniciar</Button>
+        {/if}
+        {#if updateMsg}
+          <span class="text-body text-slate-blue">{updateMsg}</span>
         {/if}
       </div>
     </Card>

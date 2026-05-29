@@ -28,6 +28,9 @@ unicode-normalization = "0.1"
 cpal = "0.15"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+# Signed in-app auto-update (GitHub Releases + minisign latest.json, ADR-009).
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Release profile: small, optimized installer binary.
 [profile.release]

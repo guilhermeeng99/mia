@@ -41,9 +41,18 @@
       "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/guilhermeeng99/mia/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzRTU2Q0I2MjlGOUI0QgpSV1JMbTU5aXkxWStEMHpyaytOL0tEZVo2aHYvS0N1NTlocHlub05sZ3ByeWV2dmJkaTg1OTVESQo="
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "createUpdaterArtifacts": true,
     "resources": ["binaries/*"],
     "icon": [
       "icons/32x32.png",
