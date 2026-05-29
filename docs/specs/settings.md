@@ -1,7 +1,7 @@
 # Settings & "The Hub" Feature Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — `settings.rs` persistence implemented: the full `Settings` tree (§4) with per-group defaults + `schemaVersion`, the pure `apply_patch` / `validate` / `migrate` / `parse_settings` core (cargo-tested), failure-safe `load_settings` (missing → defaults; corrupt → defaults + sidelined backup), atomic `save_settings`, and the `get/update/reset_settings` commands wired into the handler + a managed `SettingsState` loaded at startup. Typed `settings.ts` wrapper. Runtime-pending: `update_settings` side effects (hotkey re-register, warm-model swap, launch-at-login), `stats.rs` (WPM/streak), mic-test stream, and the updater commands.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted. Phase 2 (AI tab) and Phase 4 (auto-update, stats) sections are forward-looking.
 > **Environment**: desktop (Windows, native)
 
@@ -360,12 +360,12 @@ Update (About tab): Idle → Checking → UpToDate | UpdateAvailable → Downloa
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, pure helpers, no I/O):
-  - [ ] `Settings::default()` produces the documented defaults (§4).
-  - [ ] `apply_patch` merges only provided fields; absent fields unchanged.
-  - [ ] `validate` clamps/normalizes (unknown language → `auto`, invalid enum rejected).
-  - [ ] `migrate(json, from_version)` upgrades old shapes; preserves/handles unknown fields.
-  - [ ] WPM and streak arithmetic in `stats.rs` (boundary days, zero-dictation, streak break/resume).
-  - [ ] each `Err(String)` path string is the documented message.
+  - [x] `Settings::default()` produces the documented defaults (§4).
+  - [x] `apply_patch` merges only provided fields; absent fields unchanged.
+  - [x] `validate` clamps/normalizes (unknown language → `auto`, invalid enum rejected).
+  - [x] `migrate(json, from_version)` upgrades old shapes; preserves/handles unknown fields (v1 scope: missing `schemaVersion` + tolerant partial-group load).
+  - [ ] WPM and streak arithmetic in `stats.rs` (boundary days, zero-dictation, streak break/resume) — pending `stats.rs`.
+  - [ ] each `Err(String)` path string is the documented message — pending the `update_settings` side effects.
 - **Manual / runtime** (real Windows host, mic, model):
   - [ ] missing `settings.json` → defaults, file created on first save.
   - [ ] corrupt `settings.json` → sidelined backup + defaults + Hub notice; app starts.
