@@ -11,8 +11,11 @@ pub mod audio;
 pub mod cleanup;
 pub mod hotkey;
 pub mod inject;
+pub mod settings;
 pub mod stt;
 pub mod vad;
+
+use tauri::Manager;
 
 /// Return the running app version (compiled in from Cargo). Trivial by design —
 /// it is the scaffold's IPC smoke test, called by `App.svelte`.
@@ -27,10 +30,20 @@ pub fn run() {
         // The warm whisper-server lives once in managed state, shared across
         // every utterance (ADR-004) — never a cold spawn per utterance.
         .manage(stt::SttState::default())
+        .setup(|app| {
+            // Load preferences once at startup; failure-safe (defaults on a missing
+            // or corrupt file, never a startup failure — settings.rs Rule 4/5).
+            let loaded = settings::load_settings(app.handle());
+            app.manage(settings::SettingsState::new(loaded));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             app_version,
             audio::list_input_devices,
             inject::inject_text,
+            settings::get_settings,
+            settings::update_settings,
+            settings::reset_settings,
             stt::list_whisper_models,
             stt::download_whisper_model,
             stt::gpu_engine_status,

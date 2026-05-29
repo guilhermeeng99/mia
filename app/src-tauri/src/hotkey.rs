@@ -33,8 +33,8 @@ pub enum ActivationMode {
 }
 
 /// Persisted chord + mode (§2; see `settings.md`).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
 pub struct HotkeyConfig {
     pub accelerator: String,
     pub mode: ActivationMode,
