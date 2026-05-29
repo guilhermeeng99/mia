@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { appVersion } from "./lib/app";
   import type { DictationEvent } from "./lib/dictation";
   import { installPtt } from "./lib/ptt";
   import { getSettings, updateSettings, type GeneralSettings } from "./lib/settings";
@@ -19,7 +19,7 @@
   let general = $state<GeneralSettings | null>(null);
 
   if (!isHud) {
-    invoke<string>("app_version")
+    appVersion()
       .then((v) => (version = v))
       .catch(() => (version = "n/a"));
   }

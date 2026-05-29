@@ -22,7 +22,7 @@ export interface DictationResult {
   backend: string;
 }
 
-/** Begin a session (open mic capture, HUD → listening). push-to-hold MVP. */
+/** Begin a session (open mic capture, HUD → listening); push-to-hold or toggle. */
 export function startDictation(onEvent: (e: DictationEvent) => void): Promise<void> {
   const events = new Channel<DictationEvent>();
   events.onmessage = onEvent;

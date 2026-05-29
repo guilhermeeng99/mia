@@ -1,20 +1,22 @@
 <script lang="ts">
+  import type { Phase } from "../dictation";
+
   // The floating mic HUD pill — dark, translucent, always-on-top (design-system.md
   // §8b). Presentation only: the dictation orchestrator drives `state` + `level`
-  // (RMS 0–1) over a Tauri event; this component just renders. The dedicated
-  // transparent HUD window (hud.rs + tauri.conf) that mounts it is runtime-pending.
-  type HudState = "idle" | "listening" | "transcribing" | "inserting" | "error";
+  // (RMS 0–1); `HudWindow.svelte` mounts this in the dedicated transparent,
+  // click-through HUD window (hud.rs + tauri.conf) and forwards the engine's
+  // `hud://state` + `hud://level` events. `state` reuses the orchestrator `Phase`.
 
   interface Props {
-    state?: HudState;
+    state?: Phase;
     level?: number;
     message?: string;
   }
   let { state = "listening", level = 0, message = "" }: Props = $props();
 
-  // Per-bar multipliers give the waveform an organic shape. Until live RMS
-  // forwarding lands, the bars pulse via CSS so "listening" is visibly alive; when
-  // `level` (0–1) arrives it scales the heights on top of that.
+  // Per-bar multipliers give the waveform an organic shape. The bars pulse via CSS
+  // so "listening" is visibly alive, and the live `level` (0–1, forwarded over
+  // `hud://level`) scales the heights on top of that.
   const bars = [0.45, 0.75, 1, 0.7, 0.5];
   const clamped = $derived(Math.min(1, Math.max(0, level)));
 
