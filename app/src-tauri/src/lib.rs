@@ -12,6 +12,7 @@ pub mod cleanup;
 pub mod hotkey;
 pub mod inject;
 pub mod settings;
+pub mod stats;
 pub mod stt;
 pub mod vad;
 
@@ -35,6 +36,9 @@ pub fn run() {
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             let loaded = settings::load_settings(app.handle());
             app.manage(settings::SettingsState::new(loaded));
+            // Local-only usage stats (never uploaded, ADR-001).
+            let stats = stats::load_stats(app.handle());
+            app.manage(stats::StatsState::new(stats));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -44,6 +48,8 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::reset_settings,
+            stats::get_stats,
+            stats::reset_stats,
             stt::list_whisper_models,
             stt::download_whisper_model,
             stt::gpu_engine_status,
