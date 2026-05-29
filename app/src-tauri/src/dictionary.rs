@@ -4,12 +4,17 @@
 //! way the user wants (`mia` → `MIA`, `react js` → `React`). See
 //! `docs/specs/custom-dictionary.md`.
 //!
-//! This file is the **pure, cargo-tested core** (mechanism a + the bias-prompt
+//! The matcher is the **pure, cargo-tested core** (mechanism a + the bias-prompt
 //! composer for mechanism b). It is token-based, so whole-word matching is
 //! inherent; sub-word matching (`wholeWord=false`) is deferred. The CRUD commands +
-//! `dictionary.json` persistence + the `State` it loads into are the follow-up.
+//! `dictionary.json` persistence + the managed `State` are below; wiring the bias
+//! prompt into the warm-Whisper call is the orchestrator's job.
+
+use std::path::PathBuf;
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
 
 /// Fuzzy matching is skipped for variants this short or shorter — protects common
 /// small words from being clobbered (Rule 8).
@@ -77,6 +82,39 @@ pub fn validate_entry(entry: &DictEntry) -> Result<(), String> {
         return Err("replacement too long".to_string());
     }
     Ok(())
+}
+
+/// Every match key an entry contributes (its replacement + each soundsLike),
+/// case-folded for case-insensitive entries (Rule 12 dedupe).
+fn variant_keys(entry: &DictEntry) -> Vec<String> {
+    std::iter::once(entry.replacement.clone())
+        .chain(entry.sounds_like.clone())
+        .map(|v| {
+            let v = v.trim().to_string();
+            if entry.case_sensitive {
+                v
+            } else {
+                v.to_lowercase()
+            }
+        })
+        .filter(|v| !v.is_empty())
+        .collect()
+}
+
+/// The first variant of `candidate` that already exists in another entry, if any
+/// (Rule 12). `exclude_id` skips the entry being updated. Pure → unit-tested.
+pub fn duplicate_variant(entries: &[DictEntry], candidate: &DictEntry, exclude_id: &str) -> Option<String> {
+    let new_keys = variant_keys(candidate);
+    for existing in entries {
+        if existing.id == exclude_id {
+            continue;
+        }
+        let keys = variant_keys(existing);
+        if let Some(hit) = new_keys.iter().find(|k| keys.contains(k)) {
+            return Some(hit.clone());
+        }
+    }
+    None
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -359,6 +397,149 @@ pub fn build_bias_prompt(entries: &[DictEntry], settings: &DictSettings) -> Stri
         .join(", ")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Persistence + managed state + commands (CRUD)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-disk shape: entries + global settings in one `dictionary.json` (§2 storage).
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct DictFile {
+    entries: Vec<DictEntry>,
+    settings: DictSettings,
+}
+
+/// The in-memory dictionary (loaded once at startup). Lock order is always
+/// settings-then-entries to avoid cross-command deadlock.
+pub struct DictState {
+    entries: Mutex<Vec<DictEntry>>,
+    settings: Mutex<DictSettings>,
+}
+
+impl DictState {
+    pub fn new(entries: Vec<DictEntry>, settings: DictSettings) -> Self {
+        Self { entries: Mutex::new(entries), settings: Mutex::new(settings) }
+    }
+
+    fn settings_copy(&self) -> Result<DictSettings, String> {
+        Ok(*self.settings.lock().map_err(|_| "dictionary state poisoned".to_string())?)
+    }
+
+    fn entries_copy(&self) -> Result<Vec<DictEntry>, String> {
+        Ok(self.entries.lock().map_err(|_| "dictionary state poisoned".to_string())?.clone())
+    }
+}
+
+fn new_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("dict-{nanos}")
+}
+
+fn dict_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("dictionary.json"))
+}
+
+/// Failure-safe load: missing or unparseable → empty dictionary + default settings.
+pub fn load_dictionary(app: &AppHandle) -> (Vec<DictEntry>, DictSettings) {
+    let Ok(path) = dict_path(app) else {
+        return (Vec::new(), DictSettings::default());
+    };
+    let file: DictFile = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    (file.entries, file.settings)
+}
+
+fn save_dictionary(app: &AppHandle, entries: &[DictEntry], settings: &DictSettings) -> Result<(), String> {
+    let path = dict_path(app)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let file = DictFile { entries: entries.to_vec(), settings: *settings };
+    let json = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| format!("dictionary file write failed: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("dictionary file write failed: {e}"))
+}
+
+/// List all dictionary entries (Hub CRUD).
+#[tauri::command]
+pub fn dict_list(state: State<'_, DictState>) -> Result<Vec<DictEntry>, String> {
+    state.entries_copy()
+}
+
+/// Validate, reject duplicate variants, assign an id, persist (Rule 12).
+#[tauri::command]
+pub fn dict_add(app: AppHandle, state: State<'_, DictState>, entry: DictEntry) -> Result<DictEntry, String> {
+    validate_entry(&entry)?;
+    let settings = state.settings_copy()?;
+    let mut entries = state.entries.lock().map_err(|_| "dictionary state poisoned".to_string())?;
+    if let Some(dup) = duplicate_variant(&entries, &entry, "") {
+        return Err(format!("duplicate term: {dup}"));
+    }
+    let mut created = entry;
+    created.id = new_id();
+    entries.push(created.clone());
+    save_dictionary(&app, &entries, &settings)?;
+    Ok(created)
+}
+
+/// Update an entry by id (Rule 12 dedupe excludes itself).
+#[tauri::command]
+pub fn dict_update(app: AppHandle, state: State<'_, DictState>, entry: DictEntry) -> Result<DictEntry, String> {
+    validate_entry(&entry)?;
+    let settings = state.settings_copy()?;
+    let mut entries = state.entries.lock().map_err(|_| "dictionary state poisoned".to_string())?;
+    if !entries.iter().any(|e| e.id == entry.id) {
+        return Err("entry not found".to_string());
+    }
+    if let Some(dup) = duplicate_variant(&entries, &entry, &entry.id) {
+        return Err(format!("duplicate term: {dup}"));
+    }
+    for slot in entries.iter_mut() {
+        if slot.id == entry.id {
+            *slot = entry.clone();
+        }
+    }
+    save_dictionary(&app, &entries, &settings)?;
+    Ok(entry)
+}
+
+/// Remove an entry by id (idempotent).
+#[tauri::command]
+pub fn dict_remove(app: AppHandle, state: State<'_, DictState>, id: String) -> Result<(), String> {
+    let settings = state.settings_copy()?;
+    let mut entries = state.entries.lock().map_err(|_| "dictionary state poisoned".to_string())?;
+    entries.retain(|e| e.id != id);
+    save_dictionary(&app, &entries, &settings)
+}
+
+/// Read the global dictionary settings.
+#[tauri::command]
+pub fn dict_settings_get(state: State<'_, DictState>) -> Result<DictSettings, String> {
+    state.settings_copy()
+}
+
+/// Replace the global dictionary settings and persist.
+#[tauri::command]
+pub fn dict_settings_set(
+    app: AppHandle,
+    state: State<'_, DictState>,
+    settings: DictSettings,
+) -> Result<DictSettings, String> {
+    {
+        let mut slot = state.settings.lock().map_err(|_| "dictionary state poisoned".to_string())?;
+        *slot = settings;
+    }
+    let entries = state.entries_copy()?;
+    save_dictionary(&app, &entries, &settings)?;
+    Ok(settings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +668,21 @@ mod tests {
         );
         let long = entry(&"x".repeat(201), &[]);
         assert_eq!(validate_entry(&long), Err("replacement too long".to_string()));
+    }
+
+    #[test]
+    fn duplicate_variant_detects_collisions() {
+        let mut a = entry("MIA", &["mia"]);
+        a.id = "a".to_string();
+        let existing = vec![a];
+        // New entry whose soundsLike collides (case-folded) with an existing variant.
+        let dup = entry("Mya", &["MIA"]);
+        assert_eq!(duplicate_variant(&existing, &dup, ""), Some("mia".to_string()));
+        // A fresh entry with no overlap is fine.
+        assert_eq!(duplicate_variant(&existing, &entry("React", &["react"]), ""), None);
+        // Updating the same entry (excluded by id) does not collide with itself.
+        let mut self_update = entry("MIA", &["mia"]);
+        self_update.id = "a".to_string();
+        assert_eq!(duplicate_variant(&existing, &self_update, "a"), None);
     }
 }

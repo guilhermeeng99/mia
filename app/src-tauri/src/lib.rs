@@ -42,11 +42,20 @@ pub fn run() {
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
             app.manage(stats::StatsState::new(stats));
+            // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
+            let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
+            app.manage(dictionary::DictState::new(dict_entries, dict_settings));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
             audio::list_input_devices,
+            dictionary::dict_list,
+            dictionary::dict_add,
+            dictionary::dict_update,
+            dictionary::dict_remove,
+            dictionary::dict_settings_get,
+            dictionary::dict_settings_set,
             inject::inject_text,
             settings::get_settings,
             settings::update_settings,
