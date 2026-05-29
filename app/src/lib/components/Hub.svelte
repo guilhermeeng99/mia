@@ -1,0 +1,178 @@
+<script lang="ts">
+  import { Channel } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+  import { listInputDevices, type AudioDevice } from "../audio";
+  import { injectText } from "../inject";
+  import {
+    downloadWhisperModel,
+    gpuEngineStatus,
+    listWhisperModels,
+    warmStatus,
+    type DownloadProgress,
+    type GpuStatus,
+    type WarmStatus,
+    type WhisperModel,
+  } from "../stt";
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
+  import Pill from "./ui/Pill.svelte";
+
+  // The Settings/Hub window — presentation only. All logic lives behind the typed
+  // invoke() wrappers in lib/*.ts (architecture rule); this component never calls
+  // invoke directly. Commands the engine doesn't expose yet (device persistence,
+  // hotkey) are intentionally absent until their runtime stage lands.
+
+  let { version }: { version: string } = $props();
+
+  let devices = $state<AudioDevice[]>([]);
+  let selectedDevice = $state("");
+  let models = $state<WhisperModel[]>([]);
+  let warm = $state<WarmStatus | null>(null);
+  let gpu = $state<GpuStatus | null>(null);
+  let downloading = $state<string | null>(null);
+  let progress = $state(0);
+  let testText = $state("Olá do MIA — teste de injeção. 🎤");
+  let injectMsg = $state<string | null>(null);
+  let error = $state<string | null>(null);
+
+  function fail(e: unknown) {
+    error = String(e);
+  }
+
+  async function loadModels() {
+    models = await listWhisperModels();
+  }
+
+  onMount(() => {
+    listInputDevices().then((d) => (devices = d)).catch(fail);
+    loadModels().catch(fail);
+    warmStatus().then((w) => (warm = w)).catch(fail);
+    gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
+  });
+
+  async function download(id: string) {
+    downloading = id;
+    progress = 0;
+    error = null;
+    try {
+      const channel = new Channel<DownloadProgress>();
+      channel.onmessage = (p) => (progress = Math.round(p.percent));
+      await downloadWhisperModel(id, channel);
+      await loadModels();
+    } catch (e) {
+      fail(e);
+    } finally {
+      downloading = null;
+    }
+  }
+
+  async function runInjectTest() {
+    injectMsg = null;
+    error = null;
+    try {
+      await injectText(testText);
+      injectMsg = "Texto enviado para a janela em foco.";
+    } catch (e) {
+      fail(e);
+    }
+  }
+</script>
+
+<main class="min-h-screen bg-cloud-mist text-midnight-indigo font-gilroy px-6 py-8">
+  <div class="mx-auto flex max-w-[920px] flex-col gap-6">
+    <header class="flex items-center gap-3">
+      <h1 class="text-heading-lg font-bold">MIA</h1>
+      <Pill tone="action">100% local · offline</Pill>
+      <span class="ml-auto text-body text-slate-blue">v{version}</span>
+    </header>
+
+    {#if error}
+      <Card class="border border-danger/30">
+        <p class="text-body-lg text-danger">⚠ {error}</p>
+      </Card>
+    {/if}
+
+    <Card>
+      <h2 class="text-heading font-semibold">Microfone</h2>
+      <p class="mt-1 text-body text-slate-blue">Escolha a entrada de áudio para a ditado.</p>
+      <div class="mt-4">
+        <Field label="Dispositivo de entrada" hint="Persistência da escolha chega com a captura ao vivo.">
+          <select
+            bind:value={selectedDevice}
+            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
+                   text-midnight-indigo min-h-[40px]"
+          >
+            <option value="">Padrão do sistema</option>
+            {#each devices as device (device.id)}
+              <option value={device.id}>{device.name}{device.isDefault ? " · padrão" : ""}</option>
+            {/each}
+          </select>
+        </Field>
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Modelo Whisper</h2>
+      <p class="mt-1 text-body text-slate-blue">
+        Baixado sob demanda do Hugging Face — a única saída de rede do MIA.
+      </p>
+      <ul class="mt-4 flex flex-col gap-3">
+        {#each models as model (model.id)}
+          <li class="flex items-center gap-3">
+            <span class="text-body-lg font-semibold">{model.label}</span>
+            <span class="text-body text-slate-blue">{model.sizeMb} MB</span>
+            <span class="ml-auto flex items-center gap-3">
+              {#if model.downloaded}
+                <Pill tone="success">✓ instalado</Pill>
+              {:else if downloading === model.id}
+                <Pill tone="action">baixando… {progress}%</Pill>
+              {:else}
+                <Button variant="secondary" disabled={downloading !== null} onclick={() => download(model.id)}>
+                  Baixar
+                </Button>
+              {/if}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Motor</h2>
+      <div class="mt-3 flex flex-wrap gap-3">
+        <Pill tone={warm?.loaded ? "success" : "neutral"}>
+          {warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)"}
+        </Pill>
+        <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
+        {#if gpu?.gpuPresent}
+          <Pill tone={gpu.downloaded ? "success" : "action"}>
+            GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}
+          </Pill>
+        {:else}
+          <Pill tone="neutral">somente CPU</Pill>
+        {/if}
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Testar injeção</h2>
+      <p class="mt-1 text-body text-slate-blue">
+        Digita o texto na janela em foco via SendInput (ADR-005).
+      </p>
+      <div class="mt-4 flex flex-col gap-3">
+        <input
+          bind:value={testText}
+          class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
+                 text-midnight-indigo min-h-[40px]"
+        />
+        <div class="flex items-center gap-3">
+          <Button onclick={runInjectTest}>Testar injeção</Button>
+          {#if injectMsg}
+            <span class="text-body text-success">{injectMsg}</span>
+          {/if}
+        </div>
+      </div>
+    </Card>
+  </div>
+</main>
