@@ -18,6 +18,7 @@ pub mod settings;
 pub mod snippets;
 pub mod stats;
 pub mod stt;
+pub mod tray;
 pub mod vad;
 
 use tauri::Manager;
@@ -66,6 +67,8 @@ pub fn run() {
             // Voice-triggered snippets — loaded from snippets.json.
             let snips = snippets::load_snippets(app.handle());
             app.manage(snippets::SnippetState::new(snips));
+            // System tray (Open / Quit). MIA runs in the tray.
+            tray::init(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
