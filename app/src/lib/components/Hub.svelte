@@ -20,6 +20,7 @@
   import Field from "./ui/Field.svelte";
   import Pill from "./ui/Pill.svelte";
   import Toggle from "./ui/Toggle.svelte";
+  import AiSection from "./AiSection.svelte";
   import DictionarySection from "./DictionarySection.svelte";
   import SnippetsSection from "./SnippetsSection.svelte";
 
@@ -378,5 +379,6 @@
 
     <DictionarySection />
     <SnippetsSection />
+    <AiSection />
   </div>
 </main>

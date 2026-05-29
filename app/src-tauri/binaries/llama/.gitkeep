@@ -1,0 +1,4 @@
+# The optional llama.cpp `llama-server.exe` engine (Phase 2 LLM) + its sibling DLLs
+# are fetched here by `scripts/fetch-binaries.mjs` (into this `llama/` subdir, kept
+# separate from whisper-server because both ship same-named ggml*.dll). This .gitkeep
+# keeps the dir present so the `binaries/llama/*` bundle-resources glob always matches.

@@ -3,3 +3,6 @@
 # committed. Keep the directory itself (.gitkeep) so the resources glob has a parent dir.
 binaries/*
 !binaries/.gitkeep
+!binaries/llama/
+binaries/llama/*
+!binaries/llama/.gitkeep

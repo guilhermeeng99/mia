@@ -19,7 +19,7 @@ MIA is a free, open-source, **privacy-first, fully local** voice-to-text **dicta
 |---|---|---|
 | 0 | Docs & Design — this documentation set + design system | ✅ Done |
 | 1 | Core Dictation MVP — PTT → capture → VAD → warm STT → cleanup → inject; tray + HUD; pt-BR + English | 🚧 In progress |
-| 2 | AI Magic — optional local LLM Command Mode (voice editing) + opt-in Polish; intent routing | ⬜ Planned |
+| 2 | AI Magic — optional local LLM Command Mode (voice editing) + opt-in Polish; intent routing | 🚧 In progress |
 | 3 | Personalization — custom dictionary, snippets, per-app writing styles/context | ⬜ Planned |
 | 4 | Polish & Distribution — onboarding, settings/"Hub" dashboard + stats, signed auto-update, NVIDIA CUDA, release pipeline | ⬜ Planned |
 | 5 | Backlog — streaming partials, wake word, Whisper Mode, macOS/Linux, file-transcription mode | 💡 Backlog |
@@ -51,14 +51,14 @@ The end-to-end live loop: global PTT hotkey → cpal capture → Silero VAD endp
 - ✅ **Wire the end-to-end pipeline** — orchestrate hotkey → capture → VAD → warm STT → cleanup → inject, with HUD state transitions and cancel. **Validated on Windows** (pt-BR utterance → VAD-trimmed → transcribed → injected). A re-entrant global-shortcut deadlock (registering the transient Esc binding from inside the plugin handler) was found and fixed by emitting the intent first and deferring shortcut (un)registration off the handler thread. Pure orchestrator core in `dictation.rs` cargo-tested: `next_phase` HUD state machine (illegal-signal no-op, cancel-from-any), `interpret_down`, `classify_cancel`, `build_result`. The `start/stop/cancel_dictation` commands wire the real pipeline end-to-end (cpal capture → warm STT → cleanup → dictionary → snippets → inject, emitting HUD events + recording stats) + `dictation.ts` — compile/build-verified. The global Ctrl+Space PTT now drives it end-to-end (hotkey → `dictation://intent` → `ptt.ts` → start/stop) and the floating HUD window reflects each phase with a live RMS waveform (`hud://state` + `hud://level`, emitted by the orchestrator/capture thread). Remaining (runtime): toggle-mode auto-endpoint, validated on Windows. → [dictation.md](specs/dictation.md) · [ADR-004](specs/architecture.md#adr-004-warm-resident-stt)
 - ✅ **pt-BR + English** — first-class language selection: a Hub picker (Automático / Português (pt-BR) / English) persisted in `settings.general.default_language`; the orchestrator reads it per utterance and forwards `language=` to `/inference` (auto-detect when unset), so the choice is remembered with no warm-engine restart. → [speech-to-text.md](specs/speech-to-text.md) · [ADR-003](specs/architecture.md#adr-003-whisper-stt)
 
-### Phase 2 — AI Magic ⬜
+### Phase 2 — AI Magic 🚧
 
-Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruct or Llama-3.2-3B-Instruct at Q4_K_M (~1.5–2 GB RAM), with GBNF/JSON-schema constrained decoding. Gated behind a cheap intent check so average latency stays near Phase 1. `app/src-tauri/src/llm.rs`. → [ai-commands.md](specs/ai-commands.md) · [ADR-008](specs/architecture.md#adr-008-hybrid-text-intelligence)
+Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruct or Llama-3.2-3B-Instruct at Q4_K_M (~1.5–2 GB RAM), with GBNF/JSON-schema constrained decoding. Gated behind a cheap intent check so average latency stays near Phase 1. Runtime lives in `app/src-tauri/src/ai_commands.rs` (the spec's module of record). → [ai-commands.md](specs/ai-commands.md) · [ADR-008](specs/architecture.md#adr-008-hybrid-text-intelligence)
 
-- ⬜ Local LLM runtime + on-demand model download (same download-gate UX as STT). Pure scaffolding (model-independent prompt/grammar/router) already lives in `ai_commands.rs`; the `llama-cpp-2`/`llama-server` runtime + GGUF download are pending.
-- 🚧 **Command Mode** — voice editing ("delete last sentence", "make it formal") via constrained decoding for reliable command parsing. Pure core in `ai_commands.rs` cargo-tested: `command_grammar` (GBNF), `build_prompt`, `validate_parsed`, `ParsedCommand`. Remaining: the constrained-decode runtime + `run_command`.
-- ⬜ Opt-in **Polish** action — rewrite/clean beyond the deterministic path, on demand. (`route_intent` already detects the polish phrase; the `polish` command is runtime-pending.)
-- 🚧 **Intent routing** — cheap classifier to decide deterministic-only vs. LLM, keeping the fast path default. `route_intent` implemented + cargo-tested (conservative default, pt-BR + en trigger tables) in `ai_commands.rs`.
+- ✅ **Local LLM runtime + on-demand model download** — a warm **`llama-server`** sidecar (llama.cpp b9410, cmake-free, mirrors `stt.rs`; isolated in `binaries/llama/` to avoid a ggml DLL clash, fetched by `fetch-binaries.mjs`, **binary boot-verified**). `download_llm` fetches the GGUF on demand (Qwen2.5-3B / Llama-3.2-3B Q4_K_M from HF, `.part`→rename + progress) — same download-gate UX as STT. `list_llm_models`/`ai_status`/`unload_llm` + `ai.ts` + a Hub AI section.
+- 🚧 **Command Mode** — voice editing ("make it formal", "summarize this") via GBNF-constrained decoding. Pure core cargo-tested; `run_command` now parses the spoken command (grammar-constrained `/completion`) → applies the transform to the target text. Remaining: live-pipeline auto-routing + tracking "last inserted" (it currently takes an explicit `target`); on-device inference validation.
+- ✅ **Opt-in Polish** action — `polish` runs a repair-constrained rewrite of supplied text via the warm LLM; exposed in the Hub. (On-device inference validation pending.)
+- 🚧 **Intent routing** — `route_intent` implemented + cargo-tested (conservative default, pt-BR + en trigger tables). Remaining: call it from the dictation orchestrator so a spoken command/polish auto-routes instead of being dictated (currently invoked explicitly via the commands).
 
 ### Phase 3 — Personalization ⬜
 
@@ -90,7 +90,7 @@ Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruc
 
 These remaining items are blocked on assets, hardware, or secrets the project owner must supply; the code paths around them are ready, but they can't be implemented + validated without:
 
-- ⬜ **Phase 2 — local LLM runtime** (Command Mode / Polish): the pure router/grammar/prompt core (`ai_commands.rs`) is done + cargo-tested, but the runtime needs a **Windows `llama-server` binary** (a `fetch-binaries` source) **+ a GGUF model** (Qwen2.5-3B / Llama-3.2-3B Q4_K_M) and on-device validation of the constrained-decode endpoint. → [ai-commands.md](specs/ai-commands.md)
+- 🚧 **Phase 2 — local LLM** (Command Mode / Polish): runtime **built + binary boot-verified** (warm `llama-server`, `download_llm`, `run_command`/`polish`, Hub AI section). Remaining is **on-device inference validation** — needs the user to download the ~2 GB GGUF (one click in the Hub) — plus live-pipeline auto-routing. → [ai-commands.md](specs/ai-commands.md)
 - ⬜ **Phase 4 — signed auto-update**: needs a **minisign keypair** (private key as a CI secret) + a hosted `latest.json` endpoint before `tauri-plugin-updater` can be wired without shipping an unverifiable updater. → [ADR-009](specs/architecture.md#adr-009-distribution--auto-update)
 - ⬜ **Phase 4 — NVIDIA CUDA engine**: `download_gpu_engine` + detection exist; finalizing needs an **NVIDIA machine** to validate the GPU path end-to-end.
 - ⬜ **Injection elevated-window (UIPI) + per-app context (Phase 3)**: need Win32 (`GetForegroundWindow` + integrity-level probe) and real elevated/UAC windows to validate; deferred rather than shipping unvalidated FFI.

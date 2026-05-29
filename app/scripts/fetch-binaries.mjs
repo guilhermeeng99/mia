@@ -28,15 +28,30 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-// CPU whisper.cpp Windows x64 release (matches the v1.8.4 GPU build in stt.rs).
-const CPU_URL =
-  "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-bin-x64.zip";
-
-const SERVER_EXE = "whisper-server.exe";
-
 // Resolve paths relative to THIS script so CWD doesn't matter.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url)); // app/scripts
 const BINARIES_DIR = resolve(SCRIPT_DIR, "..", "src-tauri", "binaries");
+
+// The native engines MIA spawns as warm sidecars. whisper-server (STT) sits at the
+// top of binaries/; llama-server (optional Phase-2 LLM) goes in a binaries/llama/
+// SUBDIR — both ship same-named ggml*.dll, so isolating each server with its own DLLs
+// avoids a clash (Windows resolves DLLs from the exe's own directory).
+const ENGINES = [
+  {
+    // CPU whisper.cpp Windows x64 release (matches the v1.8.4 GPU build in stt.rs).
+    url: "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-bin-x64.zip",
+    exe: "whisper-server.exe",
+    destDir: BINARIES_DIR,
+    zipName: "whisper-cpu.zip",
+  },
+  {
+    // CPU llama.cpp Windows x64 release (has llama-server.exe; ai_commands.rs).
+    url: "https://github.com/ggml-org/llama.cpp/releases/download/b9410/llama-b9410-bin-win-cpu-x64.zip",
+    exe: "llama-server.exe",
+    destDir: join(BINARIES_DIR, "llama"),
+    zipName: "llama-cpu.zip",
+  },
+];
 
 function fail(message) {
   console.error(`fetch-binaries: ${message}`);
@@ -81,13 +96,13 @@ async function findFile(dir, name) {
   return null;
 }
 
-/** Copy whisper-server.exe + every sibling *.dll from `srcDir` into `destDir`. */
-async function copyEngineFiles(srcDir, destDir) {
+/** Copy `exeName` + every sibling *.dll from `srcDir` into `destDir`. */
+async function copyEngineFiles(srcDir, destDir, exeName) {
   const copied = [];
   for (const entry of await readdir(srcDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const lower = entry.name.toLowerCase();
-    if (entry.name === SERVER_EXE || lower.endsWith(".dll")) {
+    if (entry.name === exeName || lower.endsWith(".dll")) {
       await copyFile(join(srcDir, entry.name), join(destDir, entry.name));
       copied.push(entry.name);
     }
@@ -95,53 +110,48 @@ async function copyEngineFiles(srcDir, destDir) {
   return copied;
 }
 
-async function main() {
-  // Binaries are Windows-only (ADR-011) — don't fail dev on macOS/Linux.
-  if (process.platform !== "win32") {
-    console.log(
-      "fetch-binaries: whisper-server is Windows-only (ADR-011); nothing to fetch on " +
-        `${process.platform}.`,
-    );
-    return;
-  }
-
-  await mkdir(BINARIES_DIR, { recursive: true });
-
+/** Fetch one engine: download release zip → extract → copy exe + sibling DLLs. */
+async function fetchEngine({ url, exe, destDir, zipName }) {
+  await mkdir(destDir, { recursive: true });
   // Idempotent: skip if the engine binary is already present.
-  if (existsSync(join(BINARIES_DIR, SERVER_EXE))) {
-    console.log(`fetch-binaries: ${SERVER_EXE} already present in ${BINARIES_DIR}`);
+  if (existsSync(join(destDir, exe))) {
+    console.log(`fetch-binaries: ${exe} already present in ${destDir}`);
     return;
   }
-
-  const zip = join(BINARIES_DIR, "whisper-cpu.zip");
-  const tmp = join(BINARIES_DIR, "extract");
+  const zip = join(destDir, zipName);
+  const tmp = join(destDir, "extract");
   try {
-    console.log(`fetch-binaries: downloading ${CPU_URL}`);
-    await downloadFile(CPU_URL, zip);
-
+    console.log(`fetch-binaries: downloading ${url}`);
+    await downloadFile(url, zip);
     console.log("fetch-binaries: extracting...");
     await extractZip(zip, tmp);
-
-    const exe = await findFile(tmp, SERVER_EXE);
-    if (!exe) throw new Error(`${SERVER_EXE} not found in the downloaded archive`);
-
-    const copied = await copyEngineFiles(dirname(exe), BINARIES_DIR);
-    if (!copied.includes(SERVER_EXE)) {
-      throw new Error(`failed to copy ${SERVER_EXE}`);
-    }
-    console.log(
-      `fetch-binaries: copied into ${BINARIES_DIR}:\n  ${copied.join("\n  ")}`,
-    );
+    const found = await findFile(tmp, exe);
+    if (!found) throw new Error(`${exe} not found in the downloaded archive`);
+    const copied = await copyEngineFiles(dirname(found), destDir, exe);
+    if (!copied.includes(exe)) throw new Error(`failed to copy ${exe}`);
+    console.log(`fetch-binaries: copied into ${destDir}:\n  ${copied.join("\n  ")}`);
   } finally {
     await rm(zip, { force: true }).catch(() => {});
     await rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
-
-  // Sanity check.
-  const out = join(BINARIES_DIR, SERVER_EXE);
-  if (!existsSync(out)) fail(`${SERVER_EXE} missing after fetch`);
+  const out = join(destDir, exe);
+  if (!existsSync(out)) fail(`${exe} missing after fetch`);
   const { size } = await stat(out);
-  console.log(`fetch-binaries: done (${SERVER_EXE} = ${size} bytes)`);
+  console.log(`fetch-binaries: done (${exe} = ${size} bytes)`);
+}
+
+async function main() {
+  // Binaries are Windows-only (ADR-011) — don't fail dev on macOS/Linux.
+  if (process.platform !== "win32") {
+    console.log(
+      "fetch-binaries: engines are Windows-only (ADR-011); nothing to fetch on " +
+        `${process.platform}.`,
+    );
+    return;
+  }
+  for (const engine of ENGINES) {
+    await fetchEngine(engine);
+  }
 }
 
 main().catch((err) => fail(err?.message ?? String(err)));
