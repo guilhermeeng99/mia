@@ -12,8 +12,9 @@
 //! commands convert `Accel` to the plugin's `Shortcut` (`Modifiers` + `Code`) at the
 //! boundary.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -354,21 +355,51 @@ pub fn to_shortcut(accel: &Accel) -> Result<Shortcut, String> {
 pub struct HotkeyRuntime {
     cfg: Mutex<HotkeyConfig>,
     edge: Mutex<EdgeState>,
+    /// Monotonic session generation: each Start bumps it. A watchdog armed for an
+    /// older generation no-ops, so a real Stop/Cancel silently disarms it (Rule 11).
+    generation: AtomicU64,
 }
 
 impl HotkeyRuntime {
     pub fn new(cfg: HotkeyConfig) -> Self {
-        Self { cfg: Mutex::new(cfg), edge: Mutex::new(EdgeState::default()) }
+        Self {
+            cfg: Mutex::new(cfg),
+            edge: Mutex::new(EdgeState::default()),
+            generation: AtomicU64::new(0),
+        }
     }
+}
+
+/// The transient `Escape` binding registered only while a session is active (Rule 8).
+fn escape_shortcut() -> Shortcut {
+    Shortcut::new(None, Code::Escape)
+}
+
+fn is_escape(shortcut: &Shortcut) -> bool {
+    shortcut == &escape_shortcut()
 }
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// Drive the pure `reduce` from a raw global-shortcut edge and emit the resulting
-/// intent to the frontend over the `dictation://intent` Tauri event. Called by the
-/// plugin handler in `lib.rs`.
+/// Route a raw global-shortcut edge from the plugin handler (`lib.rs`). `Escape` —
+/// registered only while a session is active — cancels; every other chord is the PTT
+/// binding and drives the reducer. (The plugin handler can't tell them apart, so we
+/// dispatch on the fired `Shortcut` here.)
+pub fn on_shortcut(app: &AppHandle, shortcut: &Shortcut, pressed: bool) {
+    if is_escape(shortcut) {
+        if pressed {
+            cancel_from_escape(app);
+        }
+        return;
+    }
+    on_shortcut_event(app, pressed);
+}
+
+/// Drive the pure `reduce` from a raw PTT-chord edge and emit the resulting intent to
+/// the frontend over `dictation://intent`; Start/Stop also manage the session's
+/// transient Esc binding + missing-release watchdog.
 pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     let Some(rt) = app.try_state::<HotkeyRuntime>() else {
         return;
@@ -385,8 +416,75 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     };
     if let Some(intent) = intent {
         eprintln!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
+        match intent {
+            DictationIntent::Start => on_session_start(app, mode),
+            DictationIntent::Stop | DictationIntent::Cancel => on_session_end(app),
+        }
         let _ = app.emit("dictation://intent", intent);
     }
+}
+
+/// Begin a session: register the transient Esc-cancel binding and (push-to-hold only)
+/// arm the missing-release watchdog.
+fn on_session_start(app: &AppHandle, mode: ActivationMode) {
+    let _ = app.global_shortcut().register(escape_shortcut());
+    if mode == ActivationMode::PushToHold {
+        arm_watchdog(app);
+    }
+}
+
+/// End a session: bump the generation (disarms any pending watchdog) and drop the
+/// transient Esc binding so Escape is free again everywhere else.
+fn on_session_end(app: &AppHandle) {
+    if let Some(rt) = app.try_state::<HotkeyRuntime>() {
+        rt.generation.fetch_add(1, Ordering::SeqCst);
+    }
+    let _ = app.global_shortcut().unregister(escape_shortcut());
+}
+
+/// Esc pressed during a session → reset the reducer and emit Cancel (Rule 8).
+fn cancel_from_escape(app: &AppHandle) {
+    if let Some(rt) = app.try_state::<HotkeyRuntime>() {
+        rt.generation.fetch_add(1, Ordering::SeqCst);
+        if let Ok(mut e) = rt.edge.lock() {
+            *e = EdgeState::default();
+        }
+    }
+    let _ = app.global_shortcut().unregister(escape_shortcut());
+    eprintln!("[hotkey] Esc → intent Cancel");
+    let _ = app.emit("dictation://intent", DictationIntent::Cancel);
+}
+
+/// Missing-release watchdog (Rule 11): if a push-to-hold session never sees its
+/// release within `MAX_HOLD_MS` (e.g. a focus change ate the keyup), force a Stop so
+/// dictation can't get stuck "listening" forever. A real Stop/Cancel (or a fresh
+/// session) bumps the generation first, so this fires only for a genuinely stuck hold.
+fn arm_watchdog(app: &AppHandle) {
+    let Some(rt) = app.try_state::<HotkeyRuntime>() else {
+        return;
+    };
+    let generation = rt.generation.load(Ordering::SeqCst);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(MAX_HOLD_MS));
+        let Some(rt) = app.try_state::<HotkeyRuntime>() else {
+            return;
+        };
+        if rt.generation.load(Ordering::SeqCst) != generation {
+            return; // a real edge already ended this session
+        }
+        let active = rt.edge.lock().map(|e| e.active).unwrap_or(false);
+        if !active {
+            return;
+        }
+        if let Ok(mut e) = rt.edge.lock() {
+            *e = EdgeState::default();
+        }
+        rt.generation.fetch_add(1, Ordering::SeqCst);
+        let _ = app.global_shortcut().unregister(escape_shortcut());
+        eprintln!("[hotkey] watchdog: no release after {MAX_HOLD_MS}ms → forcing Stop");
+        let _ = app.emit("dictation://intent", DictationIntent::Stop);
+    });
 }
 
 /// Register `cfg`'s chord, replacing any prior registration (Rule 1; rolls back the

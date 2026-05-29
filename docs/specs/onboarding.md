@@ -1,6 +1,6 @@
 # Onboarding Feature Spec
 
-> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirroring the Hub; it is **mandatory** — there is no skip and "Concluir" stays disabled until a model is on disk (Rule 6/7). `App.svelte` shows the wizard when no Whisper model is installed yet. Pending: a persisted "onboarding completed" flag (currently gated on model presence) and the permission-denied deep-link copy.
+> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirroring the Hub; it is **mandatory** — there is no skip and "Concluir" stays disabled until a model is on disk (Rule 6/7). `App.svelte` shows the wizard only when onboarding hasn't been completed **and** no model is installed; "Concluir" persists `settings.general.onboarding_completed=true` (Rule 1/14) so MIA then boots straight to the Hub. Pending: the permission-denied deep-link copy.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)

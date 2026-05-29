@@ -75,6 +75,9 @@ pub struct GeneralSettings {
     pub collect_stats: bool,
     /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
     pub snippets_enabled: bool,
+    /// First-run gate (onboarding.md Rule 1): once the wizard finishes, MIA boots
+    /// straight to the tray instead of re-opening onboarding.
+    pub onboarding_completed: bool,
 }
 
 impl Default for GeneralSettings {
@@ -86,6 +89,7 @@ impl Default for GeneralSettings {
             play_sounds: false,
             collect_stats: true,
             snippets_enabled: true,
+            onboarding_completed: false,
         }
     }
 }

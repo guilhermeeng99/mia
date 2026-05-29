@@ -16,6 +16,7 @@ export interface GeneralSettings {
   playSounds: boolean;
   collectStats: boolean;
   snippetsEnabled: boolean;
+  onboardingCompleted: boolean;
 }
 
 export interface HotkeyConfig {

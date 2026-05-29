@@ -44,9 +44,10 @@ pub fn run() {
         // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    hotkey::on_shortcut_event(
+                .with_handler(|app, shortcut, event| {
+                    hotkey::on_shortcut(
                         app,
+                        shortcut,
                         matches!(event.state, tauri_plugin_global_shortcut::ShortcutState::Pressed),
                     );
                 })

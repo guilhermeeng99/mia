@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import type { DictationEvent } from "./lib/dictation";
   import { installPtt } from "./lib/ptt";
+  import { getSettings, updateSettings, type GeneralSettings } from "./lib/settings";
   import { listWhisperModels } from "./lib/stt";
   import Hub from "./lib/components/Hub.svelte";
   import HudWindow from "./lib/components/HudWindow.svelte";
@@ -15,11 +16,24 @@
 
   let version = $state("…");
   let showOnboarding = $state(false);
+  let general = $state<GeneralSettings | null>(null);
 
   if (!isHud) {
     invoke<string>("app_version")
       .then((v) => (version = v))
       .catch(() => (version = "n/a"));
+  }
+
+  // Finish onboarding: persist the flag so MIA boots to the tray next time, then
+  // close the wizard (onboarding.md Rule 1/14).
+  async function finishOnboarding() {
+    showOnboarding = false;
+    if (!general) return;
+    try {
+      await updateSettings({ general: { ...general, onboardingCompleted: true } });
+    } catch {
+      /* a persistence hiccup must not trap the user in the wizard */
+    }
   }
 
   // The hotkey channel still streams session events to the main window, but the HUD
@@ -29,8 +43,14 @@
 
   onMount(() => {
     if (isHud) return; // the HUD window manages itself
-    listWhisperModels()
-      .then((models) => (showOnboarding = !models.some((m) => m.downloaded)))
+    // Show the wizard only until it's been completed once. A pre-existing install
+    // (a model already on disk) is treated as completed so it boots straight to the
+    // Hub instead of re-prompting (onboarding.md Rule 1).
+    Promise.all([getSettings(), listWhisperModels()])
+      .then(([s, models]) => {
+        general = s.general;
+        showOnboarding = !s.general.onboardingCompleted && !models.some((m) => m.downloaded);
+      })
       .catch(() => {});
     const pending = installPtt(onDictationEvent);
     return () => {
@@ -42,7 +62,7 @@
 {#if isHud}
   <HudWindow />
 {:else if showOnboarding}
-  <Onboarding ondone={() => (showOnboarding = false)} />
+  <Onboarding ondone={finishOnboarding} />
 {:else}
   <Hub {version} />
 {/if}
