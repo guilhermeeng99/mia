@@ -9,6 +9,7 @@
 
 pub mod audio;
 pub mod cleanup;
+pub mod hotkey;
 pub mod inject;
 pub mod stt;
 pub mod vad;
