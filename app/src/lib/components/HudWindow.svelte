@@ -10,6 +10,7 @@
   // readable even though the engine returns to Idle immediately after it.
   let phase = $state<Phase>("idle");
   let message = $state("");
+  let level = $state(0);
   let errorTimer: ReturnType<typeof setTimeout> | undefined;
 
   function onState(next: Phase, msg: string) {
@@ -23,21 +24,25 @@
     // Hold the error on screen until its timer fires (the engine idles right after).
     if (next === "idle" && phase === "error") return;
     clearTimeout(errorTimer);
+    if (next === "idle") level = 0;
     phase = next;
   }
 
   onMount(() => {
     document.body.classList.add("hud");
-    const pending: Promise<UnlistenFn> = listen<{ phase: Phase; message: string | null }>(
-      "hud://state",
-      ({ payload }) => onState(payload.phase, payload.message ?? ""),
-    );
-    return () => void pending.then((un) => un());
+    const subs: Promise<UnlistenFn>[] = [
+      listen<{ phase: Phase; message: string | null }>("hud://state", ({ payload }) =>
+        onState(payload.phase, payload.message ?? ""),
+      ),
+      // Speech RMS sits low (~0.02–0.15); amplify so the waveform visibly reacts.
+      listen<number>("hud://level", ({ payload }) => (level = Math.min(1, payload * 6))),
+    ];
+    return () => subs.forEach((s) => void s.then((un) => un()));
   });
 </script>
 
 {#if phase !== "idle"}
   <div class="grid min-h-screen place-items-center">
-    <MicHud state={phase} {message} />
+    <MicHud state={phase} {level} {message} />
   </div>
 {/if}

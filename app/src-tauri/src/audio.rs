@@ -17,7 +17,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 /// Whisper's native input rate — every frame handed to STT is at this rate (Rule 1).
 pub const SAMPLE_RATE_HZ: u32 = 16_000;
@@ -224,6 +224,7 @@ fn capture_thread(
     stop: Arc<AtomicBool>,
     samples: Arc<Mutex<Vec<f32>>>,
     channel: Option<Channel<CaptureEvent>>,
+    app: Option<AppHandle>,
     ready: std::sync::mpsc::Sender<Result<u32, String>>,
 ) {
     let device = match resolve_input_device(device_id.as_deref()) {
@@ -299,15 +300,30 @@ fn capture_thread(
 
     // ~50 Hz level meter (Rule 10) until stop; the stream drops when this returns.
     let window = (rate as usize / 50).max(1);
+    let mut tick: u32 = 0;
     while !stop.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(20));
-        if let Some(ch) = &channel {
-            let recent = {
-                let b = samples.lock().map(|b| b.clone()).unwrap_or_default();
+        if channel.is_none() && app.is_none() {
+            continue;
+        }
+        // Clone only the trailing window — not the whole (growing) buffer — so the
+        // meter stays O(window) per tick regardless of utterance length.
+        let recent = match samples.lock() {
+            Ok(b) => {
                 let start = b.len().saturating_sub(window);
                 b[start..].to_vec()
-            };
-            let _ = ch.send(CaptureEvent::Level { rms: rms(&recent), peak: peak(&recent) });
+            }
+            Err(_) => Vec::new(),
+        };
+        let level = rms(&recent);
+        if let Some(ch) = &channel {
+            let _ = ch.send(CaptureEvent::Level { rms: level, peak: peak(&recent) });
+        }
+        // Drive the floating HUD waveform at ~16 Hz (every 3rd 20 ms tick) — smooth
+        // enough without flooding the IPC bridge.
+        tick = tick.wrapping_add(1);
+        if let (Some(app), 0) = (&app, tick % 3) {
+            let _ = app.emit("hud://level", level);
         }
     }
     drop(stream);
@@ -319,6 +335,7 @@ pub fn begin_capture(
     state: &CaptureState,
     device_id: Option<&str>,
     channel: Option<Channel<CaptureEvent>>,
+    app: Option<AppHandle>,
 ) -> Result<(), String> {
     let mut guard = state.session.lock().map_err(|_| "capture state poisoned".to_string())?;
     if guard.is_some() {
@@ -329,7 +346,7 @@ pub fn begin_capture(
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
     let (stop_t, samples_t, device_t) = (stop.clone(), samples.clone(), device_id.map(str::to_string));
     let handle = std::thread::spawn(move || {
-        capture_thread(device_t, stop_t, samples_t, channel, ready_tx);
+        capture_thread(device_t, stop_t, samples_t, channel, app, ready_tx);
     });
     match ready_rx.recv().map_err(|_| "capture thread failed to start".to_string())? {
         Ok(rate) => {
@@ -369,7 +386,7 @@ fn default_input_name() -> String {
 #[tauri::command]
 pub fn test_microphone(state: State<'_, CaptureState>, ms: Option<u32>) -> Result<MicTest, String> {
     let dur = ms.unwrap_or(1500).clamp(200, 5000);
-    begin_capture(&state, None, None)?;
+    begin_capture(&state, None, None, None)?;
     std::thread::sleep(Duration::from_millis(dur as u64));
     let samples = end_capture(&state)?;
     Ok(MicTest { peak: peak(&samples), rms: rms(&samples), device_name: default_input_name() })

@@ -252,8 +252,9 @@ pub fn start_dictation(
 ) -> Result<(), String> {
     let s = settings.snapshot()?;
     eprintln!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
-    // Live waveform Level forwarding is a follow-up; capture runs without a channel.
-    crate::audio::begin_capture(&capture, Some(&s.audio.input_device), None)?;
+    // Pass the AppHandle so the capture thread streams live RMS to the HUD waveform
+    // over `hud://level`; the CaptureEvent channel stays unused on this path.
+    crate::audio::begin_capture(&capture, Some(&s.audio.input_device), None, Some(app.clone()))?;
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
     emit_hud(&app, Phase::Listening, None);
     Ok(())
