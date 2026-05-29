@@ -1,6 +1,6 @@
 # MIA — Roadmap
 
-> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing (deterministic cleanup, warm STT, text injection); Phase 0 (Docs & Design) complete.
+> **Status**: Phase 1 (Core Dictation MVP) — **code-complete**, on-device validation pending. The end-to-end loop (PTT → capture → server-side Silero-VAD-gated warm STT → cleanup → dictionary/snippets → inject) is wired, plus a dedicated floating HUD with a live waveform, language selection, dictionary bias prompt, hotkey recorder + Esc-cancel/watchdog, onboarding-completed gate, and launch-at-login. Phase 0 (Docs & Design) complete. Remaining for Phase 1 is runtime validation on Windows hardware; Phases 2–4 are gated on external assets (LLM/llama-server binary + GGUF, signing keys, NVIDIA hardware) — see "Next / open".
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 > Single source of truth for what is **done**, **in progress**, and **planned**. Update in the same change that shifts scope (see [`/CLAUDE.md`](../CLAUDE.md) → Post-Change Checklist).
@@ -85,6 +85,15 @@ Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruc
 - ✅ **Wire the dictionary bias prompt into warm Whisper** — `build_bias_prompt` output is now fed as the per-utterance `/inference` initial prompt (`stt.rs` `transcribe_chunk`/`inference_fields`, built from the dict snapshot in `dictation.rs`); cargo-tested. → [custom-dictionary.md](specs/custom-dictionary.md), [speech-to-text.md](specs/speech-to-text.md)
 - ⬜ **Deferred major dependency bumps** — `cpal` 0.15 → 0.17 and `enigo` 0.5 → 0.6 are held back; both touch Windows device/input behavior and require on-device re-testing before upgrading.
 - ⬜ App icons + branding assets (placeholder until then).
+
+### External-asset / hardware-gated (code can't finish these alone)
+
+These remaining items are blocked on assets, hardware, or secrets the project owner must supply; the code paths around them are ready, but they can't be implemented + validated without:
+
+- ⬜ **Phase 2 — local LLM runtime** (Command Mode / Polish): the pure router/grammar/prompt core (`ai_commands.rs`) is done + cargo-tested, but the runtime needs a **Windows `llama-server` binary** (a `fetch-binaries` source) **+ a GGUF model** (Qwen2.5-3B / Llama-3.2-3B Q4_K_M) and on-device validation of the constrained-decode endpoint. → [ai-commands.md](specs/ai-commands.md)
+- ⬜ **Phase 4 — signed auto-update**: needs a **minisign keypair** (private key as a CI secret) + a hosted `latest.json` endpoint before `tauri-plugin-updater` can be wired without shipping an unverifiable updater. → [ADR-009](specs/architecture.md#adr-009-distribution--auto-update)
+- ⬜ **Phase 4 — NVIDIA CUDA engine**: `download_gpu_engine` + detection exist; finalizing needs an **NVIDIA machine** to validate the GPU path end-to-end.
+- ⬜ **Injection elevated-window (UIPI) + per-app context (Phase 3)**: need Win32 (`GetForegroundWindow` + integrity-level probe) and real elevated/UAC windows to validate; deferred rather than shipping unvalidated FFI.
 
 ## Backlog / ideas
 
