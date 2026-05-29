@@ -1,5 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { cancelDictation, type DictationEvent, startDictation, stopDictation } from "./dictation";
+import { type UnlistenFn, listen } from "@tauri-apps/api/event";
+import { type DictationEvent, cancelDictation, startDictation, stopDictation } from "./dictation";
 
 type Intent = "start" | "stop" | "cancel";
 

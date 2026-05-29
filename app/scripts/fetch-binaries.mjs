@@ -12,21 +12,14 @@
 // (18+) and Bun, ESM, no external deps — uses global `fetch` and the `tar` that ships on
 // Windows 10+ (bsdtar). Windows-only target (ADR-011); a no-op on other OSes.
 
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  readdir,
-  rename,
-  rm,
-  stat,
-} from "node:fs/promises";
 import { createWriteStream } from "node:fs";
+import { copyFile, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 // CPU whisper.cpp Windows x64 release (matches the v1.8.4 GPU build in stt.rs).
 const CPU_URL =
@@ -99,8 +92,7 @@ async function main() {
   // Binaries are Windows-only (ADR-011) — don't fail dev on macOS/Linux.
   if (process.platform !== "win32") {
     console.log(
-      "fetch-binaries: whisper-server is Windows-only (ADR-011); nothing to fetch on " +
-        `${process.platform}.`,
+      `fetch-binaries: whisper-server is Windows-only (ADR-011); nothing to fetch on ${process.platform}.`,
     );
     return;
   }
@@ -129,9 +121,7 @@ async function main() {
     if (!copied.includes(SERVER_EXE)) {
       throw new Error(`failed to copy ${SERVER_EXE}`);
     }
-    console.log(
-      `fetch-binaries: copied into ${BINARIES_DIR}:\n  ${copied.join("\n  ")}`,
-    );
+    console.log(`fetch-binaries: copied into ${BINARIES_DIR}:\n  ${copied.join("\n  ")}`);
   } finally {
     await rm(zip, { force: true }).catch(() => {});
     await rm(tmp, { recursive: true, force: true }).catch(() => {});

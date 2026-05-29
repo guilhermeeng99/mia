@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { type Channel, invoke } from "@tauri-apps/api/core";
 
 /** A Whisper model offered in the picker; mirrors Rust `stt::WhisperModel`. */
 export interface WhisperModel {

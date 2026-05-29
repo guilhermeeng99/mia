@@ -43,9 +43,7 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": [
-        "https://github.com/guilhermeeng99/mia/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/guilhermeeng99/mia/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzRTU2Q0I2MjlGOUI0QgpSV1JMbTU5aXkxWStEMHpyaytOL0tEZVo2aHYvS0N1NTlocHlub05sZ3ByeWV2dmJkaTg1OTVESQo="
     }
   },
