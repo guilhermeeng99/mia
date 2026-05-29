@@ -7,6 +7,7 @@
 //! exposes model management + warm-status (stt), text injection (inject), and the
 //! `app_version` IPC smoke test; cleanup is a pure module called in-process.
 
+pub mod ai_commands;
 pub mod audio;
 pub mod cleanup;
 pub mod dictionary;
