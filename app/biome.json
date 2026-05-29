@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": ["dist", "src-tauri/target", "src-tauri/gen", "node_modules", "**/*.svelte"]
+    "ignore": [
+      "dist",
+      "src-tauri/target",
+      "src-tauri/gen",
+      "node_modules",
+      "**/*.svelte",
+      "src-tauri/tauri.conf.json",
+      "package.json"
+    ]
   },
   "formatter": {
     "enabled": true,
