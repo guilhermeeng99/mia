@@ -1,6 +1,6 @@
 # MIA — Roadmap
 
-> **Status**: Phase 1 (Core Dictation MVP) — **core loop validated on Windows** 🎉. The end-to-end loop runs end-to-end on a real machine: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server (pt-BR) → deterministic cleanup → SendInput injection, with the floating HUD reflecting each phase + a live waveform. Also done: language selection, dictionary bias prompt, hotkey recorder + Esc-cancel/missing-release watchdog, onboarding-completed gate, snippet master toggle, and launch-at-login. Phase 0 (Docs & Design) complete. Remaining for Phase 1 is broader on-device polish (toggle-mode auto-endpoint, elevated-window injection edge case). **Phase 2 (AI) is descoped** by product decision — MIA stays a faithful dictation tool. Phases 3–4 are partly gated on external assets (signing keys, NVIDIA hardware) — see "Next / open".
+> **Status**: Phase 1 (Core Dictation MVP) — **core loop validated on Windows** 🎉. The end-to-end loop runs end-to-end on a real machine: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server (pt-BR) → deterministic cleanup → SendInput injection, with the floating HUD reflecting each phase + a live waveform. Also done: language selection, dictionary bias prompt, hotkey recorder + Esc-cancel/missing-release watchdog, onboarding-completed gate, snippet master toggle, and launch-at-login. Phase 0 (Docs & Design) complete. Remaining for Phase 1 is broader on-device polish (toggle-mode auto-endpoint, elevated-window injection edge case). **Phase 2 (AI) is descoped** by product decision — MIA stays a faithful dictation tool. Phase 4: **signed auto-update** is wired + the repo signing secret is set, and the **NVIDIA CUDA engine** is validated on an RTX 4050 (GPU-accelerated dictation). Remaining Phase 4: cut the first signed `v*` release. See "Next / open".
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 > Single source of truth for what is **done**, **in progress**, and **planned**. Update in the same change that shifts scope (see [`/CLAUDE.md`](../CLAUDE.md) → Post-Change Checklist).
@@ -21,7 +21,7 @@ MIA is a free, open-source, **privacy-first, fully local** voice-to-text **dicta
 | 1 | Core Dictation MVP — PTT → capture → VAD → warm STT → cleanup → inject; tray + HUD; pt-BR + English | 🚧 In progress |
 | 2 | AI Magic — optional local LLM Command Mode + Polish | ❌ Descoped (product decision) |
 | 3 | Personalization — custom dictionary, snippets, per-app writing styles/context | ⬜ Planned |
-| 4 | Polish & Distribution — onboarding, settings/"Hub" dashboard + stats, signed auto-update, NVIDIA CUDA, release pipeline | ⬜ Planned |
+| 4 | Polish & Distribution — onboarding, settings/"Hub" dashboard + stats, signed auto-update, NVIDIA CUDA, release pipeline | 🚧 In progress |
 | 5 | Backlog — streaming partials, wake word, Whisper Mode, macOS/Linux, file-transcription mode | 💡 Backlog |
 
 ---
@@ -91,7 +91,7 @@ starting point. See [ai-commands.md](specs/ai-commands.md) · [ADR-008](specs/ar
 
 These remaining items are blocked on assets, hardware, or secrets the project owner must supply; the code paths around them are ready, but they can't be implemented + validated without:
 
-- 🚧 **Phase 4 — NVIDIA CUDA engine**: wired + the Hub download button added; being validated end-to-end on an RTX 4050 (engine download + GPU-accelerated dictation).
+- ✅ **Phase 4 — NVIDIA CUDA engine**: validated on an RTX 4050 — the downloaded cuBLAS whisper-server boots on the GPU (`ggml_cuda_init: found 1 CUDA device … RTX 4050`, `using CUDA0 backend`, model loaded as `CUDA0`), so warm dictation runs GPU-accelerated.
 - ⬜ **Injection elevated-window (UIPI) + per-app context (Phase 3)**: need Win32 (`GetForegroundWindow` + integrity-level probe) and real elevated/UAC windows to validate; deferred rather than shipping unvalidated FFI.
 
 ## Backlog / ideas
