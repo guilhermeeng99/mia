@@ -1,6 +1,6 @@
 # MIA — Project Conventions
 
-> **Status**: Phases 0, 1, and 3 **code-complete**; core loop validated on Windows (PTT → capture → server-side Silero-VAD-gated warm STT → cleanup → inject, pt-BR + English, with the floating HUD). Now also: close-to-tray, toggle-mode auto-endpoint (energy-gated), focused-target + elevated-window (UIPI) injection detection, per-app writing styles, mic-test live meter, and a mic permission-denied deep-link. Phase 4 is code-complete: the release pipeline now **mirrors Toolzy** — `release.yml` auto-bumps/tags/publishes a signed, live installer + `latest.json` on every push to `main` (both signing secrets set), so the **first signed release auto-cuts when this branch merges** (→ `v0.1.1`). App icons/branding now ship — the supplied logo was rasterized into the full icon set. Phase 2 (AI Command Mode / Polish) is **descoped** by product decision — MIA stays a faithful dictation tool. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status**: Phases 0, 1, and 3 **code-complete**; core loop validated on Windows (PTT → capture → server-side Silero-VAD-gated warm STT → cleanup → inject, pt-BR + English, with the floating HUD). Now also: close-to-tray, toggle-mode auto-endpoint (energy-gated), focused-target + elevated-window (UIPI) injection detection, per-app writing styles, mic-test live meter, and a mic permission-denied deep-link. Phase 4 is done: the release pipeline **mirrors Toolzy** — `release.yml` auto-bumps/tags/publishes a signed, live installer + `latest.json` on every push to `main` (both signing secrets set); signed releases are live (latest **v0.1.2**). App icons/branding now ship — the supplied logo was rasterized into the full icon set. Phase 2 (AI Command Mode / Polish) is **descoped** by product decision — MIA stays a faithful dictation tool. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
@@ -58,11 +58,22 @@ app/
       hotkey.rs        #   global push-to-talk (tauri-plugin-global-shortcut)
       tray.rs          #   system tray (Tauri's built-in tray-icon feature)
       hud.rs           #   floating mic HUD overlay window plumbing
+      dictation.rs     #   end-to-end orchestrator (capture → STT → cleanup → dict/snippets → inject)
+      settings.rs      #   persisted settings (single settings.json) + get/update/reset commands
+      stats.rs         #   local-only usage stats (WPM, day streak) — never uploaded
+      dictionary.rs    #   custom dictionary / word replacement + Whisper bias prompt
+      snippets.rs      #   voice-triggered text expansion
+      app_styles.rs    #   per-app writing styles/context (keyed to the focused EXE)
+      text_match.rs    #   shared whole-word tokenize/reconstruct (dictionary + snippets)
+      win32.rs         #   Windows foreground-window + token-elevation probes (UIPI)
+      persist.rs       #   atomic JSON load/save helpers + id generation
+      ai_commands.rs   #   dormant Phase-2 (AI) helpers — descoped, wired to nothing
     capabilities/      #   Tauri permissions (scoped)
     tauri.conf.json    #   bundle resources (whisper-server binary + DLLs), window config
   scripts/fetch-binaries.mjs  # auto-fetch whisper binaries + sibling DLLs on Windows
 docs/specs/            # per-feature contracts + architecture.md (ADRs)
 docs/ROADMAP.md        # done / doing / planned
+site/                  # standalone marketing landing page (Vite + pnpm) — NOT the app; deployed by deploy-site.yml
 ```
 
 Layer rules:

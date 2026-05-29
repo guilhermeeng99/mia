@@ -4,7 +4,7 @@
 
 Open-source, local, privacy-first voice dictation for Windows — an offline alternative to [Wispr Flow](https://wisprflow.ai).
 
-> **Status**: Phase 1 (Core Dictation MVP) — **core loop validated on Windows end-to-end.** The full live loop runs on a real machine: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 0 (Docs & Design) is complete. Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. Phase 4 **signed in-app auto-update** and the optional **NVIDIA CUDA** engine are **shipped** (CUDA validated on an RTX 4050); the remaining Phase 4 work is cutting the first signed `v*` release. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
+> **Status**: Phases 0, 1, and 3 are **code-complete** and the core loop is **validated on Windows end-to-end**: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 4 (Polish & Distribution) is **done** — signed in-app auto-update and the optional **NVIDIA CUDA** engine (validated on an RTX 4050) ship, and `release.yml` auto-cuts a signed installer + `latest.json` on every push to `main` (latest release **v0.1.2**). Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
@@ -23,9 +23,9 @@ Press a global hotkey (push-to-talk), speak, and MIA types polished text at your
 
 ## Features
 
-Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlog. Phase 1 is underway — the markers below mirror [docs/ROADMAP.md](docs/ROADMAP.md).
+Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlog. Phases 1 and 3 are code-complete and Phase 4 is done — the markers below mirror [docs/ROADMAP.md](docs/ROADMAP.md).
 
-### Core dictation (Phase 1 — 🚧 In progress)
+### Core dictation (Phase 1 — ✅ Code-complete, validated on Windows)
 - ✅ End-to-end live loop **validated on Windows**: global PTT → cpal capture → server-side VAD-gated warm whisper-server → deterministic cleanup → SendInput injection at the cursor.
 - ✅ Global **push-to-talk** hotkey that works even when MIA is unfocused (default Ctrl+Space) — runtime registration, press/hold + toggle reducer, chord recorder, and conflict-probe all wired.
 - ✅ Live microphone capture (16 kHz mono) with device selection and a live level meter streamed to the HUD.
@@ -37,22 +37,22 @@ Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlo
 - ✅ System **tray** icon (Open / Quit) and a floating **mic HUD** overlay in its own transparent, always-on-top, click-through window (listening → transcribing → inserting, with a live waveform).
 - ✅ **On-demand model download** gate with streamed progress (models fetched from Hugging Face).
 - ✅ **pt-BR + English** first-class language selection (Automático / Português (pt-BR) / English), forwarded per utterance to the warm Whisper path.
-- 🚧 Genuinely remaining (runtime): toggle-mode auto-endpoint (client-side per-frame Silero) and elevated-window (UIPI) injection.
+- ✅ Toggle-mode auto-endpoint (energy-gated, client-side) and focused-target + elevated-window (UIPI) injection detection are wired; on-device UAC validation is owner-gated.
 
 ### AI magic (Phase 2 — ❌ Descoped)
 **Dropped by product decision (2026-05-29):** MIA stays a faithful, deterministic dictation tool — the local-LLM Command Mode / Polish layer is **not** wanted. A runtime (warm `llama-server` + GGUF download) was built and then **reverted**; only the pure, cargo-tested helpers remain dormant in `ai_commands.rs`, wired to nothing. If AI is ever reconsidered, that core is the starting point.
 
-### Personalization (Phase 3 — ⬜ Planned)
-- 🚧 Custom dictionary / personal vocabulary and word replacement (pure core + CRUD commands + Hub section done; bias-prompt wiring remains).
-- 🚧 Voice-triggered snippets (text expansion) (pure core + CRUD commands + Hub section + live preview done; master toggle remains).
-- ⬜ Per-app writing styles / context.
+### Personalization (Phase 3 — ✅ Code-complete)
+- ✅ Custom dictionary / personal vocabulary and word replacement (pure core + CRUD commands + Hub section + bias-prompt wired into warm Whisper).
+- ✅ Voice-triggered snippets (text expansion) (pure core + CRUD + Hub section + live preview + master enable toggle).
+- ✅ Per-app writing styles / context (overrides keyed to the focused app's executable).
 
-### Polish & distribution (Phase 4 — ⬜ Planned)
-- 🚧 First-run onboarding (hotkey, mic, model download) — `Onboarding.svelte` wizard reusing existing commands; persisted "completed" flag remains.
-- 🚧 Settings/"Hub" dashboard with usage stats — first Hub surface + `settings.rs`/`stats.rs` persistence done; some `update_settings` side effects + updater remain.
+### Polish & distribution (Phase 4 — ✅ Done)
+- ✅ First-run onboarding (hotkey, mic, model download) — `Onboarding.svelte` wizard; the "completed" flag is persisted so MIA then boots straight to the tray.
+- ✅ Settings/"Hub" dashboard with usage stats — Hub surface + `settings.rs`/`stats.rs` persistence, with `update_settings` side effects (PTT re-register, warm-engine invalidation, launch-at-login) wired.
 - ✅ Signed in-app auto-update (`tauri-plugin-updater` + an in-Hub "Atualizar" affordance that surfaces only when a newer signed release exists; minisign-verified).
 - ✅ Optional **NVIDIA CUDA** engine (~7–10× faster), downloaded on demand — validated on an RTX 4050.
-- 🚧 GitHub release pipeline — `.github/workflows/ci.yml` + `release.yml` exist; signing secrets + updater endpoint remain.
+- ✅ GitHub release pipeline — `.github/workflows/release.yml` auto-bumps, tags, and publishes a signed Windows installer + `latest.json` on every push to `main` (both signing secrets set); a separate `deploy-site.yml` ships the landing page.
 
 ### Backlog (💡)
 - Streaming live partials, GPU keep-warm sub-second latency, "Hey MIA" wake word, Whisper Mode (quiet speech), macOS/Linux support, file-transcription mode.
@@ -88,9 +88,9 @@ All of this runs in the Rust core — the engine. The Svelte UI is a thin webvie
 
 ## Install
 
-> No release is cut yet — the first installer ships in **Phase 4**. The CI + signed-release **pipeline is already built** (`.github/workflows/ci.yml` and `.github/workflows/release.yml`: `cargo test` + clippy + svelte-check on push/PR, and a `tauri-action` signed Windows installer on `v*` tags), but no version has been tagged/published.
+Download the latest **signed installer** (currently **v0.1.2**) from [GitHub Releases](../../releases) and run it. Updates are delivered via signed in-app auto-update (minisign-verified `latest.json`).
 
-When released, download the **signed installer** from [GitHub Releases](../../releases) and run it. Updates will be delivered via signed in-app auto-update (minisign-verified).
+> The release pipeline is automated: `.github/workflows/release.yml` runs `cargo test` + clippy + svelte-check, then auto-bumps the version, tags it, and publishes a `tauri-action` signed Windows installer + `latest.json` on every push to `main`.
 
 ---
 
@@ -141,7 +141,7 @@ The phased plan lives in [docs/ROADMAP.md](docs/ROADMAP.md).
   - [design-system.md](docs/specs/design-system.md) — the "Calm Focus" design system.
   - [dictation.md](docs/specs/dictation.md) — core orchestration.
   - [speech-to-text.md](docs/specs/speech-to-text.md) — Whisper engine, models, GPU, VAD.
-  - [audio-capture.md](docs/specs/audio-capture.md) · [text-injection.md](docs/specs/text-injection.md) · [text-cleanup.md](docs/specs/text-cleanup.md) · [hotkeys.md](docs/specs/hotkeys.md) · [tray-and-hud.md](docs/specs/tray-and-hud.md) · [onboarding.md](docs/specs/onboarding.md) · [settings.md](docs/specs/settings.md) · [custom-dictionary.md](docs/specs/custom-dictionary.md) · [snippets.md](docs/specs/snippets.md) · [ai-commands.md](docs/specs/ai-commands.md)
+  - [audio-capture.md](docs/specs/audio-capture.md) · [text-injection.md](docs/specs/text-injection.md) · [text-cleanup.md](docs/specs/text-cleanup.md) · [hotkeys.md](docs/specs/hotkeys.md) · [tray-and-hud.md](docs/specs/tray-and-hud.md) · [onboarding.md](docs/specs/onboarding.md) · [settings.md](docs/specs/settings.md) · [custom-dictionary.md](docs/specs/custom-dictionary.md) · [snippets.md](docs/specs/snippets.md) · [per-app-context.md](docs/specs/per-app-context.md) · [ai-commands.md](docs/specs/ai-commands.md)
 
 ---
 

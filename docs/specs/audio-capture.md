@@ -101,13 +101,15 @@ struct AudioDevice { id: String, name: String, is_default: bool }
 fn list_input_devices() -> Result<Vec<AudioDevice>, String>;
 
 /// One-shot mic test for onboarding/settings: capture briefly from the default mic and
-/// return peak/RMS so the UI can show "we can hear you" without running STT. An optional
-/// `level` Channel streams `CaptureEvent::Level` for a live meter while the test runs.
+/// return peak/RMS so the UI can show "we can hear you" without running STT. The `level`
+/// Channel streams `CaptureEvent::Level` for a live meter while the test runs (required —
+/// Tauri accepts only a bare `Channel<T>`, not `Option<Channel<T>>`; callers that don't
+/// want the meter simply ignore it).
 #[tauri::command]
 fn test_microphone(
     state: State<'_, CaptureState>,
     ms: Option<u32>,
-    level: Option<tauri::ipc::Channel<CaptureEvent>>,
+    level: tauri::ipc::Channel<CaptureEvent>,
 ) -> Result<MicTest, String>;
 
 /// Deep-link the user to Windows' microphone privacy settings (used by the denied-permission
