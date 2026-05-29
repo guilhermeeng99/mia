@@ -297,13 +297,16 @@ pub fn stop_dictation(
     eprintln!("[dictation] warm engine ready (model={})", s.model.model);
     let stt_start = now_ms();
     let lang = stt_lang(s.general.default_language);
-    let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref())
+    // Snapshot the dictionary once: its bias terms become Whisper's initial prompt
+    // (spelling nudge) AND the post-STT replacement set (custom-dictionary.md).
+    let (entries, dsettings) = dict.snapshot()?;
+    let bias = crate::dictionary::build_bias_prompt(&entries, &dsettings);
+    let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref(), (!bias.is_empty()).then_some(bias.as_str()))
         .map_err(|e| fail(&events, e))?;
     let stt_end = now_ms();
     eprintln!("[dictation] transcript: {} chars in {} ms", raw.chars().count(), stt_end.saturating_sub(stt_start));
 
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(s.general.default_language), &cleanup_options(&s.cleanup));
-    let (entries, dsettings) = dict.snapshot()?;
     let dicted = crate::dictionary::apply_dictionary(&cleaned, &entries, &dsettings);
     let set = crate::snippets::compile_snippets(&snips.snapshot()?);
     let final_text = crate::snippets::expand_snippets(&dicted, &set).output;

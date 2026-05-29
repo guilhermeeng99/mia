@@ -190,7 +190,9 @@ fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String> {
 }
 
 /// Per-request `/inference` fields enforcing deterministic, faithful decoding.
-fn inference_fields(language: Option<&str>) -> Vec<(String, String)> {
+/// `prompt` is the custom-dictionary bias text (Whisper's initial prompt) — a
+/// comma-joined term list that nudges spelling of names/jargon (custom-dictionary.md).
+fn inference_fields(language: Option<&str>, prompt: Option<&str>) -> Vec<(String, String)> {
     let mut f = vec![
         ("temperature".into(), "0.0".into()),
         // temperature_inc=0 disables whisper's temperature fallback ladder (the
@@ -200,6 +202,9 @@ fn inference_fields(language: Option<&str>) -> Vec<(String, String)> {
     ];
     if let Some(lang) = language {
         f.push(("language".into(), lang.to_string()));
+    }
+    if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        f.push(("prompt".into(), p.to_string()));
     }
     f
 }
@@ -532,6 +537,7 @@ pub fn transcribe_chunk(
     state: &SttState,
     samples: &[f32],
     language: Option<&str>,
+    prompt: Option<&str>,
 ) -> Result<String, String> {
     let port = {
         let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
@@ -541,7 +547,7 @@ pub fn transcribe_chunk(
     let pcm: Vec<i16> = samples.iter().map(|&x| crate::audio::f32_to_s16(x)).collect();
     let wav = wav_from_pcm16(&pcm, 16_000, 1);
     let boundary = "----miaformboundary";
-    let fields_owned = inference_fields(language);
+    let fields_owned = inference_fields(language, prompt);
     let fields: Vec<(&str, &str)> =
         fields_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let body = multipart_body(boundary, &wav, &fields);
@@ -646,12 +652,21 @@ mod tests {
 
     #[test]
     fn inference_fields_enforce_determinism() {
-        let f = inference_fields(Some("pt"));
+        let f = inference_fields(Some("pt"), None);
         assert!(f.iter().any(|(k, v)| k == "temperature" && v == "0.0"));
         assert!(f.iter().any(|(k, v)| k == "temperature_inc" && v == "0.0"));
         assert!(f.iter().any(|(k, v)| k == "language" && v == "pt"));
         // no language field when None
-        assert!(!inference_fields(None).iter().any(|(k, _)| k == "language"));
+        assert!(!inference_fields(None, None).iter().any(|(k, _)| k == "language"));
+    }
+
+    #[test]
+    fn inference_fields_carry_bias_prompt_when_present() {
+        let f = inference_fields(Some("pt"), Some("MIA, Tauri"));
+        assert!(f.iter().any(|(k, v)| k == "prompt" && v == "MIA, Tauri"));
+        // blank/whitespace bias is dropped, not sent empty
+        assert!(!inference_fields(None, Some("   ")).iter().any(|(k, _)| k == "prompt"));
+        assert!(!inference_fields(None, None).iter().any(|(k, _)| k == "prompt"));
     }
 
     #[test]
