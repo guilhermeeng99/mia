@@ -364,7 +364,7 @@ Update (About tab): Idle → Checking → UpToDate | UpdateAvailable → Downloa
   - [x] `apply_patch` merges only provided fields; absent fields unchanged.
   - [x] `validate` clamps/normalizes (unknown language → `auto`, invalid enum rejected).
   - [x] `migrate(json, from_version)` upgrades old shapes; preserves/handles unknown fields (v1 scope: missing `schemaVersion` + tolerant partial-group load).
-  - [ ] WPM and streak arithmetic in `stats.rs` (boundary days, zero-dictation, streak break/resume) — pending `stats.rs`.
+  - [x] WPM and streak arithmetic in `stats.rs` (boundary days, zero-dictation, streak break/resume).
   - [ ] each `Err(String)` path string is the documented message — pending the `update_settings` side effects.
 - **Manual / runtime** (real Windows host, mic, model):
   - [ ] missing `settings.json` → defaults, file created on first save.
