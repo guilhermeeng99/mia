@@ -1,7 +1,7 @@
 # Snippets Feature Spec
 
-> **Status**: Draft / Planned (Phase 3 — no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). Runtime-pending: the CRUD commands + `snippets.json` persistence + managed state, cross-trigger duplicate rejection, and the master `snippets_enabled` toggle.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
 
@@ -291,20 +291,21 @@ List(empty | populated) → Editor(add/edit: trigger, expansion, anchor, case, e
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] `expand_snippets` — single match anywhere; match at utterance start; no match for
+  - [x] `expand_snippets` — single match anywhere; match at utterance start; no match for
         substring-inside-word; multiple non-overlapping matches in one utterance; empty/whitespace
         input unchanged
-  - [ ] `normalize_trigger` — case fold, NFC, internal-whitespace collapse; "Minha Assinatura" matches
+  - [x] `normalize_trigger` — case fold, NFC, internal-whitespace collapse; "Minha Assinatura" matches
         "minha assinatura"
-  - [ ] `compile_snippets` — longest-trigger-first ordering; disabled snippets excluded; duplicate
-        normalized triggers detected
-  - [ ] `find_match` — word-boundary correctness; `StartOnly` matches only at the start; longest-first
+  - [x] `compile_snippets` — longest-trigger-first ordering; disabled snippets excluded. (Duplicate
+        normalized-trigger detection is command-level, pending CRUD.)
+  - [x] `find_match` — word-boundary correctness; `StartOnly` matches only at the start; longest-first
         wins on overlap
-  - [ ] `apply_case` — `Verbatim` returns as-is; `MatchSentence` capitalizes at sentence start only
-  - [ ] expansion is **not** re-scanned (no recursion) and **not** re-cleaned (newlines/URLs intact)
-  - [ ] spacing preserved around an in-sentence expansion (no doubled/missing spaces)
+  - [x] `apply_case` — `Verbatim` returns as-is; `MatchSentence` capitalizes at sentence start only
+  - [x] expansion is **not** re-scanned (no recursion) and **not** re-cleaned (newlines/URLs intact)
+  - [x] spacing preserved around an in-sentence expansion (no doubled/missing spaces)
   - [ ] each `Err(String)` from `upsert_snippet`/`delete_snippet` (empty trigger, empty expansion,
-        duplicate trigger, not found)
+        duplicate trigger, not found) — `validate_snippet` covers empty trigger/expansion; duplicate +
+        not-found pending the CRUD commands
 - **Manual / runtime** (needs mic, model, a real focused app, and saved snippets):
   - [ ] happy path: speak a trigger → expansion typed at cursor (pt-BR and English triggers)
   - [ ] trigger embedded mid-sentence expands with surrounding text intact
