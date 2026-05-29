@@ -7,9 +7,11 @@
 //! exposes model management + warm-status (stt), text injection (inject), and the
 //! `app_version` IPC smoke test; cleanup is a pure module called in-process.
 
+pub mod audio;
 pub mod cleanup;
 pub mod inject;
 pub mod stt;
+pub mod vad;
 
 /// Return the running app version (compiled in from Cargo). Trivial by design —
 /// it is the scaffold's IPC smoke test, called by `App.svelte`.
@@ -26,6 +28,7 @@ pub fn run() {
         .manage(stt::SttState::default())
         .invoke_handler(tauri::generate_handler![
             app_version,
+            audio::list_input_devices,
             inject::inject_text,
             stt::list_whisper_models,
             stt::download_whisper_model,
