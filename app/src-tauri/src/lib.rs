@@ -10,6 +10,7 @@
 pub mod ai_commands;
 pub mod audio;
 pub mod cleanup;
+pub mod dictation;
 pub mod dictionary;
 pub mod hotkey;
 pub mod inject;
