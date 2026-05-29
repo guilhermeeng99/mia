@@ -428,6 +428,11 @@ impl DictState {
     fn entries_copy(&self) -> Result<Vec<DictEntry>, String> {
         Ok(self.entries.lock().map_err(|_| "dictionary state poisoned".to_string())?.clone())
     }
+
+    /// In-process snapshot for the orchestrator (dictation.rs).
+    pub fn snapshot(&self) -> Result<(Vec<DictEntry>, DictSettings), String> {
+        Ok((self.entries_copy()?, self.settings_copy()?))
+    }
 }
 
 fn new_id() -> String {

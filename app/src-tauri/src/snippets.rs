@@ -293,6 +293,11 @@ impl SnippetState {
     fn list(&self) -> Result<Vec<Snippet>, String> {
         Ok(self.inner.lock().map_err(|_| "snippet state poisoned".to_string())?.clone())
     }
+
+    /// In-process snapshot for the orchestrator (dictation.rs).
+    pub fn snapshot(&self) -> Result<Vec<Snippet>, String> {
+        self.list()
+    }
 }
 
 fn new_id() -> String {

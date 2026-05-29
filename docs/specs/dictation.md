@@ -1,6 +1,6 @@
 # Dictation Feature Spec
 
-> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. Runtime-pending: the `start/stop/cancel_dictation` commands that wire real cpal capture + warm STT + cleanup/dictionary/snippets + injection (depend on the audio + hotkey runtime; validated on Windows).
+> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. Runtime-pending: the global-hotkey trigger wiring (separate), the live HUD waveform `Level` forwarding, and toggle-mode auto-endpoint.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted. Code does not exist yet (Phase 0 docs).
 > **Environment**: desktop (Windows, native)
@@ -320,7 +320,8 @@ Transitions:
   - [x] empty-result handling: the `Empty`/`TranscribedEmpty` signals return to Idle and map to
         `EmptySpeech` (Rule 7). (The per-stage emptiness checks live in cleanup/stt.)
   - [x] `DictationResult` latency-summary builder from stage timestamps.
-  - [ ] each `Err(String)` string the command can return is exactly the one the UI maps — pending the commands.
+  - [x] each `Err(String)` the commands return is wired (model-not-downloaded via `warm_model`, STT
+        failure, injection failure; "capture already in progress" guards re-entry) — build-verified.
 - **Manual / runtime** (needs mic, model, real focused app):
   - [ ] happy path push-to-hold: hold → speak → release → text at cursor (pt-BR and English).
   - [ ] happy path press-to-toggle: press → speak → trailing silence auto-ends → text at cursor.

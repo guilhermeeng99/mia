@@ -113,6 +113,19 @@ impl StatsState {
         *self.inner.lock().map_err(|_| "stats state poisoned".to_string())? = stats;
         Ok(())
     }
+
+    /// Fold one dictation into the counters and persist (called by the orchestrator).
+    pub fn record_and_save(
+        &self,
+        app: &AppHandle,
+        words: u64,
+        ms: u64,
+        today: i64,
+    ) -> Result<(), String> {
+        let updated = record_dictation(self.get()?, words, ms, today);
+        save_stats(app, &updated)?;
+        self.set(updated)
+    }
 }
 
 fn stats_path(app: &AppHandle) -> Result<PathBuf, String> {

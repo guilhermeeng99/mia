@@ -306,6 +306,11 @@ impl SettingsState {
         Ok(self.inner.lock().map_err(|_| "settings state poisoned".to_string())?.clone())
     }
 
+    /// In-process snapshot for the orchestrator (dictation.rs).
+    pub fn snapshot(&self) -> Result<Settings, String> {
+        self.get()
+    }
+
     fn set(&self, settings: Settings) -> Result<(), String> {
         *self.inner.lock().map_err(|_| "settings state poisoned".to_string())? = settings;
         Ok(())
