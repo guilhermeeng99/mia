@@ -355,6 +355,18 @@ impl DictState {
         Self { entries: Mutex::new(entries), settings: Mutex::new(settings) }
     }
 
+    /// Replace the in-memory dictionary with the disk-loaded copy at startup.
+    /// Managed (empty) on the builder so the dict commands are race-proof against
+    /// an early frontend invoke; `setup` hydrates it once the handle exists.
+    pub fn hydrate(&self, entries: Vec<DictEntry>, settings: DictSettings) {
+        if let Ok(mut guard) = self.entries.lock() {
+            *guard = entries;
+        }
+        if let Ok(mut guard) = self.settings.lock() {
+            *guard = settings;
+        }
+    }
+
     fn settings_copy(&self) -> Result<DictSettings, String> {
         Ok(*self.settings.lock().map_err(|_| "dictionary state poisoned".to_string())?)
     }

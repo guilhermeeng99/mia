@@ -333,6 +333,15 @@ impl SettingsState {
         Self { inner: Mutex::new(settings) }
     }
 
+    /// Replace the in-memory settings with the disk-loaded copy at startup. The
+    /// state is managed (defaults) on the builder so commands are race-proof
+    /// against an early frontend invoke; `setup` hydrates it once the handle exists.
+    pub fn hydrate(&self, settings: Settings) {
+        if let Ok(mut guard) = self.inner.lock() {
+            *guard = settings;
+        }
+    }
+
     fn get(&self) -> Result<Settings, String> {
         Ok(self.inner.lock().map_err(|_| "settings state poisoned".to_string())?.clone())
     }

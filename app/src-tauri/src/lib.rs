@@ -44,6 +44,16 @@ pub fn run() {
         .manage(audio::CaptureState::default())
         // Focused-app captured at session start → per-app style + UIPI checks (dictation.rs).
         .manage(dictation::FocusContext::default())
+        // Disk-backed state is managed up-front with defaults so commands are
+        // race-proof: the packaged webview loads from disk faster than the dev
+        // server, so the frontend can `invoke` before `setup` runs. Managing here
+        // (not in `setup`) guarantees the state exists before any IPC; `setup`
+        // then hydrates each from disk once the app handle is available.
+        .manage(settings::SettingsState::new(settings::Settings::default()))
+        .manage(hotkey::HotkeyRuntime::new(hotkey::HotkeyConfig::default()))
+        .manage(stats::StatsState::new(stats::UsageStats::default()))
+        .manage(dictionary::DictState::new(Vec::new(), dictionary::DictSettings::default()))
+        .manage(snippets::SnippetState::new(Vec::new()))
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
         // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
         .plugin(
@@ -70,10 +80,13 @@ pub fn run() {
         .setup(|app| {
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
+            // Hydrate the already-managed (default) state from disk now that the
+            // app handle exists. Failure-safe (defaults on a missing or corrupt
+            // file, never a startup failure — settings.rs Rule 4/5).
             let loaded = settings::load_settings(app.handle());
             let hk_cfg = loaded.hotkey.clone();
             let launch_at_login = loaded.general.launch_at_login;
-            app.manage(settings::SettingsState::new(loaded));
+            app.state::<settings::SettingsState>().hydrate(loaded);
             // Sync the OS autostart entry to the saved preference (best-effort).
             {
                 use tauri_plugin_autostart::ManagerExt;
@@ -81,17 +94,17 @@ pub fn run() {
                 let _ = if launch_at_login { mgr.enable() } else { mgr.disable() };
             }
             // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
-            app.manage(hotkey::HotkeyRuntime::new(hk_cfg.clone()));
+            app.state::<hotkey::HotkeyRuntime>().hydrate(hk_cfg.clone());
             hotkey::register_initial(app.handle(), &hk_cfg);
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
-            app.manage(stats::StatsState::new(stats));
+            app.state::<stats::StatsState>().hydrate(stats);
             // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
             let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
-            app.manage(dictionary::DictState::new(dict_entries, dict_settings));
+            app.state::<dictionary::DictState>().hydrate(dict_entries, dict_settings);
             // Voice-triggered snippets — loaded from snippets.json.
             let snips = snippets::load_snippets(app.handle());
-            app.manage(snippets::SnippetState::new(snips));
+            app.state::<snippets::SnippetState>().hydrate(snips);
             // System tray (Open / Quit). MIA runs in the tray.
             tray::init(app.handle())?;
             // Dock the floating, click-through, always-on-top mic HUD overlay window

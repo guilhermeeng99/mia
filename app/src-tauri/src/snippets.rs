@@ -229,6 +229,15 @@ impl SnippetState {
         Self { inner: Mutex::new(snippets) }
     }
 
+    /// Replace the in-memory snippets with the disk-loaded copy at startup.
+    /// Managed (empty) on the builder so the snippet commands are race-proof
+    /// against an early frontend invoke; `setup` hydrates it once the handle exists.
+    pub fn hydrate(&self, snippets: Vec<Snippet>) {
+        if let Ok(mut guard) = self.inner.lock() {
+            *guard = snippets;
+        }
+    }
+
     fn list(&self) -> Result<Vec<Snippet>, String> {
         Ok(self.inner.lock().map_err(|_| "snippet state poisoned".to_string())?.clone())
     }

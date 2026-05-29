@@ -105,6 +105,15 @@ impl StatsState {
         Self { inner: Mutex::new(stats) }
     }
 
+    /// Replace the in-memory stats with the disk-loaded copy at startup. Managed
+    /// (defaults) on the builder so `get_stats` is race-proof against an early
+    /// frontend invoke; `setup` hydrates it once the handle exists.
+    pub fn hydrate(&self, stats: UsageStats) {
+        if let Ok(mut guard) = self.inner.lock() {
+            *guard = stats;
+        }
+    }
+
     fn get(&self) -> Result<UsageStats, String> {
         Ok(*self.inner.lock().map_err(|_| "stats state poisoned".to_string())?)
     }

@@ -368,6 +368,15 @@ impl HotkeyRuntime {
             generation: AtomicU64::new(0),
         }
     }
+
+    /// Replace the active config with the saved one at startup. Managed (default
+    /// chord) on the builder so `get_hotkey` is race-proof against an early
+    /// frontend invoke; `setup` hydrates it once the saved config is loaded.
+    pub fn hydrate(&self, cfg: HotkeyConfig) {
+        if let Ok(mut guard) = self.cfg.lock() {
+            *guard = cfg;
+        }
+    }
 }
 
 /// The transient `Escape` binding registered only while a session is active (Rule 8).
