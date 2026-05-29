@@ -40,9 +40,6 @@ pub fn run() {
         // every utterance (ADR-004) — never a cold spawn per utterance.
         .manage(stt::SttState::default())
         .manage(audio::CaptureState::default())
-        // The optional local LLM (Command Mode / Polish) is a warm llama-server, loaded
-        // once on demand and never on the faithful dictation path (ADR-008).
-        .manage(ai_commands::LlmState::default())
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
         // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
         .plugin(
@@ -126,12 +123,6 @@ pub fn run() {
             stt::gpu_engine_status,
             stt::download_gpu_engine,
             stt::warm_status,
-            ai_commands::list_llm_models,
-            ai_commands::ai_status,
-            ai_commands::download_llm,
-            ai_commands::unload_llm,
-            ai_commands::run_command,
-            ai_commands::polish,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

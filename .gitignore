@@ -10,9 +10,6 @@
 # Ignore the binaries' contents but keep the dir (.gitkeep) so bundle.resources has a parent.
 /app/src-tauri/binaries/*
 !/app/src-tauri/binaries/.gitkeep
-!/app/src-tauri/binaries/llama/
-/app/src-tauri/binaries/llama/*
-!/app/src-tauri/binaries/llama/.gitkeep
 /app/src-tauri/models/
 
 # Node / Bun / Vite

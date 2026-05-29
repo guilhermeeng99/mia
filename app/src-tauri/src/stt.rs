@@ -250,7 +250,7 @@ fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
 /// Stream a URL to `dest` via a `.part` file renamed on completion, so an
 /// interrupted download leaves no half file. Blocking — run off the async runtime.
 /// (Lifted from Toolzy's `transcription.rs`, ureq 3.)
-pub(crate) fn download_file(
+fn download_file(
     url: &str,
     dest: &Path,
     progress: Option<&Channel<DownloadProgress>>,
@@ -478,7 +478,7 @@ fn server_exe(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Pick a free localhost port by binding an ephemeral one and releasing it.
-pub(crate) fn free_port() -> Result<u16, String> {
+fn free_port() -> Result<u16, String> {
     let listener =
         std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -486,7 +486,7 @@ pub(crate) fn free_port() -> Result<u16, String> {
 }
 
 /// Block until the server accepts TCP connections on `port`, or time out.
-pub(crate) fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
+fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {

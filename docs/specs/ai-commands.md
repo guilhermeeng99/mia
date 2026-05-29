@@ -1,6 +1,12 @@
 # AI Commands (Command Mode + Polish) Feature Spec
 
-> **Status**: Phase 2 — pure core (cargo-tested) **plus the runtime** now implemented in `ai_commands.rs`. Pure: `route_intent`, `command_grammar` (GBNF), `build_prompt`, `validate_parsed`, `Intent`/`ParsedCommand`. Runtime: a warm **`llama-server`** sidecar (llama.cpp b9410, cmake-free, mirrors the whisper-server pattern; isolated in `binaries/llama/` to avoid a ggml DLL clash — binary boot-verified), on-demand **GGUF download** (`download_llm`, Qwen2.5-3B / Llama-3.2-3B Q4_K_M from Hugging Face, `.part`→rename + progress), and the `ai_status`/`list_llm_models`/`download_llm`/`unload_llm`/`run_command`/`polish` commands + `ai.ts` wrapper + a Hub AI section (enable, model download, Polish/Command testers). **Note:** `run_command` takes an explicit `target` text param (the engine doesn't yet track "last inserted"), and the live-dictation auto-routing through `route_intent` is the remaining integration. On-device inference validation pending (needs the ~2 GB model download).
+> **Status**: ❌ **DESCOPED (product decision, 2026-05-29).** MIA stays a faithful,
+> deterministic dictation tool — this local-LLM layer is not part of the product. A
+> runtime (warm `llama-server` + GGUF download + `run_command`/`polish`) was built and
+> then reverted; only the pure, cargo-tested helpers (`route_intent`, `command_grammar`,
+> `build_prompt`, `validate_parsed`, `Intent`/`ParsedCommand`) remain **dormant** in
+> `ai_commands.rs`, wired to nothing. This spec is retained as the design of record in
+> case AI is ever reconsidered; nothing below is shipped.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
