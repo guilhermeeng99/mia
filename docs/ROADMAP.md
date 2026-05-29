@@ -63,7 +63,7 @@ Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruc
 ### Phase 3 — Personalization ⬜
 
 - 🚧 **Custom dictionary** — personal vocabulary / word replacement (names, jargon, acronyms). Pure mechanism-(a) core in `dictionary.rs` cargo-tested (`apply_dictionary` exact/case/whole-word/multi-word/fuzzy/longest-match/idempotent, `match_case`, `fuzzy_match`, `build_bias_prompt`, `validate_entry`; Rules 1-13). CRUD commands + atomic `dictionary.json` persistence + managed state + duplicate rejection + `dictionary.ts` wrapper done (build-verified). Remaining: the Hub dictionary section + bias-prompt wiring into the warm-Whisper call. → [custom-dictionary.md](specs/custom-dictionary.md)
-- 🚧 **Snippets** — voice-triggered text expansion. Pure core in `snippets.rs` cargo-tested (`expand_snippets` whole-phrase/word-boundary/longest-first/no-recursion, `compile_snippets`, `normalize_trigger` case+accent fold, `apply_case`, `validate_snippet`; Rules 1-11). Remaining: CRUD commands + `snippets.json` persistence + the master enable toggle. → [snippets.md](specs/snippets.md)
+- 🚧 **Snippets** — voice-triggered text expansion. Pure core in `snippets.rs` cargo-tested (`expand_snippets` whole-phrase/word-boundary/longest-first/no-recursion, `compile_snippets`, `normalize_trigger` case+accent fold, `apply_case`, `validate_snippet`; Rules 1-11). CRUD commands + atomic `snippets.json` persistence + managed state + duplicate-trigger rejection + `preview_expansion` + `snippets.ts` wrapper done (build-verified). Remaining: the Hub snippets section + the master enable toggle. → [snippets.md](specs/snippets.md)
 - ⬜ **Per-app writing styles / context** — style or context selection keyed to the focused application.
 
 ### Phase 4 — Polish & Distribution ⬜

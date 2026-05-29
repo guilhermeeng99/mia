@@ -1,6 +1,6 @@
 # Snippets Feature Spec
 
-> **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). Runtime-pending: the CRUD commands + `snippets.json` persistence + managed state, cross-trigger duplicate rejection, and the master `snippets_enabled` toggle.
+> **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). CRUD commands (`list_snippets`/`upsert_snippet`/`delete_snippet`/`preview_expansion`) + atomic `snippets.json` persistence + managed state + cross-trigger duplicate rejection (`duplicate_trigger`) + `snippets.ts` wrapper are implemented (build-verified). Runtime-pending: the Hub snippets section and the master `snippets_enabled` toggle.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
@@ -303,9 +303,8 @@ List(empty | populated) → Editor(add/edit: trigger, expansion, anchor, case, e
   - [x] `apply_case` — `Verbatim` returns as-is; `MatchSentence` capitalizes at sentence start only
   - [x] expansion is **not** re-scanned (no recursion) and **not** re-cleaned (newlines/URLs intact)
   - [x] spacing preserved around an in-sentence expansion (no doubled/missing spaces)
-  - [ ] each `Err(String)` from `upsert_snippet`/`delete_snippet` (empty trigger, empty expansion,
-        duplicate trigger, not found) — `validate_snippet` covers empty trigger/expansion; duplicate +
-        not-found pending the CRUD commands
+  - [x] each `Err(String)` from `upsert_snippet`/`delete_snippet` — `validate_snippet` (empty trigger/
+        expansion) + `duplicate_trigger` (cargo-tested) + upsert "snippet not found"; command paths build-verified.
 - **Manual / runtime** (needs mic, model, a real focused app, and saved snippets):
   - [ ] happy path: speak a trigger → expansion typed at cursor (pt-BR and English triggers)
   - [ ] trigger embedded mid-sentence expands with surrounding text intact
