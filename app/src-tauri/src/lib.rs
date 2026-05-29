@@ -13,6 +13,7 @@ pub mod dictionary;
 pub mod hotkey;
 pub mod inject;
 pub mod settings;
+pub mod snippets;
 pub mod stats;
 pub mod stt;
 pub mod vad;

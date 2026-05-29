@@ -24,6 +24,7 @@ ureq = "3"
 enigo = "0.5"
 arboard = "3"
 unicode-segmentation = "1"
+unicode-normalization = "0.1"
 cpal = "0.15"
 
 # Release profile: small, optimized installer binary.
