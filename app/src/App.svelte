@@ -5,35 +5,30 @@
   import { installPtt } from "./lib/ptt";
   import { listWhisperModels } from "./lib/stt";
   import Hub from "./lib/components/Hub.svelte";
-  import MicHud from "./lib/components/MicHud.svelte";
+  import HudWindow from "./lib/components/HudWindow.svelte";
   import Onboarding from "./lib/components/Onboarding.svelte";
 
-  // App.svelte stays thin: resolve the version (IPC smoke test), wire the global
-  // push-to-talk hotkey, render the Settings/Hub + the floating mic HUD overlay.
-  type Phase = "idle" | "listening" | "transcribing" | "inserting" | "error";
+  // App.svelte is the single entry for both webviews. The "hud" window renders only
+  // the floating mic HUD (driven by the engine's `hud://state` events); the main
+  // window renders Settings/Hub + onboarding and wires the global push-to-talk hotkey.
+  const isHud = new URLSearchParams(location.search).get("win") === "hud";
 
   let version = $state("…");
-  let phase = $state<Phase>("idle");
-  let hudMsg = $state("");
   let showOnboarding = $state(false);
 
-  invoke<string>("app_version")
-    .then((v) => (version = v))
-    .catch(() => (version = "n/a"));
-
-  function onDictationEvent(e: DictationEvent) {
-    if (e.kind === "stateChanged") {
-      phase = e.phase;
-    } else if (e.kind === "error") {
-      phase = "error";
-      hudMsg = e.message;
-    } else if (e.kind === "cancelled" || e.kind === "injected") {
-      phase = "idle";
-    }
+  if (!isHud) {
+    invoke<string>("app_version")
+      .then((v) => (version = v))
+      .catch(() => (version = "n/a"));
   }
 
+  // The hotkey channel still streams session events to the main window, but the HUD
+  // is driven by the engine directly (hud://state), so here we only need ptt.ts to
+  // run start/stop. Kept as a sink in case the Hub later surfaces live status.
+  function onDictationEvent(_e: DictationEvent) {}
+
   onMount(() => {
-    // First run (no model installed yet) → show onboarding instead of the Hub.
+    if (isHud) return; // the HUD window manages itself
     listWhisperModels()
       .then((models) => (showOnboarding = !models.some((m) => m.downloaded)))
       .catch(() => {});
@@ -44,13 +39,10 @@
   });
 </script>
 
-{#if showOnboarding}
+{#if isHud}
+  <HudWindow />
+{:else if showOnboarding}
   <Onboarding ondone={() => (showOnboarding = false)} />
 {:else}
   <Hub {version} />
-  {#if phase !== "idle"}
-    <div class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <MicHud state={phase} message={hudMsg} />
-    </div>
-  {/if}
 {/if}

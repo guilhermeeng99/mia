@@ -12,12 +12,14 @@
   }
   let { state = "listening", level = 0, message = "" }: Props = $props();
 
-  // Per-bar multipliers give the waveform an organic shape; height tracks RMS.
+  // Per-bar multipliers give the waveform an organic shape. Until live RMS
+  // forwarding lands, the bars pulse via CSS so "listening" is visibly alive; when
+  // `level` (0–1) arrives it scales the heights on top of that.
   const bars = [0.45, 0.75, 1, 0.7, 0.5];
   const clamped = $derived(Math.min(1, Math.max(0, level)));
 
   function barHeight(mult: number): number {
-    return Math.round(6 + clamped * 22 * mult);
+    return Math.round(10 + (6 + clamped * 16) * mult);
   }
 
   const label = $derived(
@@ -40,8 +42,8 @@
     <span class="flex items-end gap-1 h-6" aria-hidden="true">
       {#each bars as mult, i (i)}
         <span
-          class="w-1 rounded-full bg-hud-wave"
-          style="height: {barHeight(mult)}px"
+          class="eq-bar w-1 rounded-full bg-hud-wave"
+          style="height: {barHeight(mult)}px; animation-delay: {i * 0.12}s"
         ></span>
       {/each}
     </span>
@@ -58,3 +60,26 @@
 
   <span class="text-body font-semibold">{label}</span>
 </div>
+
+<style>
+  /* The "listening" bars pulse so the HUD reads as actively recording. Each bar is
+     offset (inline animation-delay) for an organic equalizer feel. */
+  .eq-bar {
+    transform-origin: bottom;
+    animation: eq 0.9s ease-in-out infinite;
+  }
+  @keyframes eq {
+    0%,
+    100% {
+      transform: scaleY(0.4);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .eq-bar {
+      animation: none;
+    }
+  }
+</style>

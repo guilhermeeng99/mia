@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::hotkey::ActivationMode;
 use crate::settings::{CleanupSettings, DefaultLanguage};
@@ -227,18 +227,35 @@ fn emit_then_idle(events: &Channel<DictationEvent>, ev: DictationEvent) {
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
 }
 
+/// Phase mirrored to the floating HUD window over the global `hud://state` event.
+/// The HUD lives in its own webview (hud.rs) and is driven by the engine directly —
+/// not relayed through the main window — so it works even when the Hub is hidden.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HudState<'a> {
+    phase: Phase,
+    message: Option<&'a str>,
+}
+
+fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
+    let _ = app.emit("hud://state", HudState { phase, message });
+}
+
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
 /// Returns immediately; `stop_dictation` runs the tail. (push-to-hold MVP)
 #[tauri::command]
 pub fn start_dictation(
+    app: AppHandle,
     capture: State<'_, crate::audio::CaptureState>,
     settings: State<'_, crate::settings::SettingsState>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let s = settings.snapshot()?;
+    eprintln!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
     // Live waveform Level forwarding is a follow-up; capture runs without a channel.
     crate::audio::begin_capture(&capture, Some(&s.audio.input_device), None)?;
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
+    emit_hud(&app, Phase::Listening, None);
     Ok(())
 }
 
@@ -258,24 +275,32 @@ pub fn stop_dictation(
 ) -> Result<DictationResult, String> {
     let s = settings.snapshot()?;
     let samples = crate::audio::end_capture(&capture)?;
+    eprintln!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
     if samples.is_empty() {
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
+        emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
     }
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
+    emit_hud(&app, Phase::Transcribing, None);
     let t0 = now_ms();
+    let app_for_err = app.clone();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
+        eprintln!("[dictation] error: {e}");
+        emit_hud(&app_for_err, Phase::Error, Some(&e));
         emit_then_idle(events, DictationEvent::Error { message: e.clone() });
         e
     };
 
     crate::stt::warm_model(&app, &stt_state, &s.model.model).map_err(|e| fail(&events, e))?;
+    eprintln!("[dictation] warm engine ready (model={})", s.model.model);
     let stt_start = now_ms();
     let lang = stt_lang(s.general.default_language);
     let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref())
         .map_err(|e| fail(&events, e))?;
     let stt_end = now_ms();
+    eprintln!("[dictation] transcript: {} chars in {} ms", raw.chars().count(), stt_end.saturating_sub(stt_start));
 
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(s.general.default_language), &cleanup_options(&s.cleanup));
     let (entries, dsettings) = dict.snapshot()?;
@@ -284,31 +309,38 @@ pub fn stop_dictation(
     let final_text = crate::snippets::expand_snippets(&dicted, &set).output;
 
     if final_text.trim().is_empty() {
+        eprintln!("[dictation] nothing to inject (empty after cleanup)");
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
+        emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
     }
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
+    emit_hud(&app, Phase::Inserting, None);
     crate::inject::inject(&final_text, crate::inject::InjectMode::Auto, &crate::inject::InjectSettings::default())
         .map_err(|e| fail(&events, e))?;
     let done = now_ms();
+    eprintln!("[dictation] injected {} chars", final_text.chars().count());
 
     let chars = final_text.chars().count();
     let elapsed = done.saturating_sub(t0);
     let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+    emit_hud(&app, Phase::Idle, None);
     Ok(build_result(chars, lang, t0, stt_start, stt_end, done, "auto"))
 }
 
 /// Abort: discard the in-flight session, inject nothing, HUD → Idle (Rule 8).
 #[tauri::command]
 pub fn cancel_dictation(
+    app: AppHandle,
     capture: State<'_, crate::audio::CaptureState>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let _ = crate::audio::end_capture(&capture); // discard the buffer
     emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
+    emit_hud(&app, Phase::Idle, None);
     Ok(())
 }
 

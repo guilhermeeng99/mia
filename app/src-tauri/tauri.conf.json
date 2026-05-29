@@ -21,6 +21,20 @@
         "minHeight": 520,
         "resizable": true,
         "visible": true
+      },
+      {
+        "label": "hud",
+        "url": "index.html?win=hud",
+        "width": 260,
+        "height": 96,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": true
       }
     ],
     "security": {

@@ -13,6 +13,7 @@ pub mod cleanup;
 pub mod dictation;
 pub mod dictionary;
 pub mod hotkey;
+pub mod hud;
 pub mod inject;
 pub mod persist;
 pub mod settings;
@@ -71,6 +72,9 @@ pub fn run() {
             app.manage(snippets::SnippetState::new(snips));
             // System tray (Open / Quit). MIA runs in the tray.
             tray::init(app.handle())?;
+            // Dock the floating, click-through, always-on-top mic HUD overlay window
+            // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
+            hud::setup_hud(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

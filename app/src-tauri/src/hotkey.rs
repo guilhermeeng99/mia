@@ -384,6 +384,7 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
         intent
     };
     if let Some(intent) = intent {
+        eprintln!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
         let _ = app.emit("dictation://intent", intent);
     }
 }
@@ -434,8 +435,17 @@ pub fn get_hotkey(rt: State<'_, HotkeyRuntime>) -> Result<HotkeyConfig, String> 
 /// Best-effort startup registration from the saved config (Rule 14: a conflict
 /// leaves the chord unregistered rather than stealing a different key).
 pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
-    if let Ok(sc) = parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) {
-        let _ = app.global_shortcut().register(sc);
+    match parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) {
+        Ok(sc) => match app.global_shortcut().register(sc) {
+            Ok(()) => eprintln!("[hotkey] PTT '{}' registered", cfg.accelerator),
+            // The likeliest cause on Windows is the chord already being claimed (an
+            // IME often owns Ctrl+Space) — surface it instead of failing silently.
+            Err(e) => eprintln!(
+                "[hotkey] PTT '{}' FAILED to register (likely claimed by the OS/another app): {e}",
+                cfg.accelerator
+            ),
+        },
+        Err(e) => eprintln!("[hotkey] PTT '{}' is invalid: {e}", cfg.accelerator),
     }
 }
 
