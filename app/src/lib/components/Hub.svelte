@@ -50,7 +50,6 @@
   let recording = $state(false);
   let hotkeyError = $state<string | null>(null);
   let update = $state<Update | null>(null);
-  let updateMsg = $state<string | null>(null);
   let updateBusy = $state(false);
   let error = $state<string | null>(null);
 
@@ -58,26 +57,14 @@
     error = String(e);
   }
 
-  async function checkUpdates() {
-    updateBusy = true;
-    updateMsg = null;
-    update = null;
-    try {
-      const u = await checkForUpdate();
-      update = u;
-      updateMsg = u ? null : "Você está na versão mais recente.";
-    } finally {
-      updateBusy = false;
-    }
-  }
-
+  // Download + install the available update, then relaunch (the plugin handles it).
   async function applyUpdate() {
     if (!update) return;
     updateBusy = true;
     try {
-      await installUpdate(update); // relaunches on success
+      await installUpdate(update); // downloads, installs, relaunches
     } catch (e) {
-      updateMsg = String(e);
+      fail(e);
       updateBusy = false;
     }
   }
@@ -185,6 +172,8 @@
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
     getSettings().then((s) => (general = s.general)).catch(fail);
     getHotkey().then((h) => (hotkey = h)).catch(fail);
+    // Auto-check for a newer signed release on launch; never throws (offline-safe).
+    checkForUpdate().then((u) => (update = u)).catch(() => {});
   });
 
   async function download(id: string) {
@@ -255,7 +244,15 @@
     <header class="flex items-center gap-3">
       <h1 class="text-heading-lg font-bold">MIA</h1>
       <Pill tone="action">100% local · offline</Pill>
-      <span class="ml-auto text-body text-slate-blue">v{version}</span>
+      <span class="ml-auto">
+        {#if update}
+          <Button disabled={updateBusy} onclick={applyUpdate}>
+            {updateBusy ? "Atualizando…" : `Atualizar para v${update.version}`}
+          </Button>
+        {:else}
+          <span class="text-body text-slate-blue">v{version}</span>
+        {/if}
+      </span>
     </header>
 
     {#if error}
@@ -333,25 +330,6 @@
             label="Abrir o MIA ao iniciar o Windows"
             onchange={setLaunchAtLogin}
           />
-        {/if}
-      </div>
-    </Card>
-
-    <Card>
-      <h2 class="text-heading font-semibold">Atualizações</h2>
-      <p class="mt-1 text-body text-slate-blue">
-        Atualização assinada via GitHub Releases — verificada por minisign antes de instalar.
-      </p>
-      <div class="mt-4 flex flex-wrap items-center gap-3">
-        <Button variant="secondary" disabled={updateBusy} onclick={checkUpdates}>
-          {updateBusy ? "Verificando…" : "Procurar atualizações"}
-        </Button>
-        {#if update}
-          <Pill tone="action">nova versão {update.version}</Pill>
-          <Button disabled={updateBusy} onclick={applyUpdate}>Instalar e reiniciar</Button>
-        {/if}
-        {#if updateMsg}
-          <span class="text-body text-slate-blue">{updateMsg}</span>
         {/if}
       </div>
     </Card>
