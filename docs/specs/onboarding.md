@@ -1,7 +1,7 @@
 # Onboarding Feature Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → recommended-model download (progress `Channel`). `App.svelte` shows it when no Whisper model is installed yet, with a "Pular" skip. Pending: a persisted "onboarding completed" flag (currently gated on model presence) and the permission-denied deep-link copy.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 

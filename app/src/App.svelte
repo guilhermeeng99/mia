@@ -3,8 +3,10 @@
   import { onMount } from "svelte";
   import type { DictationEvent } from "./lib/dictation";
   import { installPtt } from "./lib/ptt";
+  import { listWhisperModels } from "./lib/stt";
   import Hub from "./lib/components/Hub.svelte";
   import MicHud from "./lib/components/MicHud.svelte";
+  import Onboarding from "./lib/components/Onboarding.svelte";
 
   // App.svelte stays thin: resolve the version (IPC smoke test), wire the global
   // push-to-talk hotkey, render the Settings/Hub + the floating mic HUD overlay.
@@ -13,6 +15,7 @@
   let version = $state("…");
   let phase = $state<Phase>("idle");
   let hudMsg = $state("");
+  let showOnboarding = $state(false);
 
   invoke<string>("app_version")
     .then((v) => (version = v))
@@ -30,6 +33,10 @@
   }
 
   onMount(() => {
+    // First run (no model installed yet) → show onboarding instead of the Hub.
+    listWhisperModels()
+      .then((models) => (showOnboarding = !models.some((m) => m.downloaded)))
+      .catch(() => {});
     const pending = installPtt(onDictationEvent);
     return () => {
       void pending.then((un) => un());
@@ -37,10 +44,13 @@
   });
 </script>
 
-<Hub {version} />
-
-{#if phase !== "idle"}
-  <div class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-    <MicHud state={phase} message={hudMsg} />
-  </div>
+{#if showOnboarding}
+  <Onboarding ondone={() => (showOnboarding = false)} />
+{:else}
+  <Hub {version} />
+  {#if phase !== "idle"}
+    <div class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+      <MicHud state={phase} message={hudMsg} />
+    </div>
+  {/if}
 {/if}
