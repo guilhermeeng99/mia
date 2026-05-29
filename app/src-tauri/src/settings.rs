@@ -381,9 +381,16 @@ pub fn get_settings(state: State<'_, SettingsState>) -> Result<Settings, String>
 pub fn update_settings(
     app: AppHandle,
     state: State<'_, SettingsState>,
+    hotkey: State<'_, crate::hotkey::HotkeyRuntime>,
     patch: SettingsPatch,
 ) -> Result<Settings, String> {
-    let next = apply_patch(&state.get()?, &patch);
+    let current = state.get()?;
+    let next = apply_patch(&current, &patch);
+    // Side effect: re-register the PTT hotkey if it changed. Done BEFORE persisting
+    // so a conflicting chord is rejected and the old binding/config stays (Rule 8).
+    if next.hotkey != current.hotkey {
+        crate::hotkey::register_hotkey(app.clone(), hotkey, next.hotkey.clone())?;
+    }
     save_settings(&app, &next)?;
     state.set(next.clone())?;
     Ok(next)
