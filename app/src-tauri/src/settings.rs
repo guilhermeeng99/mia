@@ -78,10 +78,6 @@ pub struct GeneralSettings {
     /// First-run gate (onboarding.md Rule 1): once the wizard finishes, MIA boots
     /// straight to the tray instead of re-opening onboarding.
     pub onboarding_completed: bool,
-    /// Toggle-mode auto-endpoint: in `PressToToggle` mode, end the session automatically
-    /// after sustained silence (energy-gated, audio-capture.md §5) instead of requiring a
-    /// second press. No effect in `PushToHold`. Silero still gates recognition server-side.
-    pub toggle_auto_endpoint: bool,
 }
 
 impl Default for GeneralSettings {
@@ -94,7 +90,6 @@ impl Default for GeneralSettings {
             collect_stats: true,
             snippets_enabled: true,
             onboarding_completed: false,
-            toggle_auto_endpoint: true,
         }
     }
 }
@@ -475,7 +470,6 @@ mod tests {
         assert!(s.general.dictation_enabled);
         assert!(!s.general.launch_at_login);
         assert!(s.general.collect_stats);
-        assert!(s.general.toggle_auto_endpoint);
         assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);

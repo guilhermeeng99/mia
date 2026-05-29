@@ -1,6 +1,6 @@
 # Dictation Feature Spec
 
-> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. Runtime-pending: the `tauri-plugin-global-shortcut` trigger wiring (separate — see [hotkeys.md](hotkeys.md)), the live HUD waveform `Level` forwarding, and toggle-mode auto-endpoint.
+> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. A session ends only on an explicit user action (release / 2nd toggle press) — it never auto-ends on a pause in speech. Runtime-pending: the `tauri-plugin-global-shortcut` trigger wiring (separate — see [hotkeys.md](hotkeys.md)) and the live HUD waveform `Level` forwarding.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted. The `start/stop/cancel_dictation` commands exist and are registered in `lib.rs`.
 > **Environment**: desktop (Windows, native)
@@ -172,10 +172,10 @@ dictation logic — it forwards hotkey/tray intent in and renders HUD state out.
 2. **Push-to-hold endpoints on release.** In `PushToHold`, releasing the hotkey calls
    `stop_dictation`, which stops capture and moves `Listening → Transcribing`. The trailing
    release artifact is trimmed by VAD/cleanup, never injected as text.
-3. **Press-to-toggle endpoints on second press or trailing silence.** In `PressToToggle`, a second
-   hotkey-down stops capture; additionally, Silero VAD trailing-silence beyond the configured
-   `endpoint_silence_ms` auto-stops the session ([audio-capture.md](audio-capture.md)) so the user
-   need not press again.
+3. **Press-to-toggle endpoints on the second press only.** In `PressToToggle`, a second
+   hotkey-down stops capture. A session **never** auto-ends on a pause in speech — silence does not
+   stop a dictation (the user may pause to think mid-utterance); only an explicit second press ends
+   it. (Push-to-hold ends on release, Rule 2.)
 4. **VAD gates transcription.** Capture is fed through Silero VAD ([audio-capture.md](audio-capture.md)).
    If no speech segment is detected for the whole session, the session resolves as **empty**
    (Rule 7) — STT is not invoked.
@@ -237,8 +237,6 @@ dictation logic — it forwards hotkey/tray intent in and renders HUD state out.
 |---|---|---|---|---|
 | `trigger_mode` | enum | `pushToHold` \| `pressToToggle` | `pushToHold` | how a session starts/ends — see [hotkeys.md](hotkeys.md) |
 | `hotkey` | string | `tauri-plugin-global-shortcut` accelerator | `Ctrl+Space` (locked default — see [hotkeys.md](hotkeys.md)) | the PTT binding |
-| `endpoint_silence_ms` | int | 400–3000 | `1000` | trailing silence that auto-ends a toggle session (VAD) — see [audio-capture.md](audio-capture.md) |
-| `max_session_ms` | int | 5000–120000 | `60000` | hard cap; session auto-endpoints to STT at the cap (Rule, Section 7) |
 | `language` | enum | `auto` \| `pt` \| `en` \| … | `auto` | passed to STT — see [speech-to-text.md](speech-to-text.md) |
 | `show_hud` | bool | — | `true` | whether the floating mic HUD appears while dictating — see [tray-and-hud.md](tray-and-hud.md) |
 | `play_cue` | bool | — | `true` | subtle start/stop audio cue (does not feed the mic buffer) |
@@ -269,7 +267,7 @@ Live dictation is latency-critical; the design keeps the slow work off the real-
 - **Latency budget** — target **perceived** latency from utterance-end (hotkey release) to first
   injected character: **≈ 1–2 s on the bundled CPU build for a short phrase**, sub-second with the
   optional CUDA engine ([speech-to-text.md](speech-to-text.md)). Where time goes:
-  - Endpoint detect (VAD trailing-silence settle): tens of ms (off the hot path — already running).
+  - Capture stop (on release / 2nd toggle press): immediate (off the hot path).
   - **STT inference: the dominant cost** (~80–90% of the wait). Bounded by model size and CPU vs GPU.
   - Cleanup: sub-millisecond (pure string ops, [text-cleanup.md](text-cleanup.md)).
   - Injection: a few ms for SendInput; the clipboard fallback adds a save/paste/restore round-trip
@@ -280,8 +278,9 @@ Live dictation is latency-critical; the design keeps the slow work off the real-
 - **Cancellation**: `cancel_dictation` sets `cancel: AtomicBool`. The flag is checked at every stage
   boundary (after capture, before STT, after STT/before inject) so an Escape promptly stops capture,
   abandons a queued or running transcription where the backend allows, and guarantees no stale text
-  is injected (Rules 8, 14). A `max_session_ms` cap and a per-session watchdog provide timeout
-  cancellation.
+  is injected (Rules 8, 14). There is **no** session-length cap and **no** silence timeout — a
+  session runs until the user ends it (release / 2nd toggle press); the only safety net is the
+  push-to-hold missing-release watchdog (`MAX_HOLD_MS`, [hotkeys.md](hotkeys.md)).
 - **Resource use**: warm Whisper model RAM per [speech-to-text.md](speech-to-text.md) (CPU build vs
   CUDA). The Phase 2 LLM (llama.cpp, Qwen2.5-3B / Llama-3.2-3B at Q4_K_M ≈ 1.5–2 GB) is **not**
   loaded by this path and only spins up on an AI-command intent match ([ai-commands.md](ai-commands.md)).
@@ -300,8 +299,6 @@ States: Idle(hidden) → Listening(pulsing waveform) → Transcribing(spinner)
 Transitions:
   hotkey down            → Listening      (HUD appears; cpal capture starts)
   release | 2nd press    → Transcribing   (capture stops; warm STT runs)
-  | VAD trailing silence → Transcribing   (toggle mode auto-endpoint)
-  | max_session_ms cap   → Transcribing   (hard cap)
   STT text → cleanup     → Inserting      (SendInject at cursor)
   injection done         → Idle           (HUD fades out; emit Injected)
   escape/abort           → Idle           (Cancelled{UserEscape})
@@ -332,7 +329,7 @@ Transitions:
 | Focused window is elevated (UAC) | injection silently dropped by OS unless MIA elevated; surface a one-time hint — [text-injection.md](text-injection.md), [ADR-005](architecture.md#adr-005-system-wide-text-injection-on-windows) |
 | No editable target (focus on a non-text control / desktop) | inject anyway; session completes; user sees nothing typed and re-focuses (Rule 11) |
 | Clipboard fallback used for long text | save the user's prior clipboard, paste, then restore it (Rule 10, [text-injection.md](text-injection.md)) |
-| Session exceeds `max_session_ms` | hard-cap auto-endpoint → Transcribing; transcribe what was captured |
+| Long pause mid-utterance (toggle) | session keeps recording — silence never auto-ends it; only a 2nd press stops it (Rule 3) |
 | Second hotkey-down while active | toggle mode → stop; hold mode → debounced/ignored; new `start_dictation` → `Err("dictation already active")` (Rule 12) |
 | Focus changes between capture and injection | text lands in whatever is focused at injection time (by design — live cursor, Rule 10) |
 | STT/injection error | `Error{message}`, nothing typed, machine → Idle (Rule 14) |
@@ -354,7 +351,7 @@ Transitions:
         failure, injection failure; "capture already in progress" guards re-entry) — build-verified.
 - **Manual / runtime** (needs mic, model, real focused app):
   - [ ] happy path push-to-hold: hold → speak → release → text at cursor (pt-BR and English).
-  - [ ] happy path press-to-toggle: press → speak → trailing silence auto-ends → text at cursor.
+  - [ ] happy path press-to-toggle: press → speak (pausing mid-sentence does not stop it) → press again → text at cursor.
   - [ ] HUD reflects every state (listening waveform / transcribing / inserting / error).
   - [ ] Escape during Listening and during Transcribing both inject nothing and return to Idle.
   - [ ] silent session injects nothing (no hallucination).

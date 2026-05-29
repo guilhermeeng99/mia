@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "mia"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "arboard",
  "cpal",

@@ -7,11 +7,8 @@ type Intent = "start" | "stop" | "cancel";
  * Wire the global push-to-talk hotkey: the Rust side emits `dictation://intent`
  * (driven by the tested reducer); we drive the orchestrator. push-to-hold:
  * down → start (open capture), release → stop (transcribe + inject); Esc → cancel.
- * The single active flag here mirrors the reducer's re-entry guard.
- *
- * In toggle mode the engine may also emit `dictation://auto-endpoint` after sustained
- * silence (audio-capture.md §5) — we treat it exactly like a 2nd toggle press (stop),
- * sharing the same `active` guard so it can't double-stop.
+ * The single active flag here mirrors the reducer's re-entry guard. A session ends
+ * only on an explicit user action (release / 2nd toggle press), never on silence.
  */
 export async function installPtt(onEvent: (e: DictationEvent) => void): Promise<UnlistenFn> {
   let active = false;
@@ -32,9 +29,5 @@ export async function installPtt(onEvent: (e: DictationEvent) => void): Promise<
       void cancelDictation(onEvent);
     }
   });
-  const unAuto = await listen("dictation://auto-endpoint", stop);
-  return () => {
-    unIntent();
-    unAuto();
-  };
+  return unIntent;
 }

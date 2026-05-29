@@ -260,8 +260,9 @@ fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
 }
 
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
-/// Returns immediately; `stop_dictation` runs the tail (push-to-hold or, in toggle
-/// mode, the energy-based auto-endpoint).
+/// Returns immediately; `stop_dictation` runs the tail. A session ends only on an
+/// explicit user action — hotkey release (push-to-hold) or a second press
+/// (press-to-toggle) — never automatically on a pause in speech.
 #[tauri::command]
 pub fn start_dictation(
     app: AppHandle,
@@ -275,11 +276,6 @@ pub fn start_dictation(
     // Capture the focused app now (before the HUD or anything can shift focus) so the
     // per-app style targets the app the user is dictating into (per-app-context.md).
     focus.set(crate::win32::foreground_process_name());
-    // Arm the energy-based auto-endpoint only in toggle mode (when enabled): the capture
-    // thread will emit `dictation://auto-endpoint` after sustained silence so the session
-    // ends without a 2nd press. Push-to-hold ends on key release, so it never arms.
-    let auto_endpoint =
-        s.hotkey.mode == ActivationMode::PressToToggle && s.general.toggle_auto_endpoint;
     // Pass the AppHandle so the capture thread streams live RMS to the HUD waveform
     // over `hud://level`; the CaptureEvent channel stays unused on this path.
     crate::audio::begin_capture(
@@ -287,7 +283,6 @@ pub fn start_dictation(
         Some(&s.audio.input_device),
         None,
         Some(app.clone()),
-        auto_endpoint,
     )?;
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
     emit_hud(&app, Phase::Listening, None);

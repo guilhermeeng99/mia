@@ -39,7 +39,7 @@ Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlo
 - ✅ System **tray** icon (Open / Quit) and a floating **mic HUD** overlay in its own transparent, always-on-top, click-through window (listening → transcribing → inserting, with a live waveform).
 - ✅ **On-demand model download** gate with streamed progress (models fetched from Hugging Face).
 - ✅ **pt-BR + English** first-class language selection (Automático / Português (pt-BR) / English), forwarded per utterance to the warm Whisper path.
-- ✅ Toggle-mode auto-endpoint (energy-gated, client-side) and focused-target + elevated-window (UIPI) injection detection are wired; on-device UAC validation is owner-gated.
+- ✅ Focused-target + elevated-window (UIPI) injection detection is wired; on-device UAC validation is owner-gated. A dictation session ends only on an explicit user action (hotkey release / 2nd toggle press) — never on silence.
 
 ### AI magic (Phase 2 — ❌ Descoped)
 **Dropped by product decision (2026-05-29):** MIA stays a faithful, deterministic dictation tool — the local-LLM Command Mode / Polish layer is **not** wanted. A runtime (warm `llama-server` + GGUF download) was built and then **reverted**; only the pure, cargo-tested helpers remain dormant in `ai_commands.rs`, wired to nothing. If AI is ever reconsidered, that core is the starting point.
@@ -72,7 +72,7 @@ See the full plan in [docs/ROADMAP.md](docs/ROADMAP.md).
 Pipeline:
 
 ```
-hotkey ─▶ cpal (mic, 16 kHz mono) ─▶ Silero VAD (endpoint) ─▶ whisper.cpp (warm model) ─▶ deterministic cleanup ─▶ SendInput (type at cursor)
+hotkey ─▶ cpal (mic, 16 kHz mono) ─▶ Silero VAD (silence gating) ─▶ whisper.cpp (warm model) ─▶ deterministic cleanup ─▶ SendInput (type at cursor)
 ```
 
 All of this runs in the Rust core — the engine. The Svelte UI is a thin webview used only for settings, onboarding, and the HUD.

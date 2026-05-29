@@ -1,6 +1,6 @@
 # Audio Capture & VAD Endpointing Feature Spec
 
-> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. **Toggle-mode auto-endpoint is now wired** (energy-gated): the capture thread frames the live buffer to 30 ms, maps RMS → a pseudo speech probability (`energy_to_prob`), and feeds the cargo-tested `EndpointDetector`, emitting `dictation://auto-endpoint` after the hangover so a toggle session ends on sustained silence. Anti-hallucination VAD-gated trimming is still applied at transcription time by whisper-server (`--vad`); **in-process per-frame Silero ONNX** remains a backlog accuracy optimization over the energy gate.
+> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. **A session never auto-ends on silence** — it ends only on an explicit user action (hotkey release / 2nd toggle press); a pause mid-utterance keeps recording. The earlier energy-gated auto-endpoint was **removed** (it cut dictations on natural pauses). Anti-hallucination VAD-gated trimming is still applied at transcription time by whisper-server (`--vad`). The `vad.rs` `EndpointDetector` is retained, cargo-tested, as the primitive for the backlog **in-process per-frame Silero** endpoint path — not wired to the live path today.
 > **Last updated**: 2026-05-29
 > **Coverage**: all sections drafted (1–9)
 > **Environment**: desktop (Windows, native)
@@ -30,9 +30,10 @@ on-demand like the Whisper weights).
 - **Fixed capture format: 16 kHz, mono, PCM `f32` → `s16`** — Whisper's native input rate. We
   resample/downmix in-process at capture time so the warm model never has to; the device may run
   at 44.1/48 kHz and we convert (Phase 1).
-- **Silero VAD for endpointing, not a custom energy gate** — the same Silero model Toolzy already
-  ships, reused for both *anti-hallucination silence gating* and *toggle-mode utterance end*. RMS
-  energy is used **only** for the HUD meter, never to decide speech boundaries
+- **Silero VAD for anti-hallucination silence gating** — the same Silero model Toolzy already
+  ships, applied server-side by whisper-server (`--vad`) so silence/non-speech can't become
+  hallucinated text. RMS energy is used **only** for the HUD meter, never to decide speech
+  boundaries; and **silence never ends a session** — only an explicit user action does (Rule 5)
   ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine) /
   Phase 1).
 - **Audio never touches disk** — frames live in an in-memory ring buffer and are dropped after the
@@ -210,11 +211,13 @@ enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
 4. **Leading silence is trimmed** — audio captured before `SpeechStart` (minus the pre-roll pad,
    Rule 6) is discarded, not transcribed. (cargo test: state machine emits `SpeechStarted` only
    after `MIN_SPEECH_MS` of speech frames.)
-5. **Toggle mode ends an utterance on a VAD endpoint** — in `toggle` mode, after speech has
-   started, a continuous run of silence ≥ `MIN_SILENCE_MS` emits `SpeechEnded`, which the
-   orchestrator treats as utterance-complete (it may finalize/inject and re-arm for the next
-   utterance without a new hotkey press). In `pushToTalk` mode, the utterance ends on **hotkey
-   release**; the VAD endpoint is advisory (used only to trim trailing silence, Rule 7).
+5. **A session ends only on an explicit user action — never on silence.** In `pushToTalk` the
+   utterance ends on **hotkey release**; in `toggle` it ends on the **second press**. A run of
+   silence, however long, does **not** end a session (the user may pause to think mid-utterance).
+   The `vad.rs` `EndpointDetector` (which would emit `SpeechEnded` after `MIN_SILENCE_MS`) is a
+   cargo-tested primitive for the **backlog** in-process Silero endpoint path; it is not wired to
+   the live path. (The energy-gated auto-endpoint that previously cut toggle sessions on a pause
+   was removed.)
 6. **Pre/post-roll padding** — keep a small **pre-roll** (≈ `PRE_ROLL_MS`) of audio *before*
    `SpeechStart` and a small **post-roll** *after* the last speech frame, so word onsets/codas
    are not clipped. The ring buffer must retain at least `PRE_ROLL_MS` of history at all times.
@@ -252,7 +255,7 @@ enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | `inputDeviceId` | `Option<string>` | any id from `list_input_devices` | `None` (OS default) | which mic to capture (Settings picker) |
-| `mode` | enum | `pushToTalk` \| `toggle` | `pushToTalk` | release-ends vs VAD-endpoint-ends an utterance (Rule 5; see [hotkeys.md](hotkeys.md)) |
+| `mode` | enum | `pushToTalk` \| `toggle` | `pushToTalk` | release-ends vs second-press-ends an utterance (Rule 5; see [hotkeys.md](hotkeys.md)) |
 | `vadEnabled` | bool | `true` \| `false` | `true` | gate STT by speech (Rule 3). `false` is **diagnostics-only**, not exposed as a normal setting |
 | Capture sample rate | fixed | 16000 Hz | **16000** | Whisper's native rate; not user-tunable |
 | Capture channels | fixed | mono | **mono** | downmixed from device channels; not user-tunable |
@@ -261,7 +264,7 @@ enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
 | `PRE_ROLL_MS` | fixed | ~200 ms | **200** | audio retained before `SpeechStart` (Rule 6) |
 | `POST_ROLL_MS` | fixed | ~200 ms | **200** | audio retained after last speech frame (Rule 6) |
 | `MIN_SPEECH_MS` | fixed | ~150 ms | **150** | min run of speech frames before `SpeechStarted` (debounces blips, Rule 4) |
-| `MIN_SILENCE_MS` | fixed | ~700 ms | **700** | silence run that triggers `SpeechEnded` in toggle mode (Rule 5) |
+| `MIN_SILENCE_MS` | fixed | ~700 ms | **700** | silence run that triggers `SpeechEnded` in the `EndpointDetector` primitive — **not wired live** (backlog Silero endpoint path, Rule 5) |
 | `VAD_THRESHOLD` | fixed | 0.0–1.0 | **~0.5** | Silero speech-probability threshold |
 | `LEVEL_HZ` | fixed | ~30–60 Hz | **~50** | how often `Level` events are emitted for the HUD |
 
@@ -326,7 +329,7 @@ Transitions:
   start_capture            → Listening   (HUD appears; waveform animates off Level events)
   VAD SpeechStart          → Listening   (waveform "active" accent)
   hotkey release           → hand off to STT → Transcribing   (push-to-talk)
-  VAD SpeechEnd (toggle)   → hand off to STT → Transcribing, then re-arm to Listening
+  2nd toggle press         → hand off to STT → Transcribing   (toggle; silence never ends it)
   all-silence + stop       → Idle         (no text; Rule 8)
   device lost / denied     → Error(message) → Idle
 ```
@@ -335,8 +338,9 @@ Transitions:
   level meter is driven by the `Level` (RMS/peak) events** from §2, animating with the
   **action-blue "listening" pulse** (the single accent color). When VAD reports `SpeechEnd`/the
   hotkey releases, the HUD transitions to the transcribing spinner (owned by
-  [speech-to-text.md](speech-to-text.md)). Errors (no mic, denied, device lost) render the HUD
-  **error** state with a short message. Keep click-through where possible.
+  [speech-to-text.md](speech-to-text.md)). The HUD transitions only when the user ends the
+  session (release / 2nd press) — never on a silent pause. Errors (no mic, denied, device lost)
+  render the HUD **error** state with a short message. Keep click-through where possible.
 - **Settings/Hub (light theme)** — an **input-device picker** (`list_input_devices` →
   `set_input_device`; "System default" first), and a **"Test microphone"** button
   (`test_microphone`) that shows a live level bar / "we can hear you" confirmation without running
@@ -361,7 +365,7 @@ Transitions:
 | VAD model not downloaded | `Err("VAD model not downloaded")`; route to download gate ([onboarding.md](onboarding.md)) (Rule 9) |
 | Device runs at 44.1/48 kHz, stereo | in-process downmix + resample to 16 kHz mono `s16` (Rule 1) |
 | `start_capture` while already capturing | `Err("capture already in progress")`; no second stream (Rule 11) |
-| Long continuous speech (toggle mode) | streams frames continuously; `SpeechEnded` only after `MIN_SILENCE_MS` of silence (Rule 5) |
+| Long pause mid-utterance (toggle mode) | keeps recording — silence never ends a session; only the 2nd press does (Rule 5) |
 | Hotkey released before VAD `SpeechStart` (push-to-talk) | treat as all-silence: nothing sent to STT (Rule 8) |
 
 ---
@@ -385,7 +389,7 @@ Transitions:
   - [ ] happy path: hold hotkey, speak (pt-BR and English), release → speech frames reach STT and
         text appears at the cursor ([dictation.md](dictation.md))
   - [ ] HUD waveform animates with voice level and idles to flat on silence
-  - [ ] toggle mode ends the utterance on a natural pause (`SpeechEnded`) and re-arms
+  - [ ] toggle mode keeps recording through a natural pause; only the 2nd press ends it
   - [ ] leading/trailing silence trimmed (no clipped word onsets thanks to pre/post-roll)
   - [ ] all-silence press injects nothing; HUD returns to Idle
   - [ ] deny mic permission in Windows → clear error + deep link; re-grant → works

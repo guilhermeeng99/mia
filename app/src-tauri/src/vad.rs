@@ -1,14 +1,18 @@
-//! Silero VAD endpointing (ADR-007, Phase 1) — decides *where speech is* so only
-//! speech frames reach the warm STT (anti-hallucination) and so toggle mode knows
-//! when an utterance ended. See `docs/specs/audio-capture.md` (§2–§5).
+//! Silero VAD endpoint state machine (ADR-007) — a pure primitive for deciding
+//! *where speech is* from a per-frame speech probability. See
+//! `docs/specs/audio-capture.md` (§2–§5).
 //!
-//! This module owns the **endpoint state machine**, which is pure and fully
-//! cargo-tested: it consumes a per-frame speech *probability* (Silero's output)
-//! and emits `VadDecision` transitions with debounce (`MIN_SPEECH_MS`) and
-//! hangover (`MIN_SILENCE_MS`). The Silero model load + per-frame inference that
-//! *produces* those probabilities is the runtime seam wired during the capture /
-//! orchestrator stage; it is deliberately kept separate from this decision logic
-//! so the machine can be tested without a model or a microphone.
+//! NOT wired to the live path. A session ends only on an explicit user action
+//! (hotkey release / 2nd toggle press) — MIA never auto-ends on a pause in speech.
+//! Anti-hallucination silence gating at recognition time is done server-side by
+//! whisper-server (`--vad`, see `stt.rs`), not here. This module is retained, fully
+//! cargo-tested, as the building block for the **planned in-process per-frame Silero
+//! endpoint** (the backlog accuracy optimization in ADR-007): it consumes a per-frame
+//! speech *probability* (Silero's output) and emits `VadDecision` transitions with
+//! debounce (`MIN_SPEECH_MS`) and hangover (`MIN_SILENCE_MS`). The Silero model load +
+//! per-frame inference that would *produce* those probabilities is the runtime seam for
+//! that future path; it is deliberately kept separate so the machine can be tested
+//! without a model or a microphone.
 
 /// VAD frame size — Silero classifies small fixed frames (§4). 30 ms at 16 kHz
 /// is 480 samples. Kept here because it is a VAD/processing concern, not a device
@@ -18,7 +22,7 @@ pub const FRAME_MS: u32 = 30;
 pub const VAD_THRESHOLD: f32 = 0.5;
 /// Minimum continuous speech before `SpeechStarted` — debounces coughs/clicks (Rule 4).
 pub const MIN_SPEECH_MS: u32 = 150;
-/// Silence run that ends an utterance in toggle mode (Rule 5).
+/// Silence run that would end an utterance on the planned in-process endpoint path (Rule 5).
 pub const MIN_SILENCE_MS: u32 = 700;
 
 /// One transition emitted per processed frame (spec §2).
@@ -30,7 +34,7 @@ pub enum VadDecision {
     SpeechStarted,
     /// Inside an utterance — including the hangover window before an endpoint.
     SpeechOngoing,
-    /// A silence run reached `MIN_SILENCE_MS`: the utterance ended (Rule 5).
+    /// A silence run reached `MIN_SILENCE_MS`: the utterance would end here (Rule 5).
     SpeechEnded,
 }
 
@@ -43,7 +47,7 @@ fn frames_for_ms(ms: u32, frame_ms: u32) -> u32 {
 
 /// The pure endpoint state machine (Rules 4, 5, 8). Feed it one speech probability
 /// per `FRAME_MS` frame; it returns the transition for that frame. It re-arms after
-/// `SpeechEnded`, so toggle mode can detect successive utterances without a reset.
+/// `SpeechEnded`, so a future endpoint path can detect successive utterances without a reset.
 #[derive(Clone, Debug)]
 pub struct EndpointDetector {
     threshold: f32,
@@ -194,7 +198,7 @@ mod tests {
 
     #[test]
     fn re_arms_for_a_second_utterance() {
-        // After SpeechEnded the machine must detect a fresh utterance (toggle mode).
+        // After SpeechEnded the machine must detect a fresh utterance (successive utterances).
         let mut det = EndpointDetector::with_params(0.5, 150, 700, 30);
         run(&mut det, &[0.9; 5]); // utterance 1 start
         for _ in 0..24 {

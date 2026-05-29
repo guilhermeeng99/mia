@@ -18,7 +18,6 @@ export interface GeneralSettings {
   collectStats: boolean;
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;
-  toggleAutoEndpoint: boolean;
 }
 
 export interface HotkeyConfig {

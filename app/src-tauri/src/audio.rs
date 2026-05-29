@@ -86,20 +86,6 @@ pub fn peak(frame: &[f32]) -> f32 {
     frame.iter().fold(0.0_f32, |m, x| m.max(x.abs()))
 }
 
-/// Map a frame's RMS energy to a pseudo speech probability in `[0,1]` for the toggle-mode
-/// auto-endpoint (audio-capture.md §5). At/above `floor` → speech (1.0), below → silence
-/// (0.0). WHY a hard step, not a ramp: the `EndpointDetector` only thresholds at
-/// `VAD_THRESHOLD` (0.5), so a clean 0/1 is equivalent and needs no slope tuning. This is
-/// only the *session-end* signal — Silero still gates the actual recognition server-side
-/// (`whisper-server --vad`), so a noisy energy estimate can't leak hallucinated text.
-pub fn energy_to_prob(rms: f32, floor: f32) -> f32 {
-    if rms >= floor.max(0.0) {
-        1.0
-    } else {
-        0.0
-    }
-}
-
 /// Splits an arbitrary stream of samples into exact fixed-size frames, buffering the
 /// remainder across calls (§2 "frame chunking"). The cpal callback delivers
 /// arbitrary buffer sizes; VAD needs uniform 30 ms frames.
@@ -254,7 +240,6 @@ fn capture_thread(
     samples: Arc<Mutex<Vec<f32>>>,
     channel: Option<Channel<CaptureEvent>>,
     app: Option<AppHandle>,
-    auto_endpoint: bool,
     ready: std::sync::mpsc::Sender<Result<u32, String>>,
 ) {
     let device = match resolve_input_device(device_id.as_deref()) {
@@ -328,44 +313,13 @@ fn capture_thread(
     }
     let _ = ready.send(Ok(rate));
 
-    // Toggle-mode auto-endpoint (armed only in PressToToggle): feed fixed 30 ms frames of
-    // the live buffer through the cargo-tested EndpointDetector and, on a hangover-length
-    // silence run, ask the orchestrator to stop — exactly as a 2nd toggle press would. We
-    // never stop capture from inside this thread (the deadlock-fix lesson): we only emit.
-    const SPEECH_FLOOR: f32 = 0.02; // matches the mic-test "we heard you" peak threshold
-    let frame_len = ((rate as usize / 1000) * crate::vad::FRAME_MS as usize).max(1);
-    let mut chunker = FrameChunker::new(frame_len);
-    let mut detector = crate::vad::EndpointDetector::new();
-    let mut consumed = 0usize;
-    let mut endpoint_fired = false;
-
-    // ~50 Hz level meter (Rule 10) until stop; the stream drops when this returns.
+    // ~50 Hz level meter (Rule 10) until stop; the stream drops when this returns. The
+    // session ends only on an explicit user action (hotkey release / 2nd toggle press) —
+    // this thread never decides to stop, so a pause in speech never cuts a dictation.
     let window = (rate as usize / 50).max(1);
     let mut tick: u32 = 0;
     while !stop.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(20));
-        // Auto-endpoint: consume only the samples appended since last tick, frame them to
-        // 30 ms, and run the detector. One-shot: emit once, then stop detecting.
-        if auto_endpoint && !endpoint_fired {
-            if let Some(app) = &app {
-                let fresh = match samples.lock() {
-                    Ok(b) => {
-                        let s = b[consumed.min(b.len())..].to_vec();
-                        consumed = b.len();
-                        s
-                    }
-                    Err(_) => Vec::new(),
-                };
-                for frame in chunker.push(&fresh) {
-                    let prob = energy_to_prob(rms(&frame), SPEECH_FLOOR);
-                    if detector.push(prob) == crate::vad::VadDecision::SpeechEnded {
-                        let _ = app.emit("dictation://auto-endpoint", ());
-                        endpoint_fired = true;
-                        break;
-                    }
-                }
-            }
-        }
         if channel.is_none() && app.is_none() {
             continue;
         }
@@ -399,7 +353,6 @@ pub fn begin_capture(
     device_id: Option<&str>,
     channel: Option<Channel<CaptureEvent>>,
     app: Option<AppHandle>,
-    auto_endpoint: bool,
 ) -> Result<(), String> {
     let mut guard = state.session.lock().map_err(|_| "capture state poisoned".to_string())?;
     if guard.is_some() {
@@ -410,7 +363,7 @@ pub fn begin_capture(
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
     let (stop_t, samples_t, device_t) = (stop.clone(), samples.clone(), device_id.map(str::to_string));
     let handle = std::thread::spawn(move || {
-        capture_thread(device_t, stop_t, samples_t, channel, app, auto_endpoint, ready_tx);
+        capture_thread(device_t, stop_t, samples_t, channel, app, ready_tx);
     });
     match ready_rx.recv().map_err(|_| "capture thread failed to start".to_string())? {
         Ok(rate) => {
@@ -458,7 +411,7 @@ pub fn test_microphone(
     level: Channel<CaptureEvent>,
 ) -> Result<MicTest, String> {
     let dur = ms.unwrap_or(1500).clamp(200, 5000);
-    begin_capture(&state, None, Some(level), None, false)?;
+    begin_capture(&state, None, Some(level), None)?;
     std::thread::sleep(Duration::from_millis(dur as u64));
     let samples = end_capture(&state)?;
     Ok(MicTest { peak: peak(&samples), rms: rms(&samples), device_name: default_input_name() })
@@ -548,14 +501,6 @@ mod tests {
     fn peak_is_max_absolute() {
         assert!((peak(&[0.1, -0.9, 0.3]) - 0.9).abs() < 1e-6);
         assert_eq!(peak(&[]), 0.0);
-    }
-
-    #[test]
-    fn energy_to_prob_steps_at_floor() {
-        assert_eq!(energy_to_prob(0.05, 0.02), 1.0); // clearly speech
-        assert_eq!(energy_to_prob(0.01, 0.02), 0.0); // clearly silence
-        assert_eq!(energy_to_prob(0.02, 0.02), 1.0); // exactly at floor counts as speech
-        assert_eq!(energy_to_prob(0.0, 0.02), 0.0); // silence
     }
 
     #[test]

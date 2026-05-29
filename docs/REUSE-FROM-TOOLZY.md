@@ -27,7 +27,7 @@ file → ffmpeg (→ 16 kHz mono s16le WAV) → spawn whisper-cli (loads model) 
 MIA's **live dictation** path keeps the recognition contract but replaces both ends:
 
 ```
-hotkey → cpal mic (16 kHz mono PCM) → Silero VAD endpoint → WARM model (loaded once) → cleanup → inject at cursor
+hotkey → cpal mic (16 kHz mono PCM) → Silero VAD (silence gating) → WARM model (loaded once) → cleanup → inject at cursor
 ```
 
 Two decisions are locked by the architecture:

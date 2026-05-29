@@ -170,16 +170,6 @@
     }
   }
 
-  async function setAutoEndpoint(value: boolean) {
-    if (!general) return;
-    try {
-      const s = await updateSettings({ general: { ...general, toggleAutoEndpoint: value } });
-      general = s.general;
-    } catch (e) {
-      fail(e);
-    }
-  }
-
   async function loadModels() {
     models = await listWhisperModels();
   }
@@ -363,15 +353,6 @@
           </select>
         </Field>
       </div>
-      {#if hotkey?.mode === "pressToToggle" && general}
-        <div class="mt-4">
-          <Toggle
-            checked={general.toggleAutoEndpoint}
-            label="Encerrar automaticamente após silêncio"
-            onchange={setAutoEndpoint}
-          />
-        </div>
-      {/if}
     </Card>
 
     <Card>

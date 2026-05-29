@@ -317,7 +317,7 @@ inline message on a reserved/conflicting combo. Backs the push-to-talk binding i
    │  user presses & holds the push-to-talk hotkey (works unfocused)
    ▼
 [HUD appears → listening]   ← pulsing action-blue ring + live waveform from the mic level meter
-   │  user speaks (cpal captures 16 kHz mono; Silero VAD endpoints)
+   │  user speaks (cpal captures 16 kHz mono; Silero VAD gates silence)
    ▼
    │  user releases the key (push-to-talk) or toggles off (toggle mode)
    ▼
