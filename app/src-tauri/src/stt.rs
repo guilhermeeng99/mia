@@ -176,7 +176,7 @@ fn inference_url(port: u16) -> String {
 /// `--no-fallback`), and each `/inference` is an independent, stateless call so no
 /// prior transcript conditions the next one (= whisper-cli `--max-context 0`). Those
 /// literal CLI flags are not whisper-server flags and aren't needed here (ADR-007).
-fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String> {
+fn server_args(model: &Path, vad_model: &Path, port: u16, threads: usize) -> Vec<String> {
     vec![
         "-m".into(),
         model.to_string_lossy().into_owned(),
@@ -186,6 +186,12 @@ fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String> {
         port.to_string(),
         "-t".into(),
         threads.to_string(),
+        // Server-side Silero VAD (whisper.cpp built-in): only detected speech reaches
+        // Whisper, so silence / non-speech can't become hallucinated text — the warm,
+        // resident equivalent of the planned per-frame VAD gate (ADR-007).
+        "--vad".into(),
+        "--vad-model".into(),
+        vad_model.to_string_lossy().into_owned(),
     ]
 }
 
@@ -514,15 +520,17 @@ pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), 
         }
     }
     let model_path = require_model(app, model)?;
-    // Silero VAD must be present too (downloaded alongside the model).
-    if !models_dir(app)?.join(VAD_FILENAME).exists() {
+    // Silero VAD must be present too (downloaded alongside the model) — it's passed to
+    // the server so recognition is VAD-gated (anti-hallucination).
+    let vad_path = models_dir(app)?.join(VAD_FILENAME);
+    if !vad_path.exists() {
         return Err("model not downloaded: silero VAD".into());
     }
     let exe = server_exe(app)?;
     let gpu = exe.starts_with(gpu_dir(app)?);
     let port = free_port()?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-    let child = spawn_server(&exe, &server_args(&model_path, port, threads))?;
+    let child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
     wait_for_server(port, Duration::from_secs(60))?;
 
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
@@ -643,11 +651,18 @@ mod tests {
 
     #[test]
     fn server_args_has_model_host_port_threads() {
-        let a = server_args(Path::new("m.bin"), 8765, 8);
+        let a = server_args(Path::new("m.bin"), Path::new("vad.bin"), 8765, 8);
         assert!(a.windows(2).any(|w| w[0] == "-m" && w[1] == "m.bin"));
         assert!(a.windows(2).any(|w| w[0] == "--host" && w[1] == "127.0.0.1"));
         assert!(a.windows(2).any(|w| w[0] == "--port" && w[1] == "8765"));
         assert!(a.windows(2).any(|w| w[0] == "-t" && w[1] == "8"));
+    }
+
+    #[test]
+    fn server_args_enable_vad_with_model() {
+        let a = server_args(Path::new("m.bin"), Path::new("vad.bin"), 8765, 8);
+        assert!(a.iter().any(|x| x == "--vad"));
+        assert!(a.windows(2).any(|w| w[0] == "--vad-model" && w[1] == "vad.bin"));
     }
 
     #[test]
