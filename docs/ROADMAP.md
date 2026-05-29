@@ -69,7 +69,7 @@ Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruc
 ### Phase 4 — Polish & Distribution ⬜
 
 - ⬜ **Onboarding** flow — first-run: hotkey, mic, model download. → [onboarding.md](specs/onboarding.md)
-- ⬜ **Settings / "The Hub"** dashboard + usage stats. → [settings.md](specs/settings.md)
+- 🚧 **Settings / "The Hub"** dashboard + usage stats. Shared design-system primitives (`Button`, `Card`, `Field`, `Toggle`, `Pill`) + a first Hub surface (mic device picker, Whisper model list + on-demand download with live progress, warm-engine + GPU status, test-injection) wired to the typed `invoke()` wrappers; build-verified (svelte-check + vite). Remaining: device-selection persistence, hotkey recorder, usage stats. → [settings.md](specs/settings.md), [design-system.md](specs/design-system.md)
 - ⬜ **Signed in-app auto-update** — GitHub Releases + `tauri-plugin-updater`, minisign-verified `latest.json`. → [ADR-009](specs/architecture.md#adr-009-distribution--auto-update)
 - ⬜ **NVIDIA CUDA engine** — optional on-demand GPU engine (`nvcuda.dll` detect + download + extract; **≈7–10×** faster), reused/adapted from Toolzy. → [speech-to-text.md](specs/speech-to-text.md), [REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md) · [ADR-007](specs/architecture.md#adr-007-on-demand-models--anti-hallucination)
 - ⬜ **GitHub release pipeline** — CI (Bun/pnpm build + `cargo test`) → tag → signed Windows installer via `tauri-action` → GitHub Releases. → [ADR-009](specs/architecture.md#adr-009-distribution--auto-update)

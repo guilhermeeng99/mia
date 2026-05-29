@@ -1,7 +1,7 @@
 # Design System & UX Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — tokens live in `app/src/styles.css` (`@theme`, light + HUD); the shared primitives (`Button`, `Card`, `Field`, `Toggle`, `Pill`) exist in `app/src/lib/components/ui/` and a first Settings/Hub surface consumes them. Remaining: the floating mic HUD window styling + onboarding screens.
+> **Last updated**: 2026-05-29
 > **Coverage**: Theme, Fonts, Colors (light + HUD), Typography, Spacing, Radius, Elevation, Components, Layout, UX (principles + flow), Accessibility, Do/Don't
 > **Environment**: desktop (Windows, native)
 > **Source of truth (when built)**: `app/src/styles.css` (single `@theme` block); shared
