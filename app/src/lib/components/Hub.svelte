@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { listInputDevices, testMicrophone, type AudioDevice } from "../audio";
   import { injectText } from "../inject";
+  import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../hotkey";
   import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import {
     downloadWhisperModel,
@@ -40,10 +41,83 @@
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
   let general = $state<GeneralSettings | null>(null);
+  let hotkey = $state<HotkeyConfig | null>(null);
+  let recording = $state(false);
+  let hotkeyError = $state<string | null>(null);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
     error = String(e);
+  }
+
+  // Map a KeyboardEvent.code to MIA's canonical key token (matches the Rust parser).
+  function keyFromCode(code: string): string | null {
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    const named: Record<string, string> = {
+      Space: "Space", Tab: "Tab", Enter: "Enter", Escape: "Escape", Delete: "Delete",
+      ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+    };
+    return named[code] ?? null;
+  }
+
+  // Build a canonical accelerator (e.g. "Ctrl+Shift+D") or null while still waiting
+  // for a modifier+key chord (a bare key is rejected by the engine, Rule 5).
+  function accelFromEvent(e: KeyboardEvent): string | null {
+    const mods: string[] = [];
+    if (e.ctrlKey) mods.push("Ctrl");
+    if (e.altKey) mods.push("Alt");
+    if (e.shiftKey) mods.push("Shift");
+    if (e.metaKey) mods.push("Super");
+    const key = keyFromCode(e.code);
+    if (!key || mods.length === 0) return null;
+    return [...mods, key].join("+");
+  }
+
+  function onRecordKey(e: KeyboardEvent) {
+    if (!recording) return;
+    e.preventDefault();
+    if (e.code === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+      stopRecording();
+      return;
+    }
+    const accel = accelFromEvent(e);
+    if (accel) void commitHotkey(accel);
+  }
+
+  function startRecording() {
+    hotkeyError = null;
+    recording = true;
+    window.addEventListener("keydown", onRecordKey, true);
+  }
+
+  function stopRecording() {
+    recording = false;
+    window.removeEventListener("keydown", onRecordKey, true);
+  }
+
+  // Persist + re-register via update_hotkey, which rejects a conflicting chord
+  // (the engine's conflict-probe) and keeps the old binding on failure.
+  async function commitHotkey(accelerator: string) {
+    stopRecording();
+    const mode = hotkey?.mode ?? "pushToHold";
+    try {
+      await updateHotkey({ accelerator, mode });
+      hotkey = { accelerator, mode };
+    } catch (e) {
+      hotkeyError = String(e);
+    }
+  }
+
+  async function setMode(mode: ActivationMode) {
+    if (!hotkey || hotkey.mode === mode) return;
+    try {
+      await updateHotkey({ accelerator: hotkey.accelerator, mode });
+      hotkey = { ...hotkey, mode };
+    } catch (e) {
+      hotkeyError = String(e);
+    }
   }
 
   // The dictation language is read from settings at transcribe time, so persisting
@@ -68,6 +142,7 @@
     warmStatus().then((w) => (warm = w)).catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
     getSettings().then((s) => (general = s.general)).catch(fail);
+    getHotkey().then((h) => (hotkey = h)).catch(fail);
   });
 
   async function download(id: string) {
@@ -153,6 +228,39 @@
         {#if micMsg}
           <span class="text-body text-slate-blue">{micMsg}</span>
         {/if}
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Atalho (push-to-talk)</h2>
+      <p class="mt-1 text-body text-slate-blue">
+        Segure o atalho e fale; solte para inserir. Grave uma combinação com modificador.
+      </p>
+      {#if hotkeyError}
+        <p class="mt-2 text-body text-danger">⚠ {hotkeyError}</p>
+      {/if}
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <Pill tone="neutral">{hotkey?.accelerator ?? "—"}</Pill>
+        <Button variant="secondary" disabled={recording} onclick={startRecording}>
+          {recording ? "Pressione a combinação…" : "Gravar atalho"}
+        </Button>
+        {#if recording}
+          <Button variant="ghost" onclick={stopRecording}>Cancelar</Button>
+        {/if}
+      </div>
+      <div class="mt-4">
+        <Field label="Modo de ativação">
+          <select
+            value={hotkey?.mode ?? "pushToHold"}
+            disabled={!hotkey}
+            onchange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as ActivationMode)}
+            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
+                   text-midnight-indigo min-h-[40px]"
+          >
+            <option value="pushToHold">Segurar para falar</option>
+            <option value="pressToToggle">Pressionar para ligar/desligar</option>
+          </select>
+        </Field>
       </div>
     </Card>
 
