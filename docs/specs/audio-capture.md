@@ -1,7 +1,7 @@
 # Audio Capture & VAD Endpointing Feature Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. Runtime-pending: the cpal real-time stream + lock-free ring buffer + processing/VAD thread, the `start/stop_capture` + `test_microphone` commands, and Silero model load + per-frame inference.
+> **Last updated**: 2026-05-29
 > **Coverage**: all sections drafted (1–9)
 > **Environment**: desktop (Windows, native)
 
@@ -331,16 +331,16 @@ Transitions:
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] stereo→mono downmix on fixed buffers (averaging, clipping behavior)
-  - [ ] 48 kHz→16 kHz resample ratio + output length on a fixed input buffer
-  - [ ] `f32`→`s16` quantization: clamp to `[-1.0,1.0]`, scale, round, no overflow
-  - [ ] RMS/peak on known buffers (silence → ~0; full-scale sine → expected RMS) (Rule 10)
-  - [ ] frame chunking: arbitrary callback buffer → exact 30 ms frames + remainder handling
-  - [ ] **VAD endpoint state machine**: synthetic probability sequences →
+  - [x] stereo→mono downmix on fixed buffers (averaging, clipping behavior)
+  - [x] 48 kHz→16 kHz resample ratio + output length on a fixed input buffer
+  - [x] `f32`→`s16` quantization: clamp to `[-1.0,1.0]`, scale, round, no overflow
+  - [x] RMS/peak on known buffers (silence → ~0; full-scale sine → expected RMS) (Rule 10)
+  - [x] frame chunking: arbitrary callback buffer → exact 30 ms frames + remainder handling
+  - [x] **VAD endpoint state machine**: synthetic probability sequences →
         `SpeechStarted` only after `MIN_SPEECH_MS`; `SpeechEnded` only after `MIN_SILENCE_MS`;
         all-silence never emits `SpeechStarted` (Rules 4, 5, 8)
   - [ ] each `Err(String)` path the commands return (no device / denied / in-use / VAD missing /
-        already-capturing / device-not-found)
+        already-capturing / device-not-found) — pending the capture commands
 - **Manual / runtime** (needs a real mic):
   - [ ] device picker lists mics; selecting one switches capture; "System default" follows OS
   - [ ] `test_microphone` shows a live level without running STT
