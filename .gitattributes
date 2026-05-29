@@ -1,0 +1,20 @@
+# Normalize line endings to LF on checkout everywhere. GitHub's Windows CI
+# runners default to core.autocrlf=true, which converts text files to CRLF on
+# checkout — and Biome's formatter (lineEnding=lf) then flags every file as
+# "needs formatting", failing CI. Forcing eol=lf here overrides autocrlf so the
+# runner, local dev, and contributors all get the same LF the repo stores.
+* text=auto eol=lf
+
+# Binary assets — never apply EOL conversion (text=auto usually detects these,
+# but be explicit so a heuristic miss can't corrupt them).
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.woff  binary
+*.woff2 binary
+*.dll   binary
+*.exe   binary
+*.wav   binary
+*.onnx  binary
+*.bin   binary
+*.gguf  binary
