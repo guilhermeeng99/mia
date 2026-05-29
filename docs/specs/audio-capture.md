@@ -231,8 +231,10 @@ enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
 
 The VAD/endpoint constants are **fixed defaults** (part of the anti-hallucination contract,
 [ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)),
-not user-tunable knobs in v1 — mirroring the locked Whisper flags
-(`--temperature 0 --no-fallback --max-context 0`). The Settings UI validates only the device
+not user-tunable knobs in v1 — mirroring the locked Whisper decoding policy (greedy temperature 0 +
+`temperature_inc=0.0` to disable the fallback ladder + stateless per-`/inference` calls for no
+cross-utterance context — the equivalents of whisper-CLI's `--no-fallback` / `--max-context 0`, not
+those literal flags). The Settings UI validates only the device
 choice; the engine re-resolves the device defensively at `start_capture` (Rule 14) and re-checks
 the VAD model exists (Rule 9). The Silero model file and its source are reused verbatim from
 Toolzy: `ggml-silero-v6.2.0.bin` from

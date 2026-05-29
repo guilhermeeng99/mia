@@ -30,7 +30,8 @@ gate UX (see [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)).
   flip it silently (ADR-001 — no hidden privileged behavior).
 - **Latency-friendly default model.** We pre-select **`small`** for the first download — the best
   accuracy/latency trade for live dictation on a CPU build — and clearly label sizes/RAM so the user
-  can choose `medium` (slower, more accurate) or `base` (faster, lighter). Defaults and rationale live
+  can choose `medium` (slower, more accurate) or a larger model. The registry is
+  `small` / `medium` / `large-v3-turbo` / `large-v3` (there is no `base`); defaults and rationale live
   in [speech-to-text.md](speech-to-text.md) (ADR-007).
 - **GPU is an optional offer, never a blocker.** The NVIDIA CUDA engine step only appears if a GPU is
   detected (`nvcuda.dll` present); on no-GPU machines the step is skipped silently and MIA runs the
@@ -58,98 +59,82 @@ which runs one real dictation pass through the live pipeline.
 | **Target** | The onboarding window (Settings/Hub light theme); the system tray (post-finish residence); Windows Settings deep-link (mic privacy page) |
 | **Language** | UI: pt-BR + English (first-class, follows app locale). TryIt transcription: the user's selected dictation language (auto-detect default) |
 
-Backing crates/engines: model + CUDA download reuse Toolzy's `transcription.rs` (`ureq` HTTP, `.part`
-rename-on-complete, progress `Channel`); mic enumeration/capture via **cpal**; hotkey recording via
-**global-hotkey**; tray residence via **tray-icon**; GPU detection via probing for `nvcuda.dll`. The
-audio buffer in the TryIt step lives **in memory only** and is discarded after the step — it never
-touches disk (ADR-001).
+Backing crates/engines: model + CUDA download reuse the engine's **`stt.rs`** (adapted from Toolzy's
+`transcription.rs` — `ureq` HTTP, `.part` rename-on-complete, progress `Channel`); mic
+enumeration/capture via **cpal** (`audio.rs`); the global PTT hotkey via the
+**`tauri-plugin-global-shortcut`** plugin (`hotkey.rs`); tray residence via Tauri's **built-in
+tray-icon feature** (`tray.rs`); GPU detection via probing for `nvcuda.dll`. Any audio captured during a
+guided first-dictation pass lives **in memory only** and is discarded — it never touches disk
+(ADR-001). _(The TryIt-in-wizard pass itself is Phase-pending — see §2.)_
 
 ---
 
 ## 2. Engine Contract (Rust)
 
-**Module**: `app/src-tauri/src/onboarding.rs` (orchestration + config flag), delegating to
-`audio.rs` (mic enumeration/permission probe), `transcription.rs` / `speech_to_text.rs` (model registry
-+ download + GPU detect — see [speech-to-text.md](speech-to-text.md)), and `hotkeys.rs` (binding capture
-+ persistence — see [hotkeys.md](hotkeys.md)). The Svelte wizard in `app/src/lib/onboarding.ts` holds
-only step-navigation state; all checks/downloads/persistence happen in Rust. All commands return
-`Result<T, String>` (ADR-006).
+**There is no dedicated `onboarding.rs` module and no `onboarding.ts` wrapper, and onboarding adds
+no new `#[tauri::command]`s.** The wizard that shipped (Phase 4) is a **Svelte-only component** —
+`app/src/lib/components/Onboarding.svelte`, mounted by `App.svelte` — that **composes existing,
+already-registered commands** through their existing typed wrappers. The orchestration that earlier
+drafts of this spec attributed to a Rust onboarding engine (a wizard `onboarding_status` /
+`complete_onboarding` lifecycle, a dedicated mic-permission probe, GPU detect, a `onboarding_try_dictation`
+pass, etc.) was **never implemented** and is **out of scope / Phase-pending**, not the live contract.
 
-```rust
-// Wizard lifecycle ----------------------------------------------------------
-#[tauri::command]
-async fn onboarding_status() -> Result<OnboardingStatus, String>;
-// { completed: bool, hasModel: bool, micState: MicState, gpuAvailable: bool }
+**What the shipped wizard actually calls** (all pre-existing commands, all returning `Result<T, String>`,
+ADR-006):
 
-#[tauri::command]
-async fn complete_onboarding(state: State<'_, AppState>) -> Result<(), String>;
-// Persists onboardingCompleted=true; idempotent.
+| Wizard step | Wrapper used | Underlying command | Module |
+|---|---|---|---|
+| Hotkey | `getHotkey()` (`app/src/lib/hotkey.ts`) | `get_hotkey` | `hotkey.rs` |
+| Microphone test | `testMicrophone(ms)` (`app/src/lib/audio.ts`) | `test_microphone` | `audio.rs` |
+| Model download | `listWhisperModels()` / `downloadWhisperModel(id, channel)` (`app/src/lib/stt.ts`) | `list_whisper_models` / `download_whisper_model` | `stt.rs` |
 
-// Microphone step -----------------------------------------------------------
-#[tauri::command]
-async fn list_input_devices() -> Result<Vec<InputDevice>, String>; // cpal enumeration
-#[tauri::command]
-async fn check_mic_permission() -> Result<MicState, String>;
-// MicState = Granted | Denied | Unknown | NoDevice (best-effort probe; Windows owns the truth)
-#[tauri::command]
-async fn open_windows_mic_settings() -> Result<(), String>;
-// Opens ms-settings:privacy-microphone via the OS shell. Does NOT change the setting.
-
-// Model step (reuses Toolzy transcription.rs) -------------------------------
-#[tauri::command]
-fn list_models() -> Result<Vec<ModelInfo>, String>;
-// { id, sizeBytes, ramEstimateMb, recommended, downloaded } from the MODELS registry.
-#[tauri::command]
-async fn download_model(
-    state: State<'_, AppState>,
-    model_id: String,
-    on_progress: tauri::ipc::Channel<DownloadProgress>,
-) -> Result<(), String>; // .part → rename on complete; resumable; cancelable via managed State
-#[tauri::command]
-async fn cancel_download(state: State<'_, AppState>) -> Result<(), String>;
-
-// Hotkey step (see hotkeys.md) ----------------------------------------------
-#[tauri::command]
-async fn record_hotkey(on_capture: tauri::ipc::Channel<HotkeyChord>) -> Result<(), String>;
-#[tauri::command]
-async fn set_dictation_hotkey(state: State<'_, AppState>, chord: HotkeyChord) -> Result<(), String>;
-// Err if the chord is already claimed by another binding or fails to register globally.
-
-// GPU step (optional; reuses Toolzy CUDA detect/download) --------------------
-#[tauri::command]
-async fn detect_gpu() -> Result<GpuInfo, String>; // { available: bool, name: Option<String> }
-#[tauri::command]
-async fn download_cuda_engine(
-    state: State<'_, AppState>,
-    on_progress: tauri::ipc::Channel<DownloadProgress>,
-) -> Result<(), String>;
-
-// TryIt step — one real dictation pass, transcript returned, NOT injected ----
-#[tauri::command]
-async fn onboarding_try_dictation(
-    state: State<'_, AppState>,
-    on_event: tauri::ipc::Channel<TryItEvent>, // level meter → transcribing → result
-) -> Result<String, String>; // returns the cleaned transcript for confirmation only
+```ts
+// app/src/lib/components/Onboarding.svelte (presentation only — no new commands)
+import { testMicrophone } from "../audio";
+import { getHotkey } from "../hotkey";
+import { downloadWhisperModel, listWhisperModels } from "../stt";
+// step 1 Welcome  · step 2 Atalho (shows getHotkey().accelerator)
+// step 3 Microfone (testMicrophone) · step 4 Modelo (download with a progress Channel)
 ```
 
-- All `*Opts` / `*Result` structs use serde `rename_all = "camelCase"`.
-- `Err(String)` messages map 1:1 to UI error states — e.g. `"no input device"`, `"mic permission denied"`,
-  `"download interrupted"`, `"hotkey already in use: <chord>"`, `"model not downloaded"`.
-- The TryIt pass uses the **warm** model (ADR-004), not a cold `whisper-cli` spawn — onboarding loads the
-  just-downloaded model into the resident whisper-rs instance and reuses it (this is also a real warm-up
-  so the first post-onboarding dictation is fast).
-- **Pure helpers** (behind `#[cfg(test)]`, no I/O): the `MODELS` registry lookup + `recommended` flag,
-  `model_url`/`model_filename` builders, the size/RAM formatter, the `HotkeyChord` parse/serialize round-trip,
-  and the `MicState`/`GpuInfo` mapping from probe results to UI states.
-- Typed UI wrapper: `app/src/lib/onboarding.ts` (`invoke<OnboardingStatus>("onboarding_status", …)`, etc.).
+- The four shipped steps are **Welcome → Hotkey → Mic test → Model download** (labels in the component:
+  "Bem-vindo", "Atalho", "Microfone", "Modelo"). `App.svelte` shows the wizard when **no Whisper model is
+  installed yet** (gated on model presence, not a persisted flag) and offers a **"Pular"** (skip) escape.
+- The hotkey step is **read-only**: it *displays* the current PTT chord via `get_hotkey` (the locked
+  `Ctrl+Space` default — `DEFAULT_ACCEL` in `hotkey.rs`); the wizard does not yet record/rebind a chord.
+  Rebinding lives in [settings.md](settings.md) / [hotkeys.md](hotkeys.md).
+- The mic step calls `test_microphone(ms)` (a short capture probe in `audio.rs`); it does **not** call a
+  dedicated permission-probe command — there is none.
+- The model step reuses the existing **`stt.rs`** download surface (`list_whisper_models` /
+  `download_whisper_model`) with its `.part`-rename + progress-`Channel` UX from
+  [speech-to-text.md](speech-to-text.md) — no onboarding-specific download command.
+- **No TryIt-through-the-engine command exists.** The deeper onboarding-engine commands sketched above
+  (lifecycle flag, `check_mic_permission`, `open_windows_mic_settings`, `detect_gpu` for an onboarding
+  GPU step, `onboarding_try_dictation`) are **Phase-pending / out of scope** for the shipped wizard.
+  The closest live equivalent of a "first dictation" is simply the real PTT path after the wizard closes
+  ([dictation.md](dictation.md)); a guided in-wizard TryIt pass and a persisted `onboardingCompleted`
+  flag are still pending (see the Status block and §9).
+
+> **Why no engine module.** Onboarding is pure provisioning UX that only needs to *display* the hotkey,
+> *probe* the mic, and *trigger* the model download — every one of those is already a registered command
+> for the Hub. Per ADR-002, a thin Svelte component composing existing wrappers is the correct shape; a
+> parallel `onboarding.rs` would duplicate `hotkey.rs` / `audio.rs` / `stt.rs`.
 
 ---
 
 ## 3. Business Rules
 
+> **Implemented vs designed.** The shipped Phase-4 wizard implements rules **2** (privacy promise), the
+> mic-test spirit of **3/5**, **6/7** (model is required, `small` recommended), and **8** (gated, streamed,
+> cancelable download) — all via existing commands (§2). First-launch detection (**1**, currently gated on
+> *model presence*, not a persisted flag), the GPU step (**13**), the in-wizard TryIt pass (**11/12**),
+> hotkey *rebinding* (**10**), and the `onboardingCompleted` persistence + idempotent `complete_onboarding`
+> (**14/15**) are the **designed flow** and remain **Phase-pending** (no engine module backs them yet).
+
 1. **First-launch detection** — On startup, if config has no `onboardingCompleted=true` flag, MIA opens
    the onboarding window instead of going straight to the tray. With the flag set, MIA boots directly to
-   the tray.
+   the tray. _(Shipped behavior gates on whether a Whisper model is installed; the persisted flag is
+   Phase-pending.)_
 2. **Privacy promise on Welcome** — The Welcome step must visibly state that everything runs locally:
    no cloud, no account, no server, voice never leaves the device (ADR-001). Next is the only action.
 3. **Mic state is detected, never asserted** — `check_mic_permission` returns a best-effort `MicState`.
@@ -164,16 +149,20 @@ async fn onboarding_try_dictation(
 6. **The Model step is mandatory** — Next is disabled until at least one model is `downloaded`. There is
    no skip. (Dictation is impossible without a model; ADR-007.)
 7. **`small` is pre-selected and labeled "Recommended"** — Each option shows download size and estimated
-   RAM. The user may switch to `base` (faster/lighter), `medium`, or larger (slower/more accurate) before
-   downloading. Definitions live in [speech-to-text.md](speech-to-text.md).
+   RAM. The user may switch to `medium`, `large-v3-turbo`, or `large-v3` (slower/more accurate) before
+   downloading (there is no `base` in the registry). Definitions live in [speech-to-text.md](speech-to-text.md).
 8. **Download is gated, streamed, resumable, and cancelable** — `download_model` streams
    `DownloadProgress` over a `Channel`, writes to a `.part` file, renames on success (Toolzy pattern),
    and is cancelable via `cancel_download`. A partial/interrupted download leaves no half-file registered
    as complete (the `.part` is never renamed) and can be retried/resumed.
-9. **Anti-hallucination STT defaults are fixed** — Onboarding never exposes decoding knobs (VAD, greedy,
-   temperature 0, `--max-context 0` are always on; ADR-007). The model size is the only STT choice here.
-10. **Hotkey must register globally before Next** — `set_dictation_hotkey` must succeed (chord parses and
-    `global-hotkey` registers it system-wide). If the chord is already claimed (by MIA or another app),
+9. **Anti-hallucination STT defaults are fixed** — Onboarding never exposes decoding knobs (Silero VAD,
+   greedy/temperature-0 decoding with no temperature fallback, and stateless per-utterance recognition
+   are always on; ADR-007 — see [speech-to-text.md](speech-to-text.md)). The model size is the only STT
+   choice here.
+10. **Hotkey must register globally before Next** — _(Phase-pending — the shipped wizard only displays the
+    locked `Ctrl+Space` chord; rebinding lives in [settings.md](settings.md) / [hotkeys.md](hotkeys.md).)_
+    In the designed flow a recorded chord must parse and register system-wide via
+    `tauri-plugin-global-shortcut`. If the chord is already claimed (by MIA or another app),
     return `Err("hotkey already in use: <chord>")` and keep the recorder open. A sensible default is
     pre-filled (see [hotkeys.md](hotkeys.md)) so the user can simply accept it.
 11. **TryIt is guided and forgiving** — The step instructs "Hold your hotkey and say *hello*", runs one
@@ -198,9 +187,9 @@ async fn onboarding_try_dictation(
 
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `selectedModel` | enum | `base` / `small` / `medium` / `large-v3` (per registry) | `small` | Which Whisper model to download as the first model; accuracy↔latency↔RAM trade |
+| `selectedModel` | enum | `small` / `medium` / `large-v3-turbo` / `large-v3` (per the `stt.rs` registry — there is no `base`) | `small` | Which Whisper model to download as the first model; accuracy↔latency↔RAM trade |
 | `inputDevice` | enum | enumerated cpal input devices | system default | Mic used for the TryIt step and later dictation |
-| `dictationHotkey` | chord | any valid `global-hotkey` chord | platform default (see [hotkeys.md](hotkeys.md)) | The global push-to-talk binding |
+| `dictationHotkey` | chord | any valid `tauri-plugin-global-shortcut` chord | `Ctrl+Space` (locked `DEFAULT_ACCEL`; see [hotkeys.md](hotkeys.md)) | The global push-to-talk binding |
 | `useCudaEngine` | bool | true / false | `false` (offered only if GPU detected) | Use the downloaded NVIDIA CUDA engine vs. bundled CPU build |
 | `tryItInjects` | bool | true / false | `false` | Whether the TryIt transcript is typed into the focused app (off — keeps focus on the wizard) |
 | `onboardingCompleted` | bool | true / false | `false` | Gate that decides whether the wizard runs at next launch |
@@ -221,11 +210,13 @@ here (ADR-007).
   stops and the `.part` file is left for resume/retry (Toolzy pattern).
 - **Mic / GPU probes are cheap and synchronous-ish**: device enumeration and `nvcuda.dll` detection are
   fast best-effort checks; run them async to avoid any UI stall and cache the result per step entry.
-- **TryIt uses the real audio + warm-model path** (ADR-004): the cpal callback runs on its own real-time
-  thread and hands samples to the engine via a channel — no STT/injection/disk-logging in the callback.
-  The model is loaded **once** (the download we just completed) into the resident whisper-rs instance and
-  kept warm; the TryIt pass is also the warm-up for the first real dictation. Onboarding never cold-spawns
-  `whisper-cli`.
+- **TryIt would use the real audio + warm-model path** (ADR-004) — _Phase-pending; the shipped wizard
+  stops after the model download and lets the user dictate via the live PTT path._ In the designed flow the
+  cpal callback runs on its own real-time thread and hands samples to the engine via a channel — no
+  STT/injection/disk-logging in the callback. The model is loaded **once** (the download we just completed)
+  into the warm **whisper-server** sidecar (MVP default — `whisper-rs` in-process is the later
+  optimization) and kept warm; the TryIt pass is also the warm-up for the first real dictation. Onboarding
+  never cold-spawns `whisper-cli`.
 - **Latency budget**: onboarding itself is not latency-critical (it's a wizard), but the TryIt step should
   feel like real dictation — utterance-end → transcript shown within the model's normal inference window;
   the dominant cost is STT inference, which is why we warm the model rather than spawn per pass.

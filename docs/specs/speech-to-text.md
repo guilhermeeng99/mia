@@ -13,7 +13,7 @@ The **STT engine** is the recognition stage of MIA's dictation pipeline (hotkey 
 - **Warm/resident model — NOT cold per-utterance spawn.** Live dictation cannot pay a multi-second model load on every push-to-talk. The model loads **once** and stays in RAM. **MVP default mechanism: `whisper-server`** (whisper.cpp's HTTP server) spawned as a warm sidecar that MIA POSTs PCM to — chosen because it is **cmake-free** (a prebuilt binary, fetched via Toolzy's pattern) and builds out of the box, while still loading the model only once. **Later optimization: `whisper-rs` in-process** (lowest latency, no IPC/localhost hop, no shell capability), deferred because it builds whisper.cpp via cmake. Both sit behind one `SttBackend` trait. Either way this is the **key divergence from Toolzy**, which cold-spawns `whisper-cli` per run ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)). _(Revised 2026-05-28 — the build-toolchain audit found cmake absent; see ADR-004's revision note.)_
 - **No ffmpeg, no temp WAV, no file output on the live path.** `cpal` already captures exactly the 16 kHz mono PCM Whisper wants, so Toolzy's `preprocess_to_wav` / `temp_wav_path` / `transcript_output_path` / `build_result` machinery is **skipped** (reusable verbatim by a deferred Phase 5 file-transcription feature — see [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)). The transcript goes straight to cleanup + injection, never to disk; audio stays in memory ([ADR-001](architecture.md#adr-001-native-on-device-privacy-first)).
 - **Model choice favours latency (dictation), not max fidelity (Toolzy).** Toolzy defaults to `large-v3` (slowest, most faithful) because correctness-over-speed is its goal. **MIA's live default favours responsiveness** — `small` (CPU) / `medium` as the recommended balance, with `large-v3-turbo` and `large-v3` selectable for users who want more accuracy and can afford the latency or have the CUDA engine. A two-second wait is fine for a one-off file transcription; it is unacceptable when typing at the cursor. See §4 and rule 6.
-- **Anti-hallucination defaults are fixed, always on, never user-tunable.** Every recognition runs with **Silero VAD** + **greedy decoding (temperature 0)** + **`--no-fallback`** (no temperature ladder) + **`--max-context 0`** (no previous-text conditioning). These prevent Whisper's known failure mode (inventing/looping text over silence or between utterances) and are pinned engine settings, not knobs ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
+- **Anti-hallucination defaults are fixed, always on, never user-tunable.** Every recognition runs with **Silero VAD** + **greedy decoding (temperature 0)** + **no temperature fallback ladder** + **no cross-utterance context conditioning**. With the MVP **whisper-server** backend these are enforced **per request** on `/inference`: `temperature=0.0` **and** `temperature_inc=0.0` (which disables whisper's temperature-fallback ladder — the equivalent of whisper-CLI's `--no-fallback`), and each `/inference` call is **independent/stateless**, so no previous transcript conditions the next (the equivalent of whisper-CLI's `--max-context 0`). Those two literal CLI flags are *not* passed (and are not needed) with whisper-server; the in-process whisper-rs path maps the same policy to `FullParams` (greedy, temperature 0, `no_context = true`). These prevent Whisper's known failure mode (inventing/looping text over silence or between utterances) and are pinned engine settings, not knobs ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
 - **Models download on demand; CPU bundled, CUDA optional.** Whisper ggml models are 466 MB–3 GB, so they are fetched once from Hugging Face (`ggerganov/whisper.cpp`) to app-data and reused, behind a clear **download gate**. The small CPU whisper.cpp build is bundled (works everywhere); on NVIDIA the user can one-click download a self-contained **CUDA** engine (~7–10× faster). Lifts Toolzy's download + GPU-engine machinery wholesale ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
 
 ---
@@ -58,16 +58,17 @@ struct WarmStatus { loaded: bool, model: Option<String>, backend: String } // "w
 #[derive(serde::Serialize)]
 struct Transcript { text: String, language: String } // raw transcript + detected/forced code
 
-/// Warm/resident state: the loaded whisper-rs context (or the whisper-server child),
-/// plus which model/backend is live. Lives in managed Tauri State; loaded ONCE.
+/// Warm/resident state: the warm whisper-server child (MVP default) — or, later, the
+/// in-process whisper-rs context — plus which model/backend is live. Lives in managed
+/// Tauri State; loaded ONCE.
 struct SttState { /* Mutex<Option<WarmModel>>, current model id, backend, gpu flag */ }
 
 // ---- lifecycle (driven by the UI: onboarding warm-up, settings) ----
 
-/// Load the chosen model into RAM and keep it resident (whisper-rs in-process by
-/// default; whisper-server fallback). Idempotent: a no-op if the same model+backend
-/// is already warm; reloads if the model/backend changed. Err if the model isn't
-/// downloaded (require_model) — the UI gates with download_whisper_model first.
+/// Load the chosen model into RAM and keep it resident (warm whisper-server sidecar by
+/// default — MVP, cmake-free; in-process whisper-rs is the later optimization). Idempotent:
+/// a no-op if the same model+backend is already warm; reloads if the model/backend changed.
+/// Err if the model isn't downloaded (require_model) — the UI gates with download_whisper_model first.
 #[tauri::command]
 async fn warm_model(app: AppHandle, model: String, state: State<'_, SttState>) -> Result<WarmStatus, String>;
 
@@ -83,8 +84,9 @@ fn unload_model(state: State<'_, SttState>) -> Result<(), String>;
 
 /// Transcribe one endpointed utterance against the WARM model. Pure recognition:
 /// no cleanup, no injection. `language` None ⇒ auto-detect, Some("pt") forces.
-/// Always applies the fixed anti-hallucination params (VAD + greedy temp 0 +
-/// no-fallback + max-context 0). Err if no model is warm.
+/// Always applies the fixed anti-hallucination policy (Silero VAD + greedy temp 0 +
+/// temperature_inc 0 so no fallback ladder + stateless per-request = no cross-utterance
+/// context). Err if no model is warm.
 fn transcribe_chunk(state: &SttState, samples: &[f32], language: Option<&str>) -> Result<Transcript, String>;
 
 // ---- model + engine acquisition (reused AS-IS from Toolzy transcription.rs) ----
@@ -107,15 +109,20 @@ fn model_url(id: &str) -> Option<String>;         // HF resolve URL         (as-
 fn nvidia_present() -> bool;                       // SystemRoot\System32\nvcuda.dll exists (as-is)
 fn find_file(dir: &Path, name: &str) -> Option<PathBuf>; // locate exe/DLL in extracted CUDA zip (as-is)
 
-/// The anti-hallucination policy, adapted from Toolzy's CLI `whisper_args` to the
-/// in-process whisper-rs params: greedy sampling, temperature 0.0, no_context = true,
-/// VAD enabled with the Silero model. Returns/mutates a FullParams; cargo-tested to
-/// assert every anti-hallucination setting is present regardless of language/model.
-fn antihallucination_params(language: Option<&str>, vad_model: &Path) -> FullParams; // (adapt of whisper_args)
+/// The anti-hallucination policy, adapted from Toolzy's CLI `whisper_args`. With the MVP
+/// whisper-server backend it is expressed as per-request `/inference` form fields —
+/// `inference_fields(language)` emits `temperature=0.0` + `temperature_inc=0.0` (disables the
+/// fallback ladder) + `response_format=json` (+ optional `language`); each call is stateless
+/// (no cross-utterance context), and `server_args` starts the warm server. cargo-tested to
+/// assert every anti-hallucination setting is present regardless of language/model. The later
+/// in-process whisper-rs path maps the same policy to `FullParams` (greedy, temperature 0,
+/// `no_context = true`, VAD with the Silero model).
+fn inference_fields(language: Option<&str>) -> Vec<(String, String)>; // per-request anti-hallucination (whisper-server)
+fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String>; // warm-server startup args
 ```
 
-- **Backend selection**: whisper-rs in-process is the default. If a build/runtime issue prevents loading the in-process library, MIA falls back to spawning **whisper-server** and POSTing PCM; the same anti-hallucination params map to its request fields. The CUDA engine is selected at warm time when `gpu_engine_status` reports it installed (the warm whisper-rs/engine loads the CUDA build instead of the CPU build) — the dispatch *idea* is Toolzy's `recognize`, but both branches are now warm/in-process, not spawned.
-- **Native bits**: the whisper.cpp `ggml`/`whisper` DLLs must be present at runtime; fetched/placed by `app/scripts/fetch-binaries.mjs` via Toolzy's `fetchExeWithDlls` pattern (Windows x64 only — [ADR-011](architecture.md#adr-011-windows-only-v1)). The in-process path needs **no shell capability** (privacy/attack-surface win); only the whisper-server fallback uses a scoped `shell:allow-spawn`.
+- **Backend selection**: the warm **whisper-server** sidecar is the **MVP default** (cmake-free); MIA spawns it once and POSTs PCM to `127.0.0.1` per utterance. **whisper-rs in-process** is the **later optimization** (no IPC/localhost hop, no shell capability), deferred because it builds whisper.cpp via cmake; the same anti-hallucination params map to either backend. The CUDA engine is selected at warm time when `gpu_engine_status` reports it installed (the warm server/engine loads the CUDA build instead of the CPU build) — the dispatch *idea* is Toolzy's `recognize`, but the model is loaded **once** and kept warm, not cold-spawned per run.
+- **Native bits**: the **`whisper-server.exe`** binary plus its sibling whisper.cpp `ggml`/`whisper` DLLs must be present at runtime; they are fetched/placed into `app/src-tauri/binaries/` by `app/scripts/fetch-binaries.mjs` (Toolzy's `fetchExeWithDlls` pattern) and shipped via `tauri.conf.json` `bundle.resources` (Windows x64 only — [ADR-011](architecture.md#adr-011-windows-only-v1)). The whisper-server backend uses a scoped `shell:allow-spawn`; the later in-process whisper-rs path needs **no shell capability** (privacy/attack-surface win).
 - **Error messages** (each maps to a UI/HUD state): `"unknown model: <id>"`, `"model not downloaded: <id>"`, `"model not downloaded: silero VAD"`, `"no model loaded"` (transcribe before warm), `"download failed: …"`, `"whisper engine failed: <reason>"`.
 - **Reuse**: `list_whisper_models`, `download_whisper_model`, `download_file` (`.part` rename), `VAD_FILENAME`/`VAD_URL`, `gpu_engine_status`, `download_gpu_engine`, and the whole CUDA detect→download→extract→place block come **as-is** from `transcription.rs`. `DownloadProgress` (from `crate::download`) is reused verbatim. See [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md) §1 for the exact verdicts.
 - **UI wrapper**: `app/src/lib/stt.ts` (`warmModel`, `warmStatus`, `unloadModel`, `listWhisperModels`, `downloadWhisperModel`, `gpuEngineStatus`, `downloadGpuEngine`) — one typed `invoke()` per command. The UI holds **no** recognition logic.
@@ -133,7 +140,7 @@ Numbered, testable.
 5. **Language** — `None` ⇒ auto-detect (Whisper picks); `Some(code)` forces it (e.g. `pt`, `en`). The detected/forced code is returned in `Transcript.language`. pt-BR and English are first-class; ~99 codes accepted (rule 9).
 6. **Latency-favouring default model** — the recommended live default is `small`/`medium`, **not** Toolzy's `large-v3`. `large-v3-turbo` / `large-v3` are selectable for accuracy at a latency cost. The engine never silently upgrades the model (rule 1).
 7. **Silence gating (anti-hallucination, fixed)** — recognition **always** runs with **Silero VAD**, so only detected speech reaches Whisper; silence / non-speech cannot become invented text. Not user-tunable ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
-8. **Deterministic decoding (anti-hallucination, fixed)** — recognition **always** uses greedy decoding (temperature 0), `--no-fallback` (no temperature ladder), and `--max-context 0` (no previous-text conditioning) to stop repetition/looping drift between utterances. `antihallucination_params` always emits them; cargo-tested.
+8. **Deterministic decoding (anti-hallucination, fixed)** — recognition **always** uses greedy decoding (temperature 0), **no temperature fallback ladder**, and **no previous-text conditioning** to stop repetition/looping drift between utterances. With whisper-server this is `temperature=0.0` + `temperature_inc=0.0` per `/inference` (the fallback-ladder kill) plus the fact that each `/inference` call is stateless (no cross-utterance context) — i.e. the same effect as whisper-CLI's `--no-fallback` / `--max-context 0`, but achieved via the server's request fields rather than those literal flags. `inference_fields` always emits them; cargo-tested.
 9. **Empty / no-speech utterance** — if VAD finds no speech, recognition returns an **empty** string (`Ok`, never hallucinated text); the orchestrator injects nothing and returns the HUD to Idle.
 10. **GPU when available** — if `gpu_engine_status.downloaded` is true (and `gpu_present`), `warm_model` loads the **CUDA** engine/build (≈7–10× faster); otherwise the bundled **CPU** build. No NVIDIA ⇒ CPU, transparently.
 11. **Download integrity** — `download_whisper_model` and `download_gpu_engine` stream to a `.part` file and rename on completion; an interrupted download leaves **no** half model/engine in place. Progress is reported via the `Channel` (reused from Toolzy `download_file`).
@@ -163,7 +170,7 @@ Every user-facing parameter; the anti-hallucination settings are **fixed**, not 
 
 > **Why the default differs from Toolzy.** Toolzy is a one-shot file transcriber where "correctness over speed" rules, so it defaults to `large-v3` and a 20-second run is fine. MIA types at the cursor in real time — the dominant cost is STT inference on the utterance, and a `large-v3` CPU pass would add seconds of perceptible lag after every phrase. So MIA inverts the default to a small/medium model (latency-first), and lets users opt into more accuracy (or pair a larger model with the CUDA engine). The **anti-hallucination policy is identical** in both apps; only the speed/accuracy default moves.
 
-**Fixed (not user options)** — VAD on, greedy/temperature 0, `--no-fallback`, `--max-context 0`. A correct result never depends on the user knowing to enable them ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
+**Fixed (not user options)** — Silero VAD on, greedy/temperature 0, no temperature fallback ladder (whisper-server `temperature_inc=0.0`), and stateless per-utterance recognition (no cross-utterance context) — the equivalents of whisper-CLI's `--no-fallback` / `--max-context 0`, but enforced via the server's request fields, not those literal flags. A correct result never depends on the user knowing to enable them ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
 
 The UI (onboarding + Hub settings) offers the model picker with each model's **size** and a **download gate**: if the chosen model (or the Silero VAD model) isn't on disk, the action is disabled and a one-time "needs the *\<model\>* model (~N GB) — download once" prompt + streamed progress bar appears (see [onboarding.md](onboarding.md), [settings.md](settings.md)). The engine re-checks existence defensively (rule 3).
 
@@ -225,7 +232,7 @@ Hub/onboarding (model lifecycle):
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
   - [ ] `model_url` / `model_filename` — known ids map to the HF URL + `ggml-<id>.bin`; unknown → `None` (lifted Toolzy tests).
-  - [ ] `antihallucination_params` — **always** emits VAD (Silero) + greedy/temperature 0 + no-fallback + `no_context`/max-context 0, regardless of language/model (rules 7–8).
+  - [ ] `inference_fields` — **always** emits `temperature=0.0` + `temperature_inc=0.0` (fallback-ladder kill) (+ optional forced `language`), regardless of language/model; Silero VAD on and stateless per-utterance recognition supply the rest of the policy (rules 7–8).
   - [ ] `nvidia_present` / `find_file` — driver detection + locating the CUDA exe/DLLs in an extracted archive (lifted Toolzy tests).
   - [ ] each `Err(String)` path: unknown model, model-not-downloaded, VAD-not-downloaded, no-model-loaded.
   - [ ] warm-state transitions where pure: warm → re-warm same model is a no-op; warm different model reloads; `unload_model` → not-loaded.

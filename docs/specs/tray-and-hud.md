@@ -1,15 +1,19 @@
 # Tray & Floating Mic HUD Feature Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
-> **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces, one Rust module).
+> **Status**: Phase 1 — **tray implemented** (Open Settings/Hub + Quit, `app/src-tauri/src/tray.rs`);
+> **HUD currently a Svelte overlay** (`app/src/lib/components/MicHud.svelte`) — a dedicated `hud.rs`
+> window module and its commands (§2) are **still pending** (not yet implemented).
+> **Last updated**: 2026-05-29
+> **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces). Tray is live; the
+> HUD-window engine contract in §2 is the planned target, not the current surface.
 > **Environment**: desktop (Windows, native)
 
 MIA has **no main window** — it lives in the **system tray** and surfaces a tiny **floating mic
 HUD** only while you dictate. This spec covers both halves of MIA's ambient presence: (1) the
-**system tray** (`tray-icon` crate) as the app's primary, always-present face — a tray icon whose
-art reflects state (idle / listening / disabled) and a menu to open Settings/Hub, toggle dictation
-on/off, pick the active model, and quit; and (2) the **floating mic HUD** (`MicHud.svelte` in a
+**system tray** (Tauri's built-in **tray-icon feature**, driven by `tray.rs` — *not* a standalone
+`tray-icon` crate) as the app's primary, always-present face — a tray icon whose art reflects state
+(idle / listening / disabled) and a menu to open Settings/Hub, toggle dictation on/off, pick the
+active model, and quit; and (2) the **floating mic HUD** (`MicHud.svelte` in a
 frameless, transparent, always-on-top, no-activate, click-through Tauri window) that fades in on
 hotkey-down and walks the `listening → transcribing → inserting → error` state machine, anchored
 near the caret when possible and screen-anchored otherwise. The tray is up the whole time MIA
@@ -63,8 +67,10 @@ model, open Hub, quit).
 | **Target** | The OS tray notification area; the dedicated frameless HUD window (always-on-top overlay); the Hub window (shown/hidden). |
 | **Language** | UI labels are localized (pt-BR / English, first-class — see [design-system.md](design-system.md)); the feature itself is language-agnostic. |
 
-Crates: **`tray-icon`** (tray + menu), Tauri's **`WebviewWindowBuilder`** /
-`tauri-plugin-positioner` (the HUD window + positioning), `tauri::Manager`/`Emitter` (state push).
+Crates / features: Tauri's built-in **tray-icon feature** (`tauri = { features = ["tray-icon"] }`,
+driven by `tray.rs` — there is no separate `tray-icon` crate) for the tray + menu; Tauri's
+**`WebviewWindowBuilder`** / `tauri-plugin-positioner` (the planned `hud.rs` window + positioning,
+not yet implemented — see §2), `tauri::Manager`/`Emitter` (state push).
 No audio buffer ever touches disk in this module (ADR-001) — it never even sees the buffer, only a
 scalar level.
 
@@ -72,13 +78,27 @@ scalar level.
 
 ## 2. Engine Contract (Rust)
 
-Rust owns the tray and the HUD window; Svelte renders `MicHud.svelte` and the menu has no webview
-at all (native menu). All commands return `Result<T, String>` (ADR-006).
+> ⚠️ **PHASE-PENDING — not the current surface.** The HUD-window contract in this section
+> (`hud.rs` and the commands `show_hud` / `hide_hud` / `set_dictation_enabled` / `set_active_model`
+> / `open_hub`, plus the `HudState` enum and `hud://state` / `hud://level` events) is the **planned
+> target** and is **not yet implemented**. None of these commands are registered in `lib.rs`'s
+> `invoke_handler`. **What exists today:** `app/src-tauri/src/tray.rs` implements the system tray
+> via Tauri's built-in tray-icon feature, with **Open Settings/Hub** and **Quit** menu items; the
+> mic HUD is a **Svelte overlay** (`app/src/lib/components/MicHud.svelte`), with **no** dedicated
+> `hud.rs` window module yet. The richer tray menu (checkable "Dictation enabled", "Pick model"
+> submenu) and the dedicated HUD window remain on the Phase-1 backlog. Treat the signatures below
+> as the design contract to build against, not as the live IPC surface.
 
-**Module**: `app/src-tauri/src/tray.rs` (tray icon + menu) and `app/src-tauri/src/hud.rs` (HUD
-window lifecycle + positioning). Shared state lives in the app's managed `State`.
+The intended design: Rust owns the tray and the HUD window; Svelte renders `MicHud.svelte` and the
+menu has no webview at all (native menu). All commands return `Result<T, String>` (ADR-006).
+
+**Modules (planned)**: `app/src-tauri/src/tray.rs` (tray icon + menu — *implemented today, Open +
+Quit only*) and `app/src-tauri/src/hud.rs` (HUD window lifecycle + positioning — *not yet created;
+HUD is currently the `MicHud.svelte` overlay*). Shared state lives in the app's managed `State`.
 
 ```rust
+// ⚠️ PHASE-PENDING: the HudState enum and all commands below are PLANNED — none are implemented
+//    or registered in lib.rs yet. See the callout above.
 // ---- HUD state pushed Rust → UI (the HUD is display-only) ----
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -116,9 +136,10 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
   [speech-to-text.md](speech-to-text.md)) or `Err("model swap failed: …")`; `open_hub` →
   `Err("hub window unavailable")`. The tray menu re-checks these defensively (a stale "pick model"
   click can't crash anything).
-- **Native, no sidecar.** `tray-icon` and the HUD `WebviewWindowBuilder` are in-process; no
-  external binary. The HUD window is built once at startup (hidden) and shown/hidden thereafter —
-  recreating it per utterance would add latency and flicker.
+- **Native, no sidecar.** The tray (Tauri's built-in tray-icon feature) and the planned HUD
+  `WebviewWindowBuilder` are in-process; no external binary. The HUD window is intended to be built
+  once at startup (hidden) and shown/hidden thereafter — recreating it per utterance would add
+  latency and flicker. (Today's `MicHud.svelte` overlay is the interim stand-in for that window.)
 - **Pure helpers (cargo-tested, no I/O)** — list:
   - `tray_menu_model() -> Menu` builder from the model registry (mirrors Toolzy's `MODELS`) — the
     "pick model" submenu, with the active model checkmarked.
@@ -129,9 +150,10 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
     is pure and testable.
   - `level_to_bars(level: f32, n: usize) -> Vec<f32>` — maps an RMS level to N waveform bar
     heights (also usable UI-side; the canonical version is here for tests).
-- **Typed UI wrappers** in `app/src/lib/hud.ts` (`onHudState`, `onHudLevel` event listeners) and
-  `app/src/lib/tray.ts` (`setDictationEnabled`, `setActiveModel`, `openHub`) — one per group; the
-  UI holds **no** dictation logic.
+- **Typed UI wrappers (planned)** in `app/src/lib/hud.ts` (`onHudState`, `onHudLevel` event
+  listeners) and `app/src/lib/tray.ts` (`setDictationEnabled`, `setActiveModel`, `openHub`) — one
+  per group; the UI holds **no** dictation logic. *Not yet created* — they land with the `hud.rs`
+  window and the richer tray menu; the current `MicHud.svelte` overlay does not yet consume them.
 
 ---
 

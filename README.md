@@ -4,8 +4,8 @@
 
 Open-source, local, privacy-first voice dictation for Windows — an offline alternative to [Wispr Flow](https://wisprflow.ai).
 
-> **Status**: Phase 0 — documentation & design. **No code exists yet.** This repository currently holds the specs and design system; the app is not built.
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 (Core Dictation MVP) — **in progress.** The Tauri 2 + Svelte 5 app is scaffolded and the engine modules are landing: warm whisper-server STT, deterministic cleanup, text injection, global PTT hotkey, system tray, and the end-to-end dictation loop are wired; Phase 0 (Docs & Design) is complete. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
+> **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
 Press a global hotkey (push-to-talk), speak, and MIA types polished text at your cursor — in whatever app is focused. Everything runs on your machine. No cloud, no account, no server. Your voice never leaves the device.
@@ -23,32 +23,35 @@ Press a global hotkey (push-to-talk), speak, and MIA types polished text at your
 
 ## Features
 
-Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlog. Today everything is **Planned** — this is a Phase 0 documentation repo.
+Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlog. Phase 1 is underway — the markers below mirror [docs/ROADMAP.md](docs/ROADMAP.md).
 
-### Core dictation (Phase 1 — ⬜ Planned)
-- Global **push-to-talk** hotkey that works even when MIA is unfocused.
-- Live microphone capture (16 kHz mono) with **Silero VAD** endpointing.
-- **Warm/resident Whisper** model (loaded once, not respawned per utterance) for low latency.
-- **Anti-hallucination defaults, always on**: Silero VAD + greedy decoding (temperature 0, `--no-fallback`) + no previous-text conditioning (`--max-context 0`).
-- **Deterministic text cleanup**: filler-word removal (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence casing.
-- **System-wide text injection** at the cursor via Windows `SendInput` (Unicode keystrokes), with a clipboard + Ctrl+V fallback for long text.
-- System **tray** icon and a floating **mic HUD** overlay (listening → transcribing → inserting).
-- **On-demand model download** gate (small CPU build bundled; models fetched from Hugging Face).
-- **pt-BR + English** out of the box.
+### Core dictation (Phase 1 — 🚧 In progress)
+- 🚧 Global **push-to-talk** hotkey that works even when MIA is unfocused (default Ctrl+Space). Runtime registration + the press/hold + toggle reducer are wired; recorder/conflict-probe remain.
+- 🚧 Live microphone capture (16 kHz mono) — pure DSP core + `list_input_devices`/`test_microphone` done; live Silero per-frame inference remains.
+- 🚧 **Silero VAD** endpointing — endpoint state machine done + tested; the live model load/inference remains.
+- ✅ **Warm/resident Whisper** model (loaded once via a warm **whisper-server** sidecar, not respawned per utterance) for low latency.
+- **Anti-hallucination, always on**: Silero VAD + greedy decoding (whisper-server `/inference` at temperature 0 with the temperature-fallback ladder disabled) + stateless, independent per-utterance requests (no previous-text conditioning across utterances).
+- ✅ **Deterministic text cleanup**: filler-word removal (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence casing.
+- 🚧 **System-wide text injection** at the cursor via Windows `SendInput` (Unicode keystrokes), with a clipboard + Ctrl+V fallback for long text (`inject_text` live; focused-target / elevated-window detection remains).
+- 🚧 System **tray** icon (Open / Quit, wired) and a floating **mic HUD** overlay (listening → transcribing → inserting; `MicHud.svelte` built, dedicated HUD window remains).
+- ✅ **On-demand model download** gate with streamed progress (models fetched from Hugging Face).
+- ⬜ **pt-BR + English** first-class language selection (the pt-BR-faithful Whisper path).
 
 ### AI magic (Phase 2 — ⬜ Planned)
-- Optional small **local LLM** (llama.cpp; Qwen2.5-3B / Llama-3.2-3B at Q4_K_M).
+- Optional small **local LLM** (llama.cpp; Qwen2.5-3B / Llama-3.2-3B at Q4_K_M). Pure scaffolding (prompt/grammar/intent router) is in `ai_commands.rs`; the runtime is pending.
 - **Command Mode** (voice editing) and an opt-in **Polish** action, gated behind a cheap intent check so average latency stays close to Phase 1.
 
 ### Personalization (Phase 3 — ⬜ Planned)
-- Custom dictionary / personal vocabulary and word replacement.
-- Voice-triggered snippets (text expansion).
-- Per-app writing styles / context.
+- 🚧 Custom dictionary / personal vocabulary and word replacement (pure core + CRUD commands + Hub section done; bias-prompt wiring remains).
+- 🚧 Voice-triggered snippets (text expansion) (pure core + CRUD commands + Hub section + live preview done; master toggle remains).
+- ⬜ Per-app writing styles / context.
 
 ### Polish & distribution (Phase 4 — ⬜ Planned)
-- First-run onboarding (hotkey, mic, model download), settings/"Hub" dashboard with stats.
-- Signed in-app auto-update.
-- Optional **NVIDIA CUDA** engine (~7–10× faster), downloaded on demand.
+- 🚧 First-run onboarding (hotkey, mic, model download) — `Onboarding.svelte` wizard reusing existing commands; persisted "completed" flag remains.
+- 🚧 Settings/"Hub" dashboard with usage stats — first Hub surface + `settings.rs`/`stats.rs` persistence done; some `update_settings` side effects + updater remain.
+- ⬜ Signed in-app auto-update.
+- ⬜ Optional **NVIDIA CUDA** engine (~7–10× faster), downloaded on demand.
+- 🚧 GitHub release pipeline — `.github/workflows/ci.yml` + `release.yml` exist; signing secrets + updater endpoint remain.
 
 ### Backlog (💡)
 - Streaming live partials, GPU keep-warm sub-second latency, "Hey MIA" wake word, Whisper Mode (quiet speech), macOS/Linux support, file-transcription mode.
@@ -84,7 +87,7 @@ All of this runs in the Rust core — the engine. The Svelte UI is a thin webvie
 
 ## Install
 
-> Not available yet. Installers ship in **Phase 4**.
+> No release is cut yet — the first installer ships in **Phase 4**. The CI + signed-release **pipeline is already built** (`.github/workflows/ci.yml` and `.github/workflows/release.yml`: `cargo test` + clippy + svelte-check on push/PR, and a `tauri-action` signed Windows installer on `v*` tags), but no version has been tagged/published.
 
 When released, download the **signed installer** from [GitHub Releases](../../releases) and run it. Updates will be delivered via signed in-app auto-update (minisign-verified).
 
@@ -92,7 +95,7 @@ When released, download the **signed installer** from [GitHub Releases](../../re
 
 ## Development
 
-> The codebase does not exist yet (Phase 0). These are the intended dev prerequisites and workflow.
+The Tauri 2 + Svelte 5 app lives under [`app/`](app/) (`src/` = the thin Svelte UI, `src-tauri/` = the Rust engine). Run the dev workflow from `app/`.
 
 **Prerequisites**
 - [Rust](https://rustup.rs/) (stable, MSVC toolchain)
@@ -103,7 +106,7 @@ When released, download the **signed installer** from [GitHub Releases](../../re
 
 ```bash
 bun install
-node scripts/fetch-binaries.mjs   # fetches whisper-cli.exe + sibling ggml/whisper DLLs
+node scripts/fetch-binaries.mjs   # fetches whisper-server.exe + sibling ggml/whisper DLLs
 bun run tauri dev
 ```
 
@@ -111,7 +114,7 @@ bun run tauri dev
 
 ## Tech stack
 
-Tauri 2 (Rust core) + WebView2 · Svelte 5 (runes) + Vite + TypeScript + Tailwind CSS v4 · whisper.cpp STT (warm whisper-rs in-process, whisper-server fallback) · cpal audio + Silero VAD · enigo `SendInput` + arboard clipboard injection · global-hotkey + tray-icon · optional llama.cpp local LLM (Phase 2). Tooling: Bun.
+Tauri 2 (Rust core) + WebView2 · Svelte 5 (runes) + Vite + TypeScript + Tailwind CSS v4 · whisper.cpp STT (warm whisper-server sidecar — MVP default; whisper-rs in-process later) · cpal audio + Silero VAD · enigo `SendInput` + arboard clipboard injection · `tauri-plugin-global-shortcut` (PTT) + the Tauri `tray-icon` feature · optional llama.cpp local LLM (Phase 2). Tooling: Bun.
 
 See [docs/specs/architecture.md](docs/specs/architecture.md) for the architecture decision records.
 

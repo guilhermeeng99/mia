@@ -52,14 +52,14 @@ app/
       lib.rs           #   Tauri builder + command registry (#[tauri::command] registrations)
       audio.rs         #   cpal mic capture (16 kHz mono PCM)
       vad.rs           #   Silero VAD endpointing
-      stt.rs           #   warm whisper (whisper-rs in-process default; whisper-server fallback)
+      stt.rs           #   warm whisper (whisper-server sidecar = MVP default; whisper-rs in-process later)
       cleanup.rs       #   deterministic rule-based cleanup (fillers, spoken punctuation, …)
       inject.rs        #   Windows text injection (enigo SendInput + arboard clipboard fallback)
-      hotkey.rs        #   global push-to-talk (global-hotkey crate)
-      tray.rs          #   system tray (tray-icon crate)
+      hotkey.rs        #   global push-to-talk (tauri-plugin-global-shortcut)
+      tray.rs          #   system tray (Tauri's built-in tray-icon feature)
       hud.rs           #   floating mic HUD overlay window plumbing
     capabilities/      #   Tauri permissions (scoped)
-    tauri.conf.json    #   bundle, window, updater config, externalBin
+    tauri.conf.json    #   bundle resources (whisper-server binary + DLLs), window config
   scripts/fetch-binaries.mjs  # auto-fetch whisper binaries + sibling DLLs on Windows
 docs/specs/            # per-feature contracts + architecture.md (ADRs)
 docs/ROADMAP.md        # done / doing / planned
@@ -140,11 +140,11 @@ Rules:
 | STT engine | `whisper.cpp` — warm `whisper-server` sidecar (MVP default, cmake-free); `whisper-rs` in-process (later optimization) |
 | Models | OpenAI Whisper (MIT), fetched on demand from Hugging Face; small CPU build bundled |
 | GPU | optional NVIDIA **CUDA** engine downloaded on demand (~7–10× faster) |
-| Anti-hallucination | Silero VAD + greedy (temp 0, `--no-fallback`) + `--max-context 0` (always on) |
+| Anti-hallucination | Silero VAD + greedy (temperature 0) + temperature_inc 0 (disables the fallback ladder) + independent per-request `/inference` (no cross-utterance context) — whisper-server, not whisper-cli flags |
 | Audio capture | `cpal` (16 kHz mono PCM) |
 | VAD / endpointing | Silero VAD |
-| Hotkey | `global-hotkey` (push-to-talk, works unfocused) |
-| Tray | `tray-icon` |
+| Hotkey | `tauri-plugin-global-shortcut` (push-to-talk, works unfocused) |
+| Tray | Tauri's built-in `tray-icon` feature |
 | Text injection | `enigo` (SendInput Unicode) default + `arboard` + Ctrl+V fallback (Windows) |
 | AI (Phase 2) | local LLM via `llama.cpp` (Qwen2.5-3B / Llama-3.2-3B, Q4_K_M) — GBNF-constrained |
 | Distribution | GitHub Releases + `tauri-plugin-updater` (minisign-verified `latest.json`) |

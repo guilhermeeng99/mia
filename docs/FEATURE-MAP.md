@@ -1,7 +1,7 @@
 # MIA — Feature Map (Wispr Flow parity)
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing (warm STT, deterministic cleanup, text injection, hotkey, tray); Phase 0 docs complete. See [ROADMAP.md](ROADMAP.md).
+> **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 > **Coverage**: inventory of [Wispr Flow](https://wisprflow.ai) features mapped to MIA's local-first plan.
 
@@ -23,8 +23,8 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **System-wide dictation** | Global hotkey → polished text inserted at the cursor in whatever app is focused. | **Same, fully local.** Global push-to-talk hotkey → cpal mic capture → Silero VAD endpoint → warm whisper.cpp → deterministic cleanup → SendInput injection at the cursor. The product's reason to exist. (ADR-001, ADR-005) | [dictation.md](specs/dictation.md) · [hotkeys.md](specs/hotkeys.md) · [text-injection.md](specs/text-injection.md) | **1** ⬜ |
-| **Real-time low latency** | Wispr targets ~<700 ms p99 in its cloud. | **Local adaptation.** No network round-trip; latency is local CPU (or NVIDIA CUDA) inference. The key enabler is a **warm/resident** STT (model loaded once via whisper-rs in-process; whisper-server fallback) — NOT a cold whisper-cli spawn per utterance. (ADR-004) | [speech-to-text.md](specs/speech-to-text.md) · [dictation.md](specs/dictation.md) | **1** ⬜ |
+| **System-wide dictation** | Global hotkey → polished text inserted at the cursor in whatever app is focused. | **Same, fully local.** Global push-to-talk hotkey → cpal mic capture → Silero VAD endpoint → warm whisper.cpp → deterministic cleanup → SendInput injection at the cursor. The product's reason to exist. (ADR-001, ADR-005) | [dictation.md](specs/dictation.md) · [hotkeys.md](specs/hotkeys.md) · [text-injection.md](specs/text-injection.md) | **1** 🚧 |
+| **Real-time low latency** | Wispr targets ~<700 ms p99 in its cloud. | **Local adaptation.** No network round-trip; latency is local CPU (or NVIDIA CUDA) inference. The key enabler is a **warm/resident** STT (MVP default = a warm `whisper-server` sidecar loaded once, cmake-free; whisper-rs in-process is the later optimization behind the same seam) — NOT a cold whisper-cli spawn per utterance. (ADR-004) | [speech-to-text.md](specs/speech-to-text.md) · [dictation.md](specs/dictation.md) | **1** 🚧 |
 | **Whisper Mode** (quiet/whispered speech) | Recognizes very quiet / whispered speech for use in shared/quiet spaces. | **Local adaptation, deferred.** VAD sensitivity + gain tuning for low-amplitude speech; revisit once core dictation is solid. | [audio-capture.md](specs/audio-capture.md) · [speech-to-text.md](specs/speech-to-text.md) | **5** 💡 |
 
 ---
@@ -33,7 +33,7 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **AI auto-edits** | Removes fillers (um/uh), adds punctuation, capitalization, spacing; formats lists; casing based on surrounding text. | **Local adaptation — two tiers.** **Phase 1 = deterministic, always-on**, pure-Rust cleanup: filler-word stoplist (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence-case fixer. **Phase 2 = optional** local-LLM "Polish" for richer reformatting (lists, casing). Fidelity-safe by default — _faithful, not creative_. (ADR-008) | [text-cleanup.md](specs/text-cleanup.md) · [ai-commands.md](specs/ai-commands.md) | **1** ⬜ (deterministic) / **2** ⬜ (LLM Polish) |
+| **AI auto-edits** | Removes fillers (um/uh), adds punctuation, capitalization, spacing; formats lists; casing based on surrounding text. | **Local adaptation — two tiers.** **Phase 1 = deterministic, always-on**, pure-Rust cleanup: filler-word stoplist (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence-case fixer. **Phase 2 = optional** local-LLM "Polish" for richer reformatting (lists, casing). Fidelity-safe by default — _faithful, not creative_. (ADR-008) | [text-cleanup.md](specs/text-cleanup.md) · [ai-commands.md](specs/ai-commands.md) | **1** 🚧 (deterministic) / **2** ⬜ (LLM Polish) |
 | **Self-correction / backtracking** | "2… actually 3" resolves to the intended value. | **Local adaptation.** Spoken-correction handling ("actually…", "I mean…") via deterministic rules where reliable, otherwise the optional Phase-2 LLM. | [text-cleanup.md](specs/text-cleanup.md) · [ai-commands.md](specs/ai-commands.md) | **1** ⬜ (simple) / **2** ⬜ (LLM) |
 
 ---
@@ -42,7 +42,7 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **Command Mode** | Transform last/selected text: "make concise", "more formal", "bulleted list", "summarize", "translate". | **Local adaptation.** Local LLM via **llama.cpp** (Qwen2.5-3B-Instruct / Llama-3.2-3B-Instruct, Q4_K_M) with **GBNF/JSON-schema constrained decoding** for reliable command parsing. Gated behind a cheap intent check so average latency stays near Phase 1. (ADR-008) | [ai-commands.md](specs/ai-commands.md) | **2** ⬜ |
+| **Command Mode** | Transform last/selected text: "make concise", "more formal", "bulleted list", "summarize", "translate". | **Local adaptation.** Local LLM via **llama.cpp** (Qwen2.5-3B-Instruct / Llama-3.2-3B-Instruct, Q4_K_M) with **GBNF/JSON-schema constrained decoding** for reliable command parsing. Gated behind a cheap intent check so average latency stays near Phase 1. (ADR-008) | [ai-commands.md](specs/ai-commands.md) | **2** 🚧 |
 | **AI assistant prompt passthrough** | Speak a free-form prompt; the assistant answers/acts. | **Local adaptation.** Same local-LLM path as Command Mode (one of the routed intents). | [ai-commands.md](specs/ai-commands.md) | **2** ⬜ |
 | **"Hey Flow" wake word** | Hands-free activation by voice keyword. | **Local adaptation, deferred.** "Hey MIA" wake word. PTT hotkey is the v1 activation model; wake word is backlog. | [hotkeys.md](specs/hotkeys.md) | **5** 💡 |
 
@@ -52,8 +52,8 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **Personal / custom dictionary** | Auto-learned + manual; names, jargon, acronyms. | **Same, local.** Personal vocabulary / word-replacement list applied during cleanup. Manual entry for v1; auto-learning later. | [custom-dictionary.md](specs/custom-dictionary.md) | **3** ⬜ |
-| **Snippets / text expansion** | Voice-triggered expansion of saved snippets. | **Same, local.** Voice-triggered text expansion. | [snippets.md](specs/snippets.md) | **3** ⬜ |
+| **Personal / custom dictionary** | Auto-learned + manual; names, jargon, acronyms. | **Same, local.** Personal vocabulary / word-replacement list applied during cleanup. Manual entry for v1; auto-learning later. | [custom-dictionary.md](specs/custom-dictionary.md) | **3** 🚧 |
+| **Snippets / text expansion** | Voice-triggered expansion of saved snippets. | **Same, local.** Voice-triggered text expansion. | [snippets.md](specs/snippets.md) | **3** 🚧 |
 | **Cross-device sync** (Pro) | Syncs settings/dictionary across devices via the cloud. | **⛔ Out of scope (deliberate).** MIA is local-first with no account/cloud (ADR-001). Settings live in app-data on the one machine; users can back up/sync the config file themselves. | — | ⛔ |
 
 ---
@@ -81,7 +81,7 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **The Hub dashboard** | Stats: word counts, wpm, streaks. | **Same, local.** Settings window / "The Hub" dashboard with local-only usage stats. No telemetry leaves the device (ADR-001). | [settings.md](specs/settings.md) | **4** ⬜ |
+| **The Hub dashboard** | Stats: word counts, wpm, streaks. | **Same, local.** Settings window / "The Hub" dashboard with local-only usage stats. No telemetry leaves the device (ADR-001). | [settings.md](specs/settings.md) | **4** 🚧 |
 | **iOS / Android apps (mobile)** | Native mobile dictation apps. | **⛔ Out of scope (deliberate).** MIA is **Windows-only for v1** (ADR-011). macOS/Linux are backlog; mobile is not a goal. | — | ⛔ |
 
 ---
@@ -90,7 +90,7 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **Privacy / Zero-Data-Retention mode** | Opt-in mode where cloud does not retain audio/transcripts. | **Default, not a mode.** Because MIA is fully local, **zero data retention by anyone is the baseline** — voice never leaves the machine; there is no server to retain anything (ADR-001). This is MIA's headline difference from Wispr Flow. | [architecture.md](specs/architecture.md) · [speech-to-text.md](specs/speech-to-text.md) | **1** ⬜ (inherent) |
+| **Privacy / Zero-Data-Retention mode** | Opt-in mode where cloud does not retain audio/transcripts. | **Default, not a mode.** Because MIA is fully local, **zero data retention by anyone is the baseline** — voice never leaves the machine; there is no server to retain anything (ADR-001). This is MIA's headline difference from Wispr Flow. | [architecture.md](specs/architecture.md) · [speech-to-text.md](specs/speech-to-text.md) | **1** 🚧 (inherent) |
 | **SOC2 / ISO / HIPAA / SSO compliance** | Enterprise compliance certifications. | **⛔ Out of scope (deliberate).** These certify cloud/data-handling practices; with no cloud and no server, they don't apply. Privacy posture is "it never leaves your machine," which the MIT source makes auditable. | — | ⛔ |
 | **Context read limits** | Caps on how much surrounding text is read for context. | **Local adaptation.** When Windows UI Automation context lands, reads are capped and on-device only. | [ai-commands.md](specs/ai-commands.md) · [settings.md](specs/settings.md) | **3** ⬜ |
 

@@ -11,8 +11,9 @@ push-to-talk (PTT) shortcut that fires even when MIA is **not** the focused wind
 translates raw key down/up events into a small set of clean, debounced *dictation intents*
 (`Start` / `Stop`) that drive the orchestration state machine in
 [`dictation.md`](dictation.md). It owns no audio, STT, or injection logic — it is purely the
-"finger on the trigger". It is backed by the `global-hotkey` crate (permissive license, ADR-010)
-and lands in **Phase 1 — Core Dictation MVP** (see [../ROADMAP.md](../ROADMAP.md)). It implements
+"finger on the trigger". It is backed by the `tauri-plugin-global-shortcut` plugin (permissive
+license, ADR-010) and lands in **Phase 1 — Core Dictation MVP** (see [../ROADMAP.md](../ROADMAP.md)).
+It implements
 [ADR-001](architecture.md) (native, on-device), [ADR-006](architecture.md) (`Result<T,String>`
 IPC), and the Windows-only scope of [ADR-011](architecture.md).
 
@@ -25,13 +26,15 @@ IPC), and the Windows-only scope of [ADR-011](architecture.md).
 - **Two activation modes only.** `push-to-hold` (dictate while held, finish on release) and
   `press-to-toggle` (press to start, press again to stop). No "tap to toggle, hold to dictate"
   hybrid in v1 — it conflicts with debounce edge handling and is hard to discover (Phase 1).
-- **Default chord = `Ctrl + Space`, rebindable.** Reason: low collision risk, ergonomic for hold,
-  and **registrable by `global-hotkey`** — a modifier-only chord (e.g. `Ctrl+Win`) is *not*
-  registrable via `RegisterHotKey`, so the default carries a real key. (Resolves the prior
-  `Ctrl+Super` note; aligned with [settings.md](settings.md).) **`Fn` is not a default option** — it
-  is a firmware/EC-level key that does not reliably surface as a Windows virtual-key and cannot be
-  hooked portably. The user can rebind to any registrable chord in Settings.
-- **`global-hotkey` (RegisterHotKey under the hood), not a raw low-level keyboard hook.** Reason:
+- **Default chord = `Ctrl + Space`, rebindable (locked default).** Reason: low collision risk,
+  ergonomic for hold, and **registrable by `tauri-plugin-global-shortcut`** — a modifier-only chord
+  (e.g. `Ctrl+Win`) is *not* registrable via `RegisterHotKey`, so the default carries a real key.
+  (`DEFAULT_ACCEL = "Ctrl+Space"` in `hotkey.rs`; aligned with [settings.md](settings.md).)
+  **`Fn` is not a default option** — it is a firmware/EC-level key that does not reliably surface as
+  a Windows virtual-key and cannot be hooked portably. The user can rebind to any registrable chord
+  in Settings.
+- **`tauri-plugin-global-shortcut` (RegisterHotKey under the hood), not a raw low-level keyboard
+  hook.** Reason:
   `WH_KEYBOARD_LL` hooks are fragile, flagged by AV, and a perf/foreground-window liability. We
   accept `RegisterHotKey`'s constraints (modifier-anchored chords; UIPI limits — see Edge Cases)
   in exchange for stability ([ADR-001](architecture.md), [ADR-011](architecture.md)).
@@ -45,16 +48,17 @@ IPC), and the Windows-only scope of [ADR-011](architecture.md).
 
 | Aspect | This feature |
 |---|---|
-| **Trigger** | Global OS keyboard event for the registered chord, delivered by `global-hotkey` even when MIA is unfocused. |
+| **Trigger** | Global OS keyboard event for the registered chord, delivered by `tauri-plugin-global-shortcut` even when MIA is unfocused. |
 | **Audio in** | N/A — the hotkey module never reads the mic (it only signals [`dictation.md`](dictation.md) to start/stop capture). |
 | **Text in** | N/A. |
 | **Text out** | N/A — emits **dictation intents** (`Start` / `Stop` / `Cancel`), not text. |
 | **Target** | The dictation orchestrator (Rust event bus / Tauri event) and the floating mic HUD (see [tray-and-hud.md](tray-and-hud.md)); the Hub recorder UI when rebinding (see [settings.md](settings.md)). |
 | **Language** | Language-agnostic (key events only). |
 
-Backed by the `global-hotkey` crate (`GlobalHotKeyManager`, `GlobalHotKeyEvent`,
-`HotKey`, `Modifiers`, `Code`). No audio buffer is touched here, so **nothing reaches disk**
-(consistent with ADR-001). The only persisted artifact is the chord/mode config (see Settings).
+Backed by the `tauri-plugin-global-shortcut` plugin (`GlobalShortcutExt`, `Shortcut`,
+`Modifiers`, `Code`, and the plugin's on-shortcut handler). No audio buffer is touched here, so
+**nothing reaches disk** (consistent with ADR-001). The only persisted artifact is the chord/mode
+config (see Settings).
 
 ---
 
@@ -71,7 +75,7 @@ across the IPC boundary ([ADR-006](architecture.md)).
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyConfig {
-    pub accelerator: String,   // canonical chord string, e.g. "Ctrl+Super" / "Alt+Space"
+    pub accelerator: String,   // canonical chord string, e.g. "Ctrl+Space" / "Alt+Space"
     pub mode: ActivationMode,  // PushToHold | PressToToggle
 }
 
@@ -84,48 +88,55 @@ pub enum ActivationMode { PushToHold, PressToToggle }
 #[serde(rename_all = "camelCase")]
 pub enum DictationIntent { Start, Stop, Cancel } // emitted via Tauri event "dictation://intent"
 
-// ---- Commands (all Result<T,String>, ADR-006) ----
+// ---- Commands: LIVE (registered in lib.rs; all Result<T,String>, ADR-006) ----
 #[tauri::command]
-fn register_hotkey(state: State<'_, HotkeyState>, cfg: HotkeyConfig) -> Result<(), String>;
-// Parses + validates `cfg.accelerator`, registers via GlobalHotKeyManager. Replaces any
-// existing registration atomically (unregister-then-register; rolls back on failure).
+fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String>;
+// Parses + validates `cfg.accelerator`, registers via the global-shortcut plugin
+// (`GlobalShortcutExt`). Replaces any existing registration atomically
+// (unregister-then-register; rolls back on failure).
 
 #[tauri::command]
-fn unregister_hotkey(state: State<'_, HotkeyState>) -> Result<(), String>;
+fn unregister_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>) -> Result<(), String>;
 // Idempotent: unregistering when nothing is registered is Ok(()).
 
 #[tauri::command]
-fn update_hotkey(state: State<'_, HotkeyState>, cfg: HotkeyConfig) -> Result<(), String>;
+fn update_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String>;
 // = unregister + register; persists cfg only after the OS accepts the new chord.
 
 #[tauri::command]
-fn get_hotkey(state: State<'_, HotkeyState>) -> Result<HotkeyConfig, String>;
+fn get_hotkey(rt: State<'_, HotkeyRuntime>) -> Result<HotkeyConfig, String>;
 
+// ---- Commands: PHASE-PENDING (specified, NOT yet implemented or registered) ----
+// The Settings conflict-probe and the hotkey-recorder ("press a key") capture are
+// designed below but are not wired in lib.rs yet. Only register/unregister/update/
+// get_hotkey are live today; the recorder reuses get_hotkey and the section below is
+// the forward contract.
 #[tauri::command]
-fn check_hotkey_conflict(accelerator: String) -> Result<ConflictReport, String>;
+fn check_hotkey_conflict(accelerator: String) -> Result<ConflictReport, String>; // pending
 // Dry-run: parse + probe-register-then-unregister; returns whether the chord is free.
 
-// Hotkey-recorder support (Settings "press a key" capture):
+// Hotkey-recorder support (Settings "press a key" capture) — pending:
 #[tauri::command]
-fn begin_hotkey_capture(state: State<'_, HotkeyState>) -> Result<(), String>;
+fn begin_hotkey_capture(state: State<'_, HotkeyState>) -> Result<(), String>; // pending
 // Temporarily suspends the live PTT registration so the recorder can read raw keys
 // without firing dictation; restores prior registration on end/cancel/timeout.
 #[tauri::command]
-fn end_hotkey_capture(state: State<'_, HotkeyState>) -> Result<(), String>;
+fn end_hotkey_capture(state: State<'_, HotkeyState>) -> Result<(), String>; // pending
 
-#[derive(Serialize)]
+#[derive(Serialize)] // pending — ships with check_hotkey_conflict
 #[serde(rename_all = "camelCase")]
 pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason: Option<String> }
 ```
 
-- **Managed state** (`HotkeyState` in `tauri::State`): the live `GlobalHotKeyManager`, the
-  currently registered `HotKey` + its `id`, the active `HotkeyConfig`, a `pressed: AtomicBool`
-  edge-tracker (for push-to-hold), and a `last_event: Instant` for debounce. `GlobalHotKeyManager`
-  is **not** `Send`/`Sync`-friendly across arbitrary threads — it is created and driven on the main
-  thread; commands mutate the desired config and post register/unregister work to that thread.
-- **Event loop**: `GlobalHotKeyEvent::receiver()` is polled on the Tauri main/event thread. Each
-  raw event is passed through the pure `reduce()` reducer (below); the resulting `Option<DictationIntent>`
-  is emitted to the frontend/orchestrator as the Tauri event `"dictation://intent"`.
+- **Managed state** (`HotkeyRuntime` in `tauri::State`): the currently registered `Shortcut`, the
+  active `HotkeyConfig`, a `pressed: AtomicBool` edge-tracker (for push-to-hold), and a
+  `last_event: Instant` for debounce. The `tauri-plugin-global-shortcut` plugin owns the OS
+  registration; commands call `app.global_shortcut().register(...)` / `.unregister(...)` through
+  `GlobalShortcutExt`, mutating the desired config and (un)registering the `Shortcut`.
+- **Event handler**: the plugin invokes the on-shortcut handler (set at build time) on each chord
+  press/release; the handler passes the raw edge through the pure `reduce()` reducer (below) and
+  emits the resulting `Option<DictationIntent>` to the frontend/orchestrator as the Tauri event
+  `"dictation://intent"`.
 - **`Err(String)` messages** (each maps to one UI state — see [settings.md](settings.md)):
   - `"empty hotkey"` — no chord given.
   - `"unparseable hotkey: <input>"` — accelerator string didn't parse.
@@ -140,9 +151,10 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
   - `reduce(state: EdgeState, ev: RawHotkeyEvent, mode: ActivationMode, now: Instant) -> (EdgeState, Option<DictationIntent>)`
     — the **debounce + mode** reducer; the heart of the testable logic.
   - `is_bare_key(&Modifiers) -> bool`, `is_reserved(Modifiers, Code) -> bool` (Win+L, Ctrl+Alt+Del, etc.).
-- **Typed UI wrapper**: `app/src/lib/hotkey.ts` exposes
-  `registerHotkey() / unregisterHotkey() / updateHotkey() / getHotkey() / checkHotkeyConflict() /
-  beginHotkeyCapture() / endHotkeyCapture()` (`invoke<…>(…)`). The UI holds **no** trigger logic.
+- **Typed UI wrapper**: `app/src/lib/hotkey.ts` exposes the live
+  `registerHotkey() / unregisterHotkey() / updateHotkey() / getHotkey()` (`invoke<…>(…)`); the
+  `checkHotkeyConflict() / beginHotkeyCapture() / endHotkeyCapture()` wrappers ship with the
+  Phase-pending recorder/conflict-probe commands above. The UI holds **no** trigger logic.
 
 ---
 
@@ -160,8 +172,8 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
    activation → `Start`; next activation → `Stop`. While *toggled on*, the key need not stay held.
 5. **Modifier-anchored chords only (v1).** A registrable chord must include at least one modifier
    (`Ctrl`/`Alt`/`Shift`/`Win`). Bare keys are rejected (`"hotkey must include a modifier"`) so the
-   trigger never eats ordinary typing. (`global-hotkey` can register some bare F-keys, but we
-   deliberately forbid it in v1.)
+   trigger never eats ordinary typing. (`tauri-plugin-global-shortcut` can register some bare
+   F-keys, but we deliberately forbid it in v1.)
 6. **`Fn` and non-VK keys are rejected** with `"Fn key is not hookable"`. The recorder must not let
    the user "save" a capture that produced no Windows virtual-key.
 7. **Reserved system chords are rejected.** OS-owned chords (`Win+L`, `Ctrl+Alt+Del`, `Win+Tab`,
@@ -214,14 +226,14 @@ defensively in `register_hotkey` (the UI guard is convenience, not the source of
 
 ## 5. Threading / Performance
 
-- **Main-thread ownership.** `GlobalHotKeyManager` and the `GlobalHotKeyEvent` receiver live on the
-  Tauri main/event thread (Windows `RegisterHotKey` posts `WM_HOTKEY` to a thread's message queue).
-  Commands invoked from the UI mutate desired config and marshal register/unregister onto that
-  thread; they never construct a manager on a worker thread.
+- **Plugin-owned registration.** The OS registration is owned by the `tauri-plugin-global-shortcut`
+  plugin (Windows `RegisterHotKey` posts `WM_HOTKEY` to a thread's message queue); the plugin
+  dispatches the on-shortcut handler. Commands invoked from the UI mutate desired config and call the
+  plugin's `register`/`unregister` through `GlobalShortcutExt`.
 - **No audio here.** This module does not touch cpal or the warm STT model — it only emits intents.
-  The audio thread and the **warm/resident** whisper-rs model ([ADR-004](architecture.md)) are owned
-  by [`dictation.md`](dictation.md)/[`speech-to-text.md`](speech-to-text.md). This feature does
-  **not** cold-spawn `whisper-cli`.
+  The audio thread and the **warm/resident** `whisper-server` sidecar ([ADR-004](architecture.md))
+  are owned by [`dictation.md`](dictation.md)/[`speech-to-text.md`](speech-to-text.md). This feature
+  does **not** cold-spawn a per-utterance CLI.
 - **Latency budget.** The hotkey path is effectively free: key-down → `reduce()` → emit `Start` is
   microseconds. The perceived "press → listening" latency is dominated by [`dictation.md`](dictation.md)
   starting the (already-open, warm) audio stream, not by this module. Target: HUD shows *Listening*
@@ -245,7 +257,7 @@ Intent stream → dictation state machine (owned by dictation.md / HUD):
               → Inserting(brief check) → Idle | [Cancel/Esc] → Idle | Error(message)
 
 Hotkey-recorder (Settings/Hub, light theme):
-  Idle("Ctrl+Win — Click to change")
+  Idle("Ctrl+Space — Click to change")
     → Capturing("Press a key combination…")   // begin_hotkey_capture
     → Captured(chord)                          // valid, conflict-free → enable Save
     → Conflict(chord, reason)                  // taken/reserved/bare/Fn → show why, disable Save
@@ -283,7 +295,7 @@ Hotkey-recorder (Settings/Hub, light theme):
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [x] `parse_accelerator` accepts canonical chords (`"Ctrl+Super"`, `"Alt+Space"`,
+  - [x] `parse_accelerator` accepts canonical chords (`"Ctrl+Space"`, `"Alt+Space"`,
         `"Ctrl+Shift+D"`) and rejects empty / unparseable / bare-key / `Fn` inputs with the exact
         `Err(String)` messages.
   - [x] `to_canonical` round-trips: `parse_accelerator(to_canonical(m, c)) == (m, c)`.

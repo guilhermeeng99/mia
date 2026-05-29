@@ -1,7 +1,7 @@
 # Architecture & Decision Records
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing; ADRs accepted
+> **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 > Cross-cutting design + the rationale (ADRs) behind the big choices. Feature-level contracts
 > live in sibling specs (see the [file list](#cross-references)); start new ones from
@@ -42,9 +42,9 @@ no dictation logic and only calls typed `invoke()` wrappers (one per command gro
    │ resident / loaded:                 │   │ OS interaction:                    │
    │  • cpal            (16 kHz mic)    │   │  • enigo / SendInput  (inject text)│
    │  • whisper-rs      (WARM STT)      │   │  • arboard            (clipboard)  │
-   │    └ or whisper-server (sidecar)   │   │  • global-hotkey      (PTT)        │
-   │  • Silero VAD      (endpointing)   │   │  • tray-icon          (system tray)│
-   │  • llama.cpp       (Phase 2 LLM)   │   │                                    │
+   │    └ or whisper-server (sidecar)   │   │  • tauri-plugin-global-shortcut    │
+   │  • Silero VAD      (endpointing)   │   │      (global PTT hotkey)           │
+   │  • llama.cpp       (Phase 2 LLM)   │   │  • Tauri tray-icon feature (tray)  │
    └────────────────────────────────────┘   └────────────────────────────────────┘
 ```
 
@@ -171,8 +171,9 @@ The warm model has an explicit **lifecycle**:
 - **unload** — optionally evicted on an idle timer or low-memory signal to free ~0.5–3 GB RAM,
   then lazily reloaded on the next hotkey press.
 
-Anti-hallucination defaults still apply on every utterance (VAD + greedy + `--max-context 0`,
-see [ADR-007](#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
+Anti-hallucination defaults still apply on every utterance (Silero VAD + greedy decoding with the
+temperature-fallback ladder disabled + stateless, independent `/inference` calls that carry no
+cross-utterance context; see [ADR-007](#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
 
 **Consequences.**
 - ✅ **Sub-utterance latency** — repeated dictations pay inference only, not model load.
@@ -259,8 +260,13 @@ larger models **on demand** from **Hugging Face** to the app-data dir (with a `.
 final-name rename on completion). Offer an **optional NVIDIA CUDA engine** downloaded on demand
 (**~7–10× faster**), detected via `nvcuda.dll`. CPU stays the bundled default/fallback. The
 **anti-hallucination defaults are fixed and always on**: **Silero VAD** (only detected speech
-reaches Whisper) + **greedy decoding** (`--temperature 0 --no-fallback`) + **no previous-text
-conditioning** (`--max-context 0`).
+reaches Whisper) + **greedy decoding with the temperature-fallback ladder disabled** (each
+`/inference` request to `whisper-server` uses `temperature = 0` and `temperature_inc = 0`, which
+turns off whisper's temperature-fallback ladder — the server-side equivalent of `whisper-cli`'s
+`--no-fallback`) + **no previous-text conditioning** (each `/inference` call is independent and
+stateless, so no transcript from a prior utterance is fed forward — the server-side equivalent of
+`--max-context 0`). The literal `--no-fallback` / `--max-context 0` flags are `whisper-cli` flags
+and are neither used nor needed with the `whisper-server` sidecar.
 
 **Relation to Toolzy.** This **lifts Toolzy's ADR-010** transcription machinery
 (`transcription.rs`): the `MODELS` registry, `model_url`/`model_filename`, the `ureq` HF
@@ -279,9 +285,11 @@ See [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md).
 - ⚠️ Outbound network for the one-time model/engine download (weights only — never audio),
   Rust-side via `ureq`, user-initiated behind an onboarding **download gate**
   ([onboarding.md](onboarding.md)).
-- ⚠️ `whisper-rs`/whisper builds ship as engine binaries + sibling `ggml`/`whisper` DLLs on
-  Windows (handled by `app/scripts/fetch-binaries.mjs`'s `fetchExeWithDlls` pattern and bundled
-  via `resources`).
+- ⚠️ The `whisper-server` sidecar ships as `whisper-server.exe` + its sibling `ggml`/`whisper`
+  DLLs on Windows. `app/scripts/fetch-binaries.mjs` (Toolzy's `fetchExeWithDlls` pattern) fetches
+  the prebuilt `whisper-server.exe` and DLLs into `app/src-tauri/binaries/`, and
+  `tauri.conf.json` → `bundle.resources` ships them inside the installer. (The future `whisper-rs`
+  in-process backend would instead link whisper.cpp at build time — see ADR-004.)
 
 See [speech-to-text.md](speech-to-text.md).
 
@@ -336,7 +344,9 @@ verified against the embedded public key before installing. A failed/offline che
 
 **Decision.** The app is **MIT**. Use **permissive dependencies only** and **never bundle
 AGPL**. The core stack is permissive: whisper.cpp (MIT), Whisper model weights (MIT), Silero VAD
-(MIT), and cpal / enigo / arboard / global-hotkey / tray-icon (permissive). Native engines run
+(MIT), and cpal / enigo / arboard (permissive), plus `tauri-plugin-global-shortcut` (the global
+PTT hotkey) and Tauri's built-in **tray-icon feature** (the system tray) — both permissive,
+shipped under the Tauri umbrella. Native engines run
 in-process (statically/dynamically linked permissive code) or as separate-process sidecars.
 
 **Consequences.**

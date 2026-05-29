@@ -60,7 +60,7 @@ itself.
 
 Backed by: `tauri-plugin-store` or a hand-rolled serde-JSON store in `settings.rs` for the
 preferences file; `tauri-plugin-updater` for the About/Updates tab (ADR-009); the existing model
-registry / download / CUDA-detect machinery in `transcription.rs` for the Model tab
+registry / download / CUDA-detect machinery in `stt.rs` for the Model tab
 ([speech-to-text.md](speech-to-text.md)); cpal for the Audio tab's level meter. **No audio buffer
 ever touches disk** (ADR-001) — the level test reads RMS amplitude in memory only.
 
@@ -74,7 +74,7 @@ exposed from `app/src/lib/settings.ts` and `app/src/lib/stats.ts`). All commands
 
 **Modules**: `app/src-tauri/src/settings.rs` (preferences + persistence),
 `app/src-tauri/src/stats.rs` (usage stats), with the Model/Audio/Update tabs delegating to
-`transcription.rs`, an `audio.rs`/`capture.rs` device helper, and the updater plugin respectively.
+`stt.rs`, the `audio.rs` device helper, and the updater plugin respectively.
 
 ```rust
 // ---- settings.rs ----
@@ -94,29 +94,39 @@ fn reset_settings(state: State<'_, AppState>) -> Result<Settings, String>;
 // Overwrite with defaults; persist; re-apply side effects. Used by "Reset to defaults".
 
 #[tauri::command]
-fn list_input_devices() -> Result<Vec<AudioDevice>, String>;             // Audio tab picker
+fn list_input_devices() -> Result<Vec<AudioDevice>, String>;             // Audio tab picker — IMPLEMENTED (audio.rs)
+
+// --- Phase-pending (NOT yet registered) — drawn here as the planned contract: ---
 #[tauri::command]
-fn start_mic_test(channel: tauri::ipc::Channel<f32>) -> Result<(), String>; // streams RMS level
+fn start_mic_test(channel: tauri::ipc::Channel<f32>) -> Result<(), String>; // streams RMS level — Phase-pending
 #[tauri::command]
-fn stop_mic_test(state: State<'_, AppState>) -> Result<(), String>;
+fn stop_mic_test(state: State<'_, AppState>) -> Result<(), String>;          // Phase-pending
 
 #[tauri::command]
-fn set_launch_at_login(enabled: bool) -> Result<(), String>;             // General tab
+fn set_launch_at_login(enabled: bool) -> Result<(), String>;             // General tab — Phase-pending
 
-// ---- stats.rs ----
+// ---- stats.rs (IMPLEMENTED) ----
 
 #[tauri::command]
 fn get_stats(state: State<'_, AppState>) -> Result<UsageStats, String>;  // Hub dashboard
 #[tauri::command]
 fn reset_stats(state: State<'_, AppState>) -> Result<(), String>;        // clear local stats
 
-// ---- About / Updates (delegates to tauri-plugin-updater, ADR-009) ----
+// ---- About / Updates (delegates to tauri-plugin-updater, ADR-009) — Phase-pending ----
 
 #[tauri::command]
-async fn check_for_update() -> Result<UpdateInfo, String>;               // {available, version, notes}
+async fn check_for_update() -> Result<UpdateInfo, String>;               // {available, version, notes} — Phase-pending
 #[tauri::command]
-async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), String>;
+async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), String>; // Phase-pending
 ```
+
+> **Implementation status.** Of the commands above, only `list_input_devices` (in `audio.rs`)
+> plus the `settings.rs` group (`get_settings` / `update_settings` / `reset_settings`) and the
+> `stats.rs` group (`get_stats` / `reset_stats`) are registered today. The mic-test
+> (`start_mic_test` / `stop_mic_test`), launch-at-login (`set_launch_at_login`), and updater
+> (`check_for_update` / `install_update`) commands are **Phase-pending** — the contract is locked
+> here, the engine side lands in a later phase (mic test in the Audio tab work; updater in
+> Phase 4, ADR-009).
 
 - **`Settings`** (serde `rename_all = "camelCase"`) — the full preferences tree, see §4. Carries a
   `schemaVersion: u32` for forward migration.
@@ -136,7 +146,7 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
 - **Pure helpers** (`#[cfg(test)]`): `Settings::default()`, `apply_patch(&Settings, &SettingsPatch)`,
   `migrate(json, from_version)`, `validate(&Settings)` (clamps/normalizes — e.g. unknown language →
   `auto`), WPM/streak arithmetic in `stats.rs`. None do I/O.
-- The model/engine controls reuse the **`transcription.rs`** command surface and the
+- The model/engine controls reuse the **`stt.rs`** command surface and the
   `ModelDownloadGate` / progress-`Channel` UX from [speech-to-text.md](speech-to-text.md) and
   [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md) — the Hub does not re-implement download logic.
 
@@ -169,7 +179,7 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
    `auto` | `pt` | `en`; `auto` lets Whisper detect ([speech-to-text.md](speech-to-text.md)).
    pt-BR and English are first-class; `auto` is the default.
 8. **Hotkey rebind is validated by the engine.** Saving a new PTT chord re-registers it via the
-   `global-hotkey` crate inside `update_settings`; a conflict (already-registered combo, or a
+   `tauri-plugin-global-shortcut` plugin inside `update_settings`; a conflict (already-registered combo, or a
    reserved system chord) returns `Err("hotkey already in use: …")` and the old binding stays
    active ([hotkeys.md](hotkeys.md)). Mode (`hold` push-to-talk vs `toggle`) is a separate setting.
 9. **Model selection gates on download.** Picking a model that isn't present surfaces the
@@ -207,9 +217,11 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
 
 ## 4. Options & Defaults
 
-Every user-facing preference and its default. Anti-hallucination STT defaults (VAD + greedy +
-`--max-context 0`) are **fixed and not exposed here** (ADR-007) — the Hub never offers a control
-that would weaken transcription fidelity.
+Every user-facing preference and its default. Anti-hallucination STT defaults (Silero VAD +
+greedy/temperature-0 decoding with no temperature fallback, and stateless per-utterance
+recognition so there is no cross-utterance context drift — see [speech-to-text.md](speech-to-text.md))
+are **fixed and not exposed here** (ADR-007) — the Hub never offers a control that would weaken
+transcription fidelity.
 
 ### General
 | Option | Type | Range / values | Default | Effect |
@@ -223,13 +235,13 @@ that would weaken transcription fidelity.
 ### Hotkey
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `hotkey` | string (chord) | any valid `global-hotkey` combo | `Ctrl+Space` (placeholder; confirmed in [hotkeys.md](hotkeys.md)) | The push-to-talk binding. |
+| `hotkey` | string (chord) | any valid `tauri-plugin-global-shortcut` combo | `Ctrl+Space` (locked default — `DEFAULT_ACCEL` in `hotkey.rs`; see [hotkeys.md](hotkeys.md)) | The push-to-talk binding. |
 | `hotkeyMode` | enum | `hold` \| `toggle` | `hold` | `hold` = record while held; `toggle` = press to start, press to stop. |
 
 ### Model / Engine
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `model` | enum | entries from the `MODELS` registry (e.g. `base`, `small`, `medium`) | bundled small CPU model | Which Whisper model the warm engine loads. Gates on download (rule 9). |
+| `model` | enum | entries from the `MODELS` registry (`small`, `medium`, `large-v3-turbo`, `large-v3` — there is no `base`) | `small` (CPU) | Which Whisper model the warm engine loads. Gates on download (rule 9). |
 | `engine` | enum | `cpu` \| `cuda` | `cpu` | Inference backend; `cuda` only selectable when detected + downloaded (rule 10). Swaps the warm model. |
 | `unloadOnIdle` | bool | — | `true` | Evict the warm model after idle to free RAM ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)). |
 
@@ -286,7 +298,7 @@ exercised here except via deliberate model/engine swaps.
   **warm-model swap** (model/engine change) — that reuses the load path with a Tauri progress
   `Channel` and a "loading model" UI state ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation));
   the Hub does not cold-spawn `whisper-cli`.
-- **Model download** (Model tab) runs the existing `transcription.rs` `ureq` HF download on a
+- **Model download** (Model tab) runs the existing `stt.rs` HF download on a
   worker with streamed progress and cancel-via-`State`, reusing Toolzy's pattern — not blocking
   the window.
 - **Stats writes are debounced.** Per-dictation counters update the in-memory `UsageStats`

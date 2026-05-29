@@ -1,8 +1,8 @@
 # Dictation Feature Spec
 
-> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. Runtime-pending: the global-hotkey trigger wiring (separate), the live HUD waveform `Level` forwarding, and toggle-mode auto-endpoint.
+> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. Runtime-pending: the `tauri-plugin-global-shortcut` trigger wiring (separate — see [hotkeys.md](hotkeys.md)), the live HUD waveform `Level` forwarding, and toggle-mode auto-endpoint.
 > **Last updated**: 2026-05-29
-> **Coverage**: Sections 1-9 drafted. Code does not exist yet (Phase 0 docs).
+> **Coverage**: Sections 1-9 drafted. The `start/stop/cancel_dictation` commands exist and are registered in `lib.rs`.
 > **Environment**: desktop (Windows, native)
 
 This is MIA's core feature — the end-to-end **dictation orchestration** that wires every other
@@ -27,9 +27,10 @@ timing, cancellation, and failure flow* across them.
 - **Single active session** — only one dictation session runs at a time. A second hotkey-down while
   a session is active is interpreted by the active mode (toggle-stop or ignored), never a second
   concurrent capture. Re-entry is rejected at the engine boundary (Rule 12).
-- **Warm model, not cold spawn** — the STT model is resident in memory across utterances
+- **Warm model, not cold spawn** — the STT model is resident in the running `whisper-server`
+  sidecar across utterances
   ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)); `dictation.rs`
-  **never** cold-spawns `whisper-cli` per utterance. This is the latency-critical divergence from
+  **never** cold-spawns a CLI per utterance. This is the latency-critical divergence from
   Toolzy's file mode ([REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)).
 - **Faithful, not creative, by default** — the always-on path is STT → deterministic cleanup →
   inject. No LLM is on the hot path; AI Command Mode / Polish ([ai-commands.md](ai-commands.md)) is
@@ -46,15 +47,15 @@ timing, cancellation, and failure flow* across them.
 
 | Aspect | This feature |
 |---|---|
-| **Trigger** | global push-to-talk hotkey (hold or toggle) via `global-hotkey`; also a tray "Start dictation" action and an Escape/abort signal — see [hotkeys.md](hotkeys.md), [tray-and-hud.md](tray-and-hud.md) |
+| **Trigger** | global push-to-talk hotkey (hold or toggle) via `tauri-plugin-global-shortcut`; also a tray "Start dictation" action and an Escape/abort signal — see [hotkeys.md](hotkeys.md), [tray-and-hud.md](tray-and-hud.md) |
 | **Audio in** | `cpal` 16 kHz mono PCM `f32` stream, handed off the real-time callback via a ring buffer — see [audio-capture.md](audio-capture.md) |
 | **Text in** | raw transcript string from the warm STT engine — see [speech-to-text.md](speech-to-text.md) |
 | **Text out** | cleaned UTF-8 string injected at the cursor via `enigo` SendInput (clipboard+Ctrl+V fallback for long text) — see [text-cleanup.md](text-cleanup.md), [text-injection.md](text-injection.md) |
 | **Target** | the OS-focused window (live cursor); plus the floating mic **HUD** as the status surface |
 | **Language** | pt-BR and English first-class; auto-detect or pinned per [speech-to-text.md](speech-to-text.md) |
 
-Engine/crate per stage: `global-hotkey` (trigger) → `cpal` + Silero VAD (capture/endpoint) →
-`whisper-rs` in-process warm model, `whisper-server` fallback (STT) → pure Rust cleanup module
+Engine/crate per stage: `tauri-plugin-global-shortcut` (trigger) → `cpal` + Silero VAD (capture/endpoint) →
+warm `whisper-server` sidecar (STT) → pure Rust cleanup module
 (format) → `enigo` + `arboard` (inject). **The audio buffer never touches disk** — it lives only in
 the session ring buffer / accumulation `Vec<f32>` and is dropped when the session ends
 ([ADR-001](architecture.md#adr-001-native-on-device-privacy-first)).
@@ -77,7 +78,7 @@ struct DictationState {
     phase: Mutex<Phase>,            // Idle | Listening | Transcribing | Inserting | Error
     session: Mutex<Option<Session>>,// active audio stream + accumulation buffer + start instant
     cancel: Arc<AtomicBool>,        // set by abort/escape; checked between stages
-    engine: Mutex<SttEngine>,       // the WARM whisper-rs handle (ADR-004), loaded once
+    engine: Mutex<SttEngine>,       // the WARM whisper-server handle (ADR-004), started once
 }
 
 #[derive(Serialize)]
@@ -85,24 +86,27 @@ struct DictationState {
 enum DictationEvent {
     StateChanged { phase: Phase },          // drives the HUD state machine
     Level { rms: f32 },                     // live mic level for the HUD waveform
-    Partial { text: String },               // reserved; off by default in Phase 1
     Injected { chars: usize, ms: u64 },     // success summary (chars typed, end-to-end ms)
     Cancelled { reason: CancelReason },     // user-escape | empty-speech | timeout
     Error { message: String },              // maps 1:1 to a HUD error state
 }
 
-/// Begin a session. Returns once injection is done (or the session is cancelled/empty).
-/// `events` streams StateChanged/Level/Injected/Error to the HUD.
+/// Begin a session: opens cpal capture into the session buffer and emits the
+/// `Listening` StateChanged. `events` streams StateChanged/Level/Injected/Error to
+/// the HUD. The transcript/`DictationResult` is produced by `stop_dictation` (the
+/// tail of the pipeline), not here — `start_dictation` only opens the capture.
 #[tauri::command]
 async fn start_dictation(
-    state: State<'_, DictationState>,
-    mode: TriggerMode,                      // PushToHold | PressToToggle
+    capture: State<'_, CaptureState>,
+    settings: State<'_, SettingsState>,
     events: tauri::ipc::Channel<DictationEvent>,
-) -> Result<DictationResult, String>;
+) -> Result<(), String>;
 
-/// End-of-speech signal for push-to-hold (hotkey released). Triggers endpoint → STT.
+/// End-of-speech signal for push-to-hold (hotkey released). Stops capture and runs
+/// the tail end-to-end: endpoint → warm STT → cleanup → dictionary → snippets →
+/// inject, emitting HUD events and recording stats; returns the session summary.
 #[tauri::command]
-async fn stop_dictation(state: State<'_, DictationState>) -> Result<(), String>;
+async fn stop_dictation(state: State<'_, DictationState>) -> Result<DictationResult, String>;
 
 /// Abort: discard the in-flight session and any pending STT/injection; HUD → Idle. Idempotent.
 #[tauri::command]
@@ -115,14 +119,15 @@ struct DictationResult {
     detected_language: Option<String>,
     total_ms: u64,                          // end-to-end (capture start → injection done)
     stt_ms: u64,                            // STT inference portion
-    backend: &'static str,                  // "enigo" | "clipboard" (which injection path won)
+    backend: String,                        // "enigo" | "clipboard" (which injection path won)
 }
 ```
 
-`Err(String)` paths returned by `start_dictation` (each maps to a HUD error state, Section 6/7):
-`"no input device available"` (no mic / permission), `"model not downloaded"` (gate, Rule 9),
-`"stt engine failed: {detail}"`, `"injection failed: {detail}"`, `"dictation already active"`
-(re-entry, Rule 12). Empty/silent speech and user-escape are **not** errors — they resolve to
+`Err(String)` paths (each maps to a HUD error state, Section 6/7): `start_dictation` can return
+`"no input device available"` (no mic / permission) and `"capture already in progress"` (re-entry,
+Rule 12) when it fails to open capture; the tail in `stop_dictation` can return `"model not
+downloaded"` (gate, Rule 9), `"stt engine failed: {detail}"`, and `"injection failed: {detail}"`.
+Empty/silent speech and user-escape are **not** errors — they resolve to
 `DictationResult { injected_chars: 0, .. }` plus a `Cancelled` event (Rules 7-8).
 
 **Pure helpers** (no I/O, `#[cfg(test)]` cargo tests) that live in or are exercised by this module:
@@ -153,11 +158,14 @@ dictation logic — it forwards hotkey/tray intent in and renders HUD state out.
 4. **VAD gates transcription.** Capture is fed through Silero VAD ([audio-capture.md](audio-capture.md)).
    If no speech segment is detected for the whole session, the session resolves as **empty**
    (Rule 7) — STT is not invoked.
-5. **STT uses the warm resident model.** Transcription runs against the already-loaded `whisper-rs`
-   in-process engine (or `whisper-server` fallback), with the **fixed** anti-hallucination defaults
-   — Silero VAD + greedy (`temperature 0`, `--no-fallback`) + `--max-context 0`
+5. **STT uses the warm resident model.** Transcription runs against the already-running, warm
+   `whisper-server` sidecar (the cmake-free MVP default; `whisper-rs` in-process is a later
+   optimization), with the **fixed** anti-hallucination defaults — Silero VAD + greedy decoding sent
+   per `/inference` request with `temperature 0` and `temperature_inc 0` (disables whisper's
+   temperature-fallback ladder, the equivalent of `--no-fallback`), and each request is stateless
+   with no cross-utterance context conditioning (the equivalent of `--max-context 0`)
    ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine),
-   [speech-to-text.md](speech-to-text.md)). `dictation.rs` never cold-spawns `whisper-cli`
+   [speech-to-text.md](speech-to-text.md)). `dictation.rs` never cold-spawns a per-utterance CLI
    ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)).
 6. **Cleanup always runs before injection.** The raw transcript passes through the deterministic
    cleanup module ([text-cleanup.md](text-cleanup.md)) — filler stoplist, spoken-punctuation
@@ -207,15 +215,16 @@ dictation logic — it forwards hotkey/tray intent in and renders HUD state out.
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | `trigger_mode` | enum | `pushToHold` \| `pressToToggle` | `pushToHold` | how a session starts/ends — see [hotkeys.md](hotkeys.md) |
-| `hotkey` | string | global-hotkey accelerator | `Ctrl+Win` (TBD in [hotkeys.md](hotkeys.md)) | the PTT binding |
+| `hotkey` | string | `tauri-plugin-global-shortcut` accelerator | `Ctrl+Space` (locked default — see [hotkeys.md](hotkeys.md)) | the PTT binding |
 | `endpoint_silence_ms` | int | 400–3000 | `1000` | trailing silence that auto-ends a toggle session (VAD) — see [audio-capture.md](audio-capture.md) |
 | `max_session_ms` | int | 5000–120000 | `60000` | hard cap; session auto-endpoints to STT at the cap (Rule, Section 7) |
 | `language` | enum | `auto` \| `pt` \| `en` \| … | `auto` | passed to STT — see [speech-to-text.md](speech-to-text.md) |
 | `show_hud` | bool | — | `true` | whether the floating mic HUD appears while dictating — see [tray-and-hud.md](tray-and-hud.md) |
 | `play_cue` | bool | — | `true` | subtle start/stop audio cue (does not feed the mic buffer) |
 
-STT anti-hallucination flags (VAD on, greedy, `temperature 0`, `--no-fallback`, `--max-context 0`)
-are **fixed and not user-tunable** ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
+STT anti-hallucination defaults (VAD on, greedy, `temperature 0` + `temperature_inc 0` to disable
+the fallback ladder, stateless per-request inference so there is no cross-utterance context) are
+**fixed and not user-tunable** ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine)).
 The UI disables the start action when no model is present (Rule 9); the engine re-checks defensively
 and still returns `Err("model not downloaded")`.
 
@@ -231,11 +240,11 @@ Live dictation is latency-critical; the design keeps the slow work off the real-
 - **VAD / accumulation thread**: drains the ring buffer, runs Silero VAD, and appends speech frames
   to the session `Vec<f32>`. It emits throttled `Level` events for the HUD waveform (e.g. ~20 Hz),
   not per-frame.
-- **STT runs on a blocking task**: transcription against the **warm** `whisper-rs` engine
+- **STT runs on a blocking task**: transcription against the **warm** `whisper-server` sidecar
   ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)) runs in
   `tokio::task::spawn_blocking` (or a dedicated worker) so it never blocks the async runtime or the
-  audio thread. The model is loaded **once** at startup / first use and kept resident — this feature
-  does **not** cold-spawn `whisper-cli`.
+  audio thread. The server is started **once** with the model loaded and kept resident — this
+  feature does **not** cold-spawn a CLI per utterance.
 - **Latency budget** — target **perceived** latency from utterance-end (hotkey release) to first
   injected character: **≈ 1–2 s on the bundled CPU build for a short phrase**, sub-second with the
   optional CUDA engine ([speech-to-text.md](speech-to-text.md)). Where time goes:
@@ -339,7 +348,8 @@ Transitions:
 ## 9. Out of Scope (this version)
 
 - **Streaming live partials** — Phase 1 transcribes the full utterance after endpoint; incremental
-  on-screen partials are Phase 5 (the `Partial` event is reserved but off) ([../ROADMAP.md](../ROADMAP.md)).
+  on-screen partials (and the `Partial` event that would carry them) are Phase 5
+  ([../ROADMAP.md](../ROADMAP.md)).
 - **Wake word ("Hey MIA") / always-on listening** — only explicit hotkey/tray triggers in v1; Phase 5.
 - **AI Command Mode & Polish** — voice editing and LLM rewriting are Phase 2 and opt-in, off the
   hot path ([ai-commands.md](ai-commands.md), [ADR-008](architecture.md#adr-008-hybrid-text-intelligence)).
