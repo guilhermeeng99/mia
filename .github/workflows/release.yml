@@ -1,0 +1,39 @@
+name: Release
+
+# Tag a version (e.g. `v0.1.0`) to build + publish the signed Windows installer
+# to a draft GitHub Release (ADR-009). Requires repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (minisign, for the
+#   updater's latest.json). GITHUB_TOKEN is provided automatically.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build + publish Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install dependencies
+        working-directory: app
+        run: bun install
+      - name: Fetch whisper binaries + sibling DLLs
+        working-directory: app
+        run: node scripts/fetch-binaries.mjs
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: "MIA ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
