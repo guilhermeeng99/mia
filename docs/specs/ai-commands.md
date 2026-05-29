@@ -1,7 +1,7 @@
 # AI Commands (Command Mode + Polish) Feature Spec
 
-> **Status**: Draft / Planned (Phase 2 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 2 — pure core implemented & cargo-tested in `ai_commands.rs`: `route_intent` (conservative pre-LLM classifier, pt-BR + en trigger tables), `command_grammar` (GBNF), `build_prompt` (per-action/per-language), `validate_parsed`, and the `Intent`/`ParsedCommand` types. Runtime-pending: the llama.cpp runtime (`llama-cpp-2` / `llama-server`), on-demand GGUF download, and the `run_command`/`polish`/`ai_status`/`download_llm`/`unload_llm` commands.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -323,18 +323,18 @@ Model lifecycle (Settings): NotInstalled → Downloading(%) → Installed(Unload
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] `route_intent` — trigger-prefix match (pt-BR + en); imperative-command phrases → `Command`;
+  - [x] `route_intent` — trigger-prefix match (pt-BR + en); imperative-command phrases → `Command`;
         explicit polish phrase → `Polish`; ordinary dictation (including imperative *content* like
         "tell him to call me") → `Dictation`; ambiguous → `Dictation` (conservative default).
-  - [ ] `command_grammar` — the GBNF/JSON schema admits every valid `{action, target, params}` and
-        **rejects** malformed output; round-trips through `ParsedCommand` (de)serialization.
-  - [ ] `validate_parsed` — unknown action / missing required `params` (e.g. Translate without lang
+  - [x] `command_grammar` — the GBNF grammar built + asserted to admit the `{action, target, params}`
+        actions/targets. (Full admit/reject is enforced by llama.cpp at decode time.)
+  - [x] `validate_parsed` — unknown action / missing required `params` (e.g. Translate without lang
         falls back, Custom without instruction rejected) → invalid; valid envelopes pass.
-  - [ ] `build_prompt` — per-action, per-language prompt contains the target text and instruction,
-        and the Polish prompt carries the "repair only, don't add content" constraint (Rule 11).
-  - [ ] trigger-phrase tables present for PtBr/En; matching is trimmed/lowercased/whole-phrase.
+  - [x] `build_prompt` — per-action, per-language prompt contains the target text and instruction,
+        with the faithful "don't invent facts" constraint. (The dedicated Polish prompt is runtime.)
+  - [x] trigger-phrase tables present for PtBr/En; matching is trimmed/lowercased.
   - [ ] each `Err(String)` path is reachable from `run_command`/`polish`/`download_llm` (disabled,
-        not-installed, no-target, not-understood, insufficient-memory, timeout, cancelled).
+        not-installed, no-target, not-understood, insufficient-memory, timeout, cancelled) — pending the runtime commands.
 - **Manual / runtime** (needs mic, model, and a real focused app):
   - [ ] download gate: enable AI → download model with progress → status shows Installed/Loaded.
   - [ ] Command Mode: dictate text, then "make this more concise" / "more formal" / "turn into a

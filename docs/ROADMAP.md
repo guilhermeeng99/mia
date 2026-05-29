@@ -55,10 +55,10 @@ The end-to-end live loop: global PTT hotkey → cpal capture → Silero VAD endp
 
 Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruct or Llama-3.2-3B-Instruct at Q4_K_M (~1.5–2 GB RAM), with GBNF/JSON-schema constrained decoding. Gated behind a cheap intent check so average latency stays near Phase 1. `app/src-tauri/src/llm.rs`. → [ai-commands.md](specs/ai-commands.md) · [ADR-008](specs/architecture.md#adr-008-hybrid-text-intelligence)
 
-- ⬜ Local LLM runtime + on-demand model download (same download-gate UX as STT).
-- ⬜ **Command Mode** — voice editing ("delete last sentence", "make it formal") via constrained decoding for reliable command parsing.
-- ⬜ Opt-in **Polish** action — rewrite/clean beyond the deterministic path, on demand.
-- ⬜ **Intent routing** — cheap classifier to decide deterministic-only vs. LLM, keeping the fast path default.
+- ⬜ Local LLM runtime + on-demand model download (same download-gate UX as STT). Pure scaffolding (model-independent prompt/grammar/router) already lives in `ai_commands.rs`; the `llama-cpp-2`/`llama-server` runtime + GGUF download are pending.
+- 🚧 **Command Mode** — voice editing ("delete last sentence", "make it formal") via constrained decoding for reliable command parsing. Pure core in `ai_commands.rs` cargo-tested: `command_grammar` (GBNF), `build_prompt`, `validate_parsed`, `ParsedCommand`. Remaining: the constrained-decode runtime + `run_command`.
+- ⬜ Opt-in **Polish** action — rewrite/clean beyond the deterministic path, on demand. (`route_intent` already detects the polish phrase; the `polish` command is runtime-pending.)
+- 🚧 **Intent routing** — cheap classifier to decide deterministic-only vs. LLM, keeping the fast path default. `route_intent` implemented + cargo-tested (conservative default, pt-BR + en trigger tables) in `ai_commands.rs`.
 
 ### Phase 3 — Personalization ⬜
 
