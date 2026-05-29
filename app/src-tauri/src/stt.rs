@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 /// Hugging Face source for Whisper ggml models (one resolve URL per file).
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
@@ -432,6 +432,7 @@ pub fn gpu_engine_status(app: AppHandle) -> Result<GpuStatus, String> {
 #[tauri::command]
 pub async fn download_gpu_engine(
     app: AppHandle,
+    stt: State<'_, SttState>,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<(), String> {
     if gpu_dir(&app)?.join("whisper-server.exe").exists() {
@@ -441,6 +442,9 @@ pub async fn download_gpu_engine(
     tauri::async_runtime::spawn_blocking(move || install_gpu_engine(&dir, &on_progress))
         .await
         .map_err(|e| e.to_string())??;
+    // Drop any warm CPU server so the next dictation re-warms on the GPU build
+    // (server_exe now prefers engine-cuda/whisper-server.exe).
+    let _ = unload(&stt);
     Ok(())
 }
 

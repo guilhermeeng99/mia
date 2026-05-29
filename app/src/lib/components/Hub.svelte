@@ -7,6 +7,7 @@
   import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../hotkey";
   import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import {
+    downloadGpuEngine,
     downloadWhisperModel,
     gpuEngineStatus,
     listWhisperModels,
@@ -38,6 +39,8 @@
   let gpu = $state<GpuStatus | null>(null);
   let downloading = $state<string | null>(null);
   let progress = $state(0);
+  let gpuDownloading = $state(false);
+  let gpuProgress = $state(0);
   let testText = $state("Olá do MIA — teste de injeção. 🎤");
   let injectMsg = $state<string | null>(null);
   let micMsg = $state<string | null>(null);
@@ -197,6 +200,24 @@
       fail(e);
     } finally {
       downloading = null;
+    }
+  }
+
+  // Download the optional NVIDIA CUDA whisper engine (~435 MB) into app-data; once
+  // present, the warm engine spawns the GPU build instead of CPU (~7-10x faster).
+  async function downloadGpu() {
+    gpuDownloading = true;
+    gpuProgress = 0;
+    error = null;
+    try {
+      const channel = new Channel<DownloadProgress>();
+      channel.onmessage = (p) => (gpuProgress = Math.round(p.percent));
+      await downloadGpuEngine(channel);
+      gpu = await gpuEngineStatus();
+    } catch (e) {
+      fail(e);
+    } finally {
+      gpuDownloading = false;
     }
   }
 
@@ -401,6 +422,16 @@
           <Pill tone="neutral">somente CPU</Pill>
         {/if}
       </div>
+      {#if gpu?.gpuPresent && !gpu.downloaded}
+        <div class="mt-4 flex items-center gap-3">
+          {#if gpuDownloading}
+            <Pill tone="action">baixando engine… {gpuProgress}%</Pill>
+          {:else}
+            <Button variant="secondary" onclick={downloadGpu}>Baixar engine GPU (~435 MB)</Button>
+          {/if}
+          <span class="text-body text-slate-blue">~7–10× mais rápido; troca de motor na próxima fala.</span>
+        </div>
+      {/if}
     </Card>
 
     <Card>
