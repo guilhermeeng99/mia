@@ -35,6 +35,7 @@ pub fn run() {
         // The warm whisper-server lives once in managed state, shared across
         // every utterance (ADR-004) — never a cold spawn per utterance.
         .manage(stt::SttState::default())
+        .manage(audio::CaptureState::default())
         .setup(|app| {
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
@@ -54,6 +55,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             audio::list_input_devices,
+            audio::test_microphone,
             dictionary::dict_list,
             dictionary::dict_add,
             dictionary::dict_update,

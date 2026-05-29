@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { listInputDevices, type AudioDevice } from "../audio";
+  import { listInputDevices, testMicrophone, type AudioDevice } from "../audio";
   import { injectText } from "../inject";
   import {
     downloadWhisperModel,
@@ -36,6 +36,8 @@
   let progress = $state(0);
   let testText = $state("Olá do MIA — teste de injeção. 🎤");
   let injectMsg = $state<string | null>(null);
+  let micMsg = $state<string | null>(null);
+  let micTesting = $state(false);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
@@ -66,6 +68,23 @@
       fail(e);
     } finally {
       downloading = null;
+    }
+  }
+
+  async function runMicTest() {
+    micMsg = null;
+    error = null;
+    micTesting = true;
+    try {
+      const r = await testMicrophone(1500);
+      micMsg =
+        r.peak > 0.02
+          ? `Ouvimos você (pico ${(r.peak * 100).toFixed(0)}%).`
+          : "Quase nenhum som captado — verifique o microfone.";
+    } catch (e) {
+      fail(e);
+    } finally {
+      micTesting = false;
     }
   }
 
@@ -111,6 +130,14 @@
             {/each}
           </select>
         </Field>
+      </div>
+      <div class="mt-4 flex items-center gap-3">
+        <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
+          {micTesting ? "Ouvindo…" : "Testar microfone"}
+        </Button>
+        {#if micMsg}
+          <span class="text-body text-slate-blue">{micMsg}</span>
+        {/if}
       </div>
     </Card>
 

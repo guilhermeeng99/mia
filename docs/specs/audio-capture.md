@@ -1,6 +1,6 @@
 # Audio Capture & VAD Endpointing Feature Spec
 
-> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. Runtime-pending: the cpal real-time stream + lock-free ring buffer + processing/VAD thread, the `start/stop_capture` + `test_microphone` commands, and Silero model load + per-frame inference.
+> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. Runtime-pending: live Silero per-frame inference + VAD-gated trimming / toggle-endpoint (the push-to-hold MVP captures release-to-release; anti-hallucination VAD is applied at transcription time by whisper-server).
 > **Last updated**: 2026-05-29
 > **Coverage**: all sections drafted (1–9)
 > **Environment**: desktop (Windows, native)

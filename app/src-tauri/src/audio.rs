@@ -8,8 +8,16 @@
 //! seam wired during the orchestrator stage; this file currently also exposes the
 //! device-enumeration command the Settings picker needs.
 
-use cpal::traits::{DeviceTrait, HostTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat;
 use serde::Serialize;
+use tauri::ipc::Channel;
+use tauri::State;
 
 /// Whisper's native input rate — every frame handed to STT is at this rate (Rule 1).
 pub const SAMPLE_RATE_HZ: u32 = 16_000;
@@ -146,6 +154,225 @@ pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
         out.push(AudioDevice { is_default, name: normalize_device_name(&raw), id: raw });
     }
     Ok(out)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live capture (cpal stream on its own thread; runtime-pending verification)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// WHY a dedicated thread: a cpal `Stream` is `!Send` (WASAPI COM handles), so it
+// must be created, driven, and dropped on one thread — it cannot live in managed
+// `State`. The thread builds the stream, accumulates mono PCM at the device rate,
+// emits `Level` to the HUD, and on stop drops the stream; `end_capture` resamples
+// the whole buffer to 16 kHz once (avoiding per-chunk resample artifacts). The
+// orchestrator (`dictation.rs`) calls `begin_capture`/`end_capture` in-process.
+
+/// Events streamed to the HUD/orchestrator during capture (spec §2).
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum CaptureEvent {
+    Level { rms: f32, peak: f32 },
+    Error { message: String },
+}
+
+/// A one-shot mic test result for the Hub (spec §2).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MicTest {
+    pub peak: f32,
+    pub rms: f32,
+    pub device_name: String,
+}
+
+struct CaptureSession {
+    stop: Arc<AtomicBool>,
+    samples: Arc<Mutex<Vec<f32>>>, // mono, at the device's native rate
+    rate: u32,
+    handle: Option<JoinHandle<()>>,
+}
+
+/// Managed capture state — at most one session at a time (Rule 11).
+#[derive(Default)]
+pub struct CaptureState {
+    session: Mutex<Option<CaptureSession>>,
+}
+
+fn resolve_input_device(device_id: Option<&str>) -> Result<cpal::Device, String> {
+    let host = cpal::default_host();
+    if let Some(id) = device_id {
+        if !id.is_empty() && id != "default" {
+            let mut devices =
+                host.input_devices().map_err(|e| format!("no input device available: {e}"))?;
+            return devices
+                .find(|d| d.name().map(|n| n == id).unwrap_or(false))
+                .ok_or_else(|| "selected device not found".to_string());
+        }
+    }
+    host.default_input_device().ok_or_else(|| "no input device available".to_string())
+}
+
+fn push_mono(buf: &Arc<Mutex<Vec<f32>>>, mono: &[f32]) {
+    if let Ok(mut b) = buf.lock() {
+        b.extend_from_slice(mono);
+    }
+}
+
+/// Open the cpal stream + accumulate; reports the device sample rate (or an error)
+/// back over `ready` once the stream is live, then emits `Level` until stopped.
+fn capture_thread(
+    device_id: Option<String>,
+    stop: Arc<AtomicBool>,
+    samples: Arc<Mutex<Vec<f32>>>,
+    channel: Option<Channel<CaptureEvent>>,
+    ready: std::sync::mpsc::Sender<Result<u32, String>>,
+) {
+    let device = match resolve_input_device(device_id.as_deref()) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = ready.send(Err(e));
+            return;
+        }
+    };
+    let config = match device.default_input_config() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = ready.send(Err(format!("failed to open audio stream: {e}")));
+            return;
+        }
+    };
+    let channels = config.channels();
+    let rate = config.sample_rate().0;
+    let fmt = config.sample_format();
+    let cfg: cpal::StreamConfig = config.into();
+    let err_channel = channel.clone();
+    let err_fn = move |err: cpal::StreamError| {
+        if let Some(ch) = &err_channel {
+            let _ = ch.send(CaptureEvent::Error { message: format!("audio stream error: {err}") });
+        }
+    };
+
+    let cb_buf = samples.clone();
+    let stream_res = match fmt {
+        SampleFormat::F32 => device.build_input_stream(
+            &cfg,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                push_mono(&cb_buf, &downmix_to_mono(data, channels));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::I16 => device.build_input_stream(
+            &cfg,
+            move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                let f: Vec<f32> = data.iter().map(|&s| s as f32 / 32768.0).collect();
+                push_mono(&cb_buf, &downmix_to_mono(&f, channels));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::U16 => device.build_input_stream(
+            &cfg,
+            move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                let f: Vec<f32> = data.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).collect();
+                push_mono(&cb_buf, &downmix_to_mono(&f, channels));
+            },
+            err_fn,
+            None,
+        ),
+        other => {
+            let _ = ready.send(Err(format!("unsupported sample format: {other:?}")));
+            return;
+        }
+    };
+    let stream = match stream_res {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ready.send(Err(format!("failed to open audio stream: {e}")));
+            return;
+        }
+    };
+    if let Err(e) = stream.play() {
+        let _ = ready.send(Err(format!("failed to open audio stream: {e}")));
+        return;
+    }
+    let _ = ready.send(Ok(rate));
+
+    // ~50 Hz level meter (Rule 10) until stop; the stream drops when this returns.
+    let window = (rate as usize / 50).max(1);
+    while !stop.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(20));
+        if let Some(ch) = &channel {
+            let recent = {
+                let b = samples.lock().map(|b| b.clone()).unwrap_or_default();
+                let start = b.len().saturating_sub(window);
+                b[start..].to_vec()
+            };
+            let _ = ch.send(CaptureEvent::Level { rms: rms(&recent), peak: peak(&recent) });
+        }
+    }
+    drop(stream);
+}
+
+/// Start capture for one session (in-process; called by the orchestrator). Blocks
+/// only until the stream is confirmed live. Rejects a second concurrent session.
+pub fn begin_capture(
+    state: &CaptureState,
+    device_id: Option<&str>,
+    channel: Option<Channel<CaptureEvent>>,
+) -> Result<(), String> {
+    let mut guard = state.session.lock().map_err(|_| "capture state poisoned".to_string())?;
+    if guard.is_some() {
+        return Err("capture already in progress".to_string());
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
+    let (stop_t, samples_t, device_t) = (stop.clone(), samples.clone(), device_id.map(str::to_string));
+    let handle = std::thread::spawn(move || {
+        capture_thread(device_t, stop_t, samples_t, channel, ready_tx);
+    });
+    match ready_rx.recv().map_err(|_| "capture thread failed to start".to_string())? {
+        Ok(rate) => {
+            *guard = Some(CaptureSession { stop, samples, rate, handle: Some(handle) });
+            Ok(())
+        }
+        Err(e) => {
+            let _ = handle.join();
+            Err(e)
+        }
+    }
+}
+
+/// Stop capture and return the utterance as 16 kHz mono `f32` (resampled once).
+pub fn end_capture(state: &CaptureState) -> Result<Vec<f32>, String> {
+    let mut guard = state.session.lock().map_err(|_| "capture state poisoned".to_string())?;
+    let Some(mut session) = guard.take() else {
+        return Ok(Vec::new());
+    };
+    session.stop.store(true, Ordering::SeqCst);
+    if let Some(h) = session.handle.take() {
+        let _ = h.join();
+    }
+    let raw = session.samples.lock().map(|s| s.clone()).unwrap_or_default();
+    Ok(resample_linear(&raw, session.rate, SAMPLE_RATE_HZ))
+}
+
+fn default_input_name() -> String {
+    cpal::default_host()
+        .default_input_device()
+        .and_then(|d| d.name().ok())
+        .map(|n| normalize_device_name(&n))
+        .unwrap_or_else(|| "default".to_string())
+}
+
+/// One-shot mic test for the Hub: capture briefly, report peak/RMS (no STT, §2).
+#[tauri::command]
+pub fn test_microphone(state: State<'_, CaptureState>, ms: Option<u32>) -> Result<MicTest, String> {
+    let dur = ms.unwrap_or(1500).clamp(200, 5000);
+    begin_capture(&state, None, None)?;
+    std::thread::sleep(Duration::from_millis(dur as u64));
+    let samples = end_capture(&state)?;
+    Ok(MicTest { peak: peak(&samples), rms: rms(&samples), device_name: default_input_name() })
 }
 
 #[cfg(test)]
