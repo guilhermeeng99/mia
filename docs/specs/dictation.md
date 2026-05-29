@@ -1,7 +1,7 @@
 # Dictation Feature Spec
 
-> **Status**: Draft / Planned
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. Runtime-pending: the `start/stop/cancel_dictation` commands that wire real cpal capture + warm STT + cleanup/dictionary/snippets + injection (depend on the audio + hotkey runtime; validated on Windows).
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted. Code does not exist yet (Phase 0 docs).
 > **Environment**: desktop (Windows, native)
 
@@ -312,15 +312,15 @@ Transitions:
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, pure helpers, no I/O):
-  - [ ] `next_phase(phase, signal)` covers every transition in Section 6, including illegal
+  - [x] `next_phase(phase, signal)` covers every transition in Section 6, including illegal
         signals (e.g. release while Idle) resolving to a no-op.
-  - [ ] trigger-mode interpreter: hotkey-down during an active session → `Stop` (toggle) /
-        `Reject`/`Ignore` (hold) (Rule 12).
-  - [ ] `CancelReason` classifier (UserEscape vs EmptySpeech vs Timeout).
-  - [ ] empty-result detection: STT-empty, whitespace-only, filler-only-after-cleanup all map to
-        EmptySpeech (Rule 7).
-  - [ ] `DictationResult` latency-summary builder from stage timestamps.
-  - [ ] each `Err(String)` string the command can return is exactly the one the UI maps.
+  - [x] trigger-mode interpreter: hotkey-down during an active session → `Stop` (toggle) /
+        `Ignore` (hold), `Start` when idle (Rule 12; the already-active `Reject` is command-level).
+  - [x] `CancelReason` classifier (UserEscape vs EmptySpeech vs Timeout).
+  - [x] empty-result handling: the `Empty`/`TranscribedEmpty` signals return to Idle and map to
+        `EmptySpeech` (Rule 7). (The per-stage emptiness checks live in cleanup/stt.)
+  - [x] `DictationResult` latency-summary builder from stage timestamps.
+  - [ ] each `Err(String)` string the command can return is exactly the one the UI maps — pending the commands.
 - **Manual / runtime** (needs mic, model, real focused app):
   - [ ] happy path push-to-hold: hold → speak → release → text at cursor (pt-BR and English).
   - [ ] happy path press-to-toggle: press → speak → trailing silence auto-ends → text at cursor.
