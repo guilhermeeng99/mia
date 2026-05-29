@@ -1,7 +1,7 @@
 # Hotkeys Feature Spec
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — pure core implemented & cargo-tested in `hotkey.rs`: `parse_accelerator` / `to_canonical` (round-trips, exact error messages), `is_bare_key` / `is_reserved` guards, and the debounce + activation-mode `reduce()` reducer (Rules 3/4/9/10). Runtime-pending: `GlobalHotKeyManager` registration, the `WM_HOTKEY` event loop, the commands (`register/unregister/update/get/check`, recorder), `Esc`-cancel, and the missing-release watchdog.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -281,16 +281,16 @@ Hotkey-recorder (Settings/Hub, light theme):
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] `parse_accelerator` accepts canonical chords (`"Ctrl+Super"`, `"Alt+Space"`,
+  - [x] `parse_accelerator` accepts canonical chords (`"Ctrl+Super"`, `"Alt+Space"`,
         `"Ctrl+Shift+D"`) and rejects empty / unparseable / bare-key / `Fn` inputs with the exact
         `Err(String)` messages.
-  - [ ] `to_canonical` round-trips: `parse_accelerator(to_canonical(m, c)) == (m, c)`.
-  - [ ] `reduce()` in `PushToHold`: down → `Some(Start)`; auto-repeat downs → `None`; release →
+  - [x] `to_canonical` round-trips: `parse_accelerator(to_canonical(m, c)) == (m, c)`.
+  - [x] `reduce()` in `PushToHold`: down → `Some(Start)`; auto-repeat downs → `None`; release →
         `Some(Stop)`; release-when-inactive → `None`.
-  - [ ] `reduce()` in `PressToToggle`: 1st complete press → `Start`; 2nd → `Stop`; alternation holds.
-  - [ ] Debounce: two edges within `debounce_ms` collapse to one accepted intent.
-  - [ ] Re-entry guard: no second `Start` before a `Stop`; no `Stop` while inactive.
-  - [ ] `is_reserved` flags `Win+L`, `Alt+Tab`, `Ctrl+Alt+Del`, etc.
+  - [x] `reduce()` in `PressToToggle`: 1st complete press → `Start`; 2nd → `Stop`; alternation holds.
+  - [x] Debounce: two edges within `debounce_ms` collapse to one accepted intent.
+  - [x] Re-entry guard: no second `Start` before a `Stop`; no `Stop` while inactive.
+  - [x] `is_reserved` flags `Win+L`, `Alt+Tab`, `Ctrl+Alt+Del`, etc.
 - **Manual / runtime** (needs a real desktop + another focused app):
   - [ ] PTT fires while a *different* app (browser, editor) is focused (Rule 2).
   - [ ] `push-to-hold`: HUD goes *Listening* on press, *Transcribing* on release.
