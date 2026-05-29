@@ -77,6 +77,18 @@ pub fn reconstruct(toks: &[Tok], plan: &Plan) -> String {
     out
 }
 
+/// Collect the `Word` runs of `toks` as string slices, dropping separators. Both the
+/// dictionary and snippets plan replacements over the whole-word sequence, so the
+/// extraction lives here once next to `tokenize`/`reconstruct`.
+pub fn words(toks: &[Tok]) -> Vec<&str> {
+    toks.iter()
+        .filter_map(|t| match t {
+            Tok::Word(w) => Some(w.as_str()),
+            Tok::Sep(_) => None,
+        })
+        .collect()
+}
+
 /// Advance past `k` words (and the separators between them) starting at token `i`.
 fn consume_words(toks: &[Tok], mut i: usize, k: usize) -> usize {
     let mut consumed = 0;
@@ -95,15 +107,6 @@ fn consume_words(toks: &[Tok], mut i: usize, k: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn words(toks: &[Tok]) -> Vec<&str> {
-        toks.iter()
-            .filter_map(|t| match t {
-                Tok::Word(w) => Some(w.as_str()),
-                Tok::Sep(_) => None,
-            })
-            .collect()
-    }
 
     #[test]
     fn tokenize_alternates_words_and_separators() {

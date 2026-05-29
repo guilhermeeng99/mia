@@ -260,7 +260,8 @@ fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
 }
 
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
-/// Returns immediately; `stop_dictation` runs the tail. (push-to-hold MVP)
+/// Returns immediately; `stop_dictation` runs the tail (push-to-hold or, in toggle
+/// mode, the energy-based auto-endpoint).
 #[tauri::command]
 pub fn start_dictation(
     app: AppHandle,
@@ -270,7 +271,7 @@ pub fn start_dictation(
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let s = settings.snapshot()?;
-    eprintln!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
+    crate::dlog!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
     // Capture the focused app now (before the HUD or anything can shift focus) so the
     // per-app style targets the app the user is dictating into (per-app-context.md).
     focus.set(crate::win32::foreground_process_name());
@@ -319,7 +320,7 @@ pub fn stop_dictation(
     };
     let lang_pref = crate::app_styles::resolve_language(s.general.default_language, style);
     let samples = crate::audio::end_capture(&capture)?;
-    eprintln!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
+    crate::dlog!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
     if samples.is_empty() {
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
@@ -331,14 +332,14 @@ pub fn stop_dictation(
     let t0 = now_ms();
     let app_for_err = app.clone();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
-        eprintln!("[dictation] error: {e}");
+        crate::dlog!("[dictation] error: {e}");
         emit_hud(&app_for_err, Phase::Error, Some(&e));
         emit_then_idle(events, DictationEvent::Error { message: e.clone() });
         e
     };
 
     crate::stt::warm_model(&app, &stt_state, &s.model.model).map_err(|e| fail(&events, e))?;
-    eprintln!("[dictation] warm engine ready (model={})", s.model.model);
+    crate::dlog!("[dictation] warm engine ready (model={})", s.model.model);
     let stt_start = now_ms();
     let lang = stt_lang(lang_pref);
     // Snapshot the dictionary once: its bias terms become Whisper's initial prompt
@@ -348,7 +349,7 @@ pub fn stop_dictation(
     let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref(), (!bias.is_empty()).then_some(bias.as_str()))
         .map_err(|e| fail(&events, e))?;
     let stt_end = now_ms();
-    eprintln!("[dictation] transcript: {} chars in {} ms", raw.chars().count(), stt_end.saturating_sub(stt_start));
+    crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
 
     let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style);
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(lang_pref), &opts);
@@ -362,7 +363,7 @@ pub fn stop_dictation(
     };
 
     if final_text.trim().is_empty() {
-        eprintln!("[dictation] nothing to inject (empty after cleanup)");
+        crate::dlog!("[dictation] nothing to inject (empty after cleanup)");
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
@@ -390,7 +391,7 @@ pub fn stop_dictation(
     crate::inject::inject(&final_text, mode, &crate::inject::InjectSettings::default())
         .map_err(|e| fail(&events, e))?;
     let done = now_ms();
-    eprintln!("[dictation] injected {} chars", final_text.chars().count());
+    crate::dlog!("[dictation] injected {} chars", final_text.chars().count());
 
     let chars = final_text.chars().count();
     let elapsed = done.saturating_sub(t0);

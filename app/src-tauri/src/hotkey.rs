@@ -426,7 +426,7 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     let Some(intent) = intent else {
         return;
     };
-    eprintln!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
+    crate::dlog!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
     // Emit FIRST — the orchestrator drives off this. Then run the session side-effects
     // (Esc binding + watchdog) on a SEPARATE thread: we are *inside* the plugin's
     // shortcut handler, so calling register/unregister here would re-enter the plugin
@@ -465,7 +465,7 @@ fn on_session_end(app: &AppHandle) {
 /// Esc pressed during a session → reset the reducer and emit Cancel (Rule 8). Emits
 /// first, then defers the unregister off the handler thread (re-entrancy deadlock).
 fn cancel_from_escape(app: &AppHandle) {
-    eprintln!("[hotkey] Esc → intent Cancel");
+    crate::dlog!("[hotkey] Esc → intent Cancel");
     let _ = app.emit("dictation://intent", DictationIntent::Cancel);
     let app = app.clone();
     std::thread::spawn(move || {
@@ -506,7 +506,7 @@ fn arm_watchdog(app: &AppHandle) {
         }
         rt.generation.fetch_add(1, Ordering::SeqCst);
         let _ = app.global_shortcut().unregister(escape_shortcut());
-        eprintln!("[hotkey] watchdog: no release after {MAX_HOLD_MS}ms → forcing Stop");
+        crate::dlog!("[hotkey] watchdog: no release after {MAX_HOLD_MS}ms → forcing Stop");
         let _ = app.emit("dictation://intent", DictationIntent::Stop);
     });
 }
@@ -559,7 +559,7 @@ pub fn get_hotkey(rt: State<'_, HotkeyRuntime>) -> Result<HotkeyConfig, String> 
 pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
     match parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) {
         Ok(sc) => match app.global_shortcut().register(sc) {
-            Ok(()) => eprintln!("[hotkey] PTT '{}' registered", cfg.accelerator),
+            Ok(()) => crate::dlog!("[hotkey] PTT '{}' registered", cfg.accelerator),
             // The likeliest cause on Windows is the chord already being claimed (an
             // IME often owns Ctrl+Space) — surface it instead of failing silently.
             Err(e) => eprintln!(

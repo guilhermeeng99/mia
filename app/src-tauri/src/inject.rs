@@ -111,12 +111,10 @@ fn chunk_for_sendinput(text: &str, max: usize) -> Vec<&str> {
 }
 
 /// A length-only, non-verbatim placeholder for logs — the transcript is sensitive
-/// and is NEVER logged verbatim (Rule 12). WHY `allow(dead_code)`: structured
-/// logging is wired in the dictation-orchestration stage (alongside the focus /
-/// elevation detection noted at the top of this file); the redaction contract
-/// lives here, with the backends it guards, so the two can't drift apart.
-#[allow(dead_code)]
-fn redact_for_log(text: &str) -> String {
+/// and is NEVER logged verbatim (Rule 12). The redaction contract lives here, next
+/// to the backends it guards, and the dictation orchestrator routes its transcript
+/// trace through this helper (`dictation.rs`) so the two can't drift apart.
+pub fn redact_for_log(text: &str) -> String {
     format!("<{} chars>", text.chars().count())
 }
 

@@ -1,11 +1,10 @@
 //! MIA — local voice-to-text dictation for Windows.
 //!
 //! Rust is the engine (see `CLAUDE.md` and `docs/specs/architecture.md`). This
-//! file owns the Tauri bootstrap + the `#[tauri::command]` registry; the
-//! dictation modules (audio, vad, stt, cleanup, inject, hotkey, tray,
-//! dictation) are wired in here as each Phase-1 stage lands. So far the engine
-//! exposes model management + warm-status (stt), text injection (inject), and the
-//! `app_version` IPC smoke test; cleanup is a pure module called in-process.
+//! file owns the Tauri bootstrap and the `#[tauri::command]` registry; see the
+//! `invoke_handler!` block in `run()` for the live command set spanning the full
+//! pipeline (audio, dictation, hotkey, stt, settings, dictionary, snippets, stats,
+//! inject) plus the tray and the floating HUD window.
 
 pub mod ai_commands;
 pub mod app_styles;
@@ -28,8 +27,20 @@ pub mod win32;
 
 use tauri::{Manager, WindowEvent};
 
+/// Debug-only stderr tracing for the dictation pipeline. The shipped GUI has no
+/// attached console, so these traces compile out of release builds; genuine
+/// warnings (e.g. a failed hotkey registration) stay as plain `eprintln!`.
+#[macro_export]
+macro_rules! dlog {
+    ($($arg:tt)*) => {{
+        #[cfg(debug_assertions)]
+        eprintln!($($arg)*);
+    }};
+}
+
 /// Return the running app version (compiled in from Cargo). Trivial by design —
-/// it is the scaffold's IPC smoke test, called by `App.svelte`.
+/// it is the scaffold's IPC smoke test, called via the `appVersion()` wrapper
+/// (`app/src/lib/app.ts`).
 #[tauri::command]
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

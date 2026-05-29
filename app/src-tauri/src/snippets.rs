@@ -107,7 +107,7 @@ pub fn normalize_trigger(trigger: &str) -> String {
     fold(trigger).split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-use crate::text_match::{reconstruct, tokenize, Tok};
+use crate::text_match::{reconstruct, tokenize};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compiled set + expansion (pure)
@@ -169,13 +169,7 @@ pub fn expand_snippets(text: &str, set: &SnippetSet) -> ExpansionResult {
         return ExpansionResult { output: text.to_string(), applied_triggers: Vec::new() };
     }
     let toks = tokenize(text);
-    let words: Vec<&str> = toks
-        .iter()
-        .filter_map(|t| match t {
-            Tok::Word(w) => Some(w.as_str()),
-            Tok::Sep(_) => None,
-        })
-        .collect();
+    let words = crate::text_match::words(&toks);
     if words.is_empty() {
         return ExpansionResult { output: text.to_string(), applied_triggers: Vec::new() };
     }

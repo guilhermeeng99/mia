@@ -181,7 +181,7 @@ pub fn fuzzy_match(token: &str, variant: &str, max_distance: u8) -> bool {
 // The matcher (pure)
 // ─────────────────────────────────────────────────────────────────────────────
 
-use crate::text_match::{reconstruct, tokenize, Tok};
+use crate::text_match::{reconstruct, tokenize};
 
 /// A matchable variant (its words) bound to its source entry + scan order.
 struct Variant<'a> {
@@ -286,13 +286,7 @@ pub fn apply_dictionary(text: &str, entries: &[DictEntry], settings: &DictSettin
         return text.to_string();
     }
     let toks = tokenize(text);
-    let words: Vec<&str> = toks
-        .iter()
-        .filter_map(|t| match t {
-            Tok::Word(w) => Some(w.as_str()),
-            Tok::Sep(_) => None,
-        })
-        .collect();
+    let words = crate::text_match::words(&toks);
     if words.is_empty() {
         return text.to_string();
     }
