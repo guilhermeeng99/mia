@@ -414,21 +414,32 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
         *e = next;
         intent
     };
-    if let Some(intent) = intent {
-        eprintln!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
-        match intent {
-            DictationIntent::Start => on_session_start(app, mode),
-            DictationIntent::Stop | DictationIntent::Cancel => on_session_end(app),
-        }
-        let _ = app.emit("dictation://intent", intent);
-    }
+    let Some(intent) = intent else {
+        return;
+    };
+    eprintln!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
+    // Emit FIRST — the orchestrator drives off this. Then run the session side-effects
+    // (Esc binding + watchdog) on a SEPARATE thread: we are *inside* the plugin's
+    // shortcut handler, so calling register/unregister here would re-enter the plugin
+    // lock and deadlock (freezing the app). A worker thread blocks harmlessly until the
+    // handler returns and releases the lock.
+    let _ = app.emit("dictation://intent", intent);
+    let app = app.clone();
+    std::thread::spawn(move || match intent {
+        DictationIntent::Start => on_session_start(&app),
+        DictationIntent::Stop | DictationIntent::Cancel => on_session_end(&app),
+    });
 }
 
 /// Begin a session: register the transient Esc-cancel binding and (push-to-hold only)
-/// arm the missing-release watchdog.
-fn on_session_start(app: &AppHandle, mode: ActivationMode) {
+/// arm the missing-release watchdog. MUST run off the shortcut-handler thread.
+fn on_session_start(app: &AppHandle) {
     let _ = app.global_shortcut().register(escape_shortcut());
-    if mode == ActivationMode::PushToHold {
+    let push_to_hold = app
+        .try_state::<HotkeyRuntime>()
+        .and_then(|rt| rt.cfg.lock().ok().map(|c| c.mode == ActivationMode::PushToHold))
+        .unwrap_or(false);
+    if push_to_hold {
         arm_watchdog(app);
     }
 }
@@ -442,17 +453,21 @@ fn on_session_end(app: &AppHandle) {
     let _ = app.global_shortcut().unregister(escape_shortcut());
 }
 
-/// Esc pressed during a session → reset the reducer and emit Cancel (Rule 8).
+/// Esc pressed during a session → reset the reducer and emit Cancel (Rule 8). Emits
+/// first, then defers the unregister off the handler thread (re-entrancy deadlock).
 fn cancel_from_escape(app: &AppHandle) {
-    if let Some(rt) = app.try_state::<HotkeyRuntime>() {
-        rt.generation.fetch_add(1, Ordering::SeqCst);
-        if let Ok(mut e) = rt.edge.lock() {
-            *e = EdgeState::default();
-        }
-    }
-    let _ = app.global_shortcut().unregister(escape_shortcut());
     eprintln!("[hotkey] Esc → intent Cancel");
     let _ = app.emit("dictation://intent", DictationIntent::Cancel);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Some(rt) = app.try_state::<HotkeyRuntime>() {
+            rt.generation.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut e) = rt.edge.lock() {
+                *e = EdgeState::default();
+            }
+        }
+        let _ = app.global_shortcut().unregister(escape_shortcut());
+    });
 }
 
 /// Missing-release watchdog (Rule 11): if a push-to-hold session never sees its
