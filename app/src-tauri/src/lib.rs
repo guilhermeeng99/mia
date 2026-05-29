@@ -45,6 +45,9 @@ pub fn run() {
             // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
             let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
             app.manage(dictionary::DictState::new(dict_entries, dict_settings));
+            // Voice-triggered snippets — loaded from snippets.json.
+            let snips = snippets::load_snippets(app.handle());
+            app.manage(snippets::SnippetState::new(snips));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -60,6 +63,10 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::reset_settings,
+            snippets::list_snippets,
+            snippets::upsert_snippet,
+            snippets::delete_snippet,
+            snippets::preview_expansion,
             stats::get_stats,
             stats::reset_stats,
             stt::list_whisper_models,

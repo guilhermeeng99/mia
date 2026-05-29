@@ -9,7 +9,11 @@
 //! The CRUD commands + `snippets.json` persistence + managed state are the
 //! follow-up (mirroring the dictionary module).
 
+use std::path::PathBuf;
+use std::sync::Mutex;
+
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
 use unicode_normalization::UnicodeNormalization;
 
 /// Where a trigger may match within an utterance (§2). Default `Anywhere`.
@@ -73,6 +77,15 @@ pub fn validate_snippet(snippet: &Snippet) -> Result<(), String> {
         return Err("expansion cannot be empty".to_string());
     }
     Ok(())
+}
+
+/// True if another snippet already uses `candidate`'s normalized trigger (Rule 13).
+/// `exclude_id` skips the snippet being updated. Pure → unit-tested.
+pub fn duplicate_trigger(snippets: &[Snippet], candidate: &Snippet, exclude_id: &str) -> bool {
+    let key = normalize_trigger(&candidate.trigger);
+    snippets
+        .iter()
+        .any(|s| s.id != exclude_id && normalize_trigger(&s.trigger) == key)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -263,6 +276,106 @@ fn reconstruct(toks: &[Tok], plan: &std::collections::HashMap<usize, (usize, Str
     out
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Persistence + managed state + commands (CRUD)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The in-memory snippet list (loaded once at startup), persisted to `snippets.json`.
+pub struct SnippetState {
+    inner: Mutex<Vec<Snippet>>,
+}
+
+impl SnippetState {
+    pub fn new(snippets: Vec<Snippet>) -> Self {
+        Self { inner: Mutex::new(snippets) }
+    }
+
+    fn list(&self) -> Result<Vec<Snippet>, String> {
+        Ok(self.inner.lock().map_err(|_| "snippet state poisoned".to_string())?.clone())
+    }
+}
+
+fn new_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("snip-{nanos}")
+}
+
+fn snippets_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("snippets.json"))
+}
+
+/// Failure-safe load: missing or unparseable → empty set (never a startup error).
+pub fn load_snippets(app: &AppHandle) -> Vec<Snippet> {
+    let Ok(path) = snippets_path(app) else {
+        return Vec::new();
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn save_snippets(app: &AppHandle, snippets: &[Snippet]) -> Result<(), String> {
+    let path = snippets_path(app)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(snippets).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| format!("failed to write snippets file: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("failed to write snippets file: {e}"))
+}
+
+/// List all snippets (Hub CRUD).
+#[tauri::command]
+pub fn list_snippets(state: State<'_, SnippetState>) -> Result<Vec<Snippet>, String> {
+    state.list()
+}
+
+/// Create (empty id) or update (existing id) a snippet — validates + rejects a
+/// duplicate normalized trigger (Rule 12-13).
+#[tauri::command]
+pub fn upsert_snippet(
+    app: AppHandle,
+    state: State<'_, SnippetState>,
+    snippet: Snippet,
+) -> Result<Snippet, String> {
+    validate_snippet(&snippet)?;
+    let mut list = state.inner.lock().map_err(|_| "snippet state poisoned".to_string())?;
+    if duplicate_trigger(&list, &snippet, &snippet.id) {
+        return Err("a snippet with this trigger already exists".to_string());
+    }
+    let mut saved = snippet;
+    if saved.id.trim().is_empty() {
+        saved.id = new_id();
+        list.push(saved.clone());
+    } else if let Some(slot) = list.iter_mut().find(|s| s.id == saved.id) {
+        *slot = saved.clone();
+    } else {
+        return Err("snippet not found".to_string());
+    }
+    save_snippets(&app, &list)?;
+    Ok(saved)
+}
+
+/// Delete a snippet by id (idempotent).
+#[tauri::command]
+pub fn delete_snippet(app: AppHandle, state: State<'_, SnippetState>, id: String) -> Result<(), String> {
+    let mut list = state.inner.lock().map_err(|_| "snippet state poisoned".to_string())?;
+    list.retain(|s| s.id != id);
+    save_snippets(&app, &list)
+}
+
+/// Preview what the current snippets do to a sample utterance (Hub, no dictation).
+#[tauri::command]
+pub fn preview_expansion(state: State<'_, SnippetState>, text: String) -> Result<ExpansionResult, String> {
+    let list = state.list()?;
+    Ok(expand_snippets(&text, &compile_snippets(&list)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +460,20 @@ mod tests {
         assert!(validate_snippet(&snip("ola", "Olá")).is_ok());
         assert_eq!(validate_snippet(&snip("  ", "x")), Err("trigger cannot be empty".to_string()));
         assert_eq!(validate_snippet(&snip("x", "  ")), Err("expansion cannot be empty".to_string()));
+    }
+
+    #[test]
+    fn duplicate_trigger_detects_normalized_collisions() {
+        let mut a = snip("minha assinatura", "X");
+        a.id = "a".to_string();
+        let existing = vec![a];
+        // Same trigger, different case/spacing → collision.
+        assert!(duplicate_trigger(&existing, &snip("Minha  Assinatura", "Y"), ""));
+        // Different trigger → fine.
+        assert!(!duplicate_trigger(&existing, &snip("outro", "Y"), ""));
+        // Updating itself (excluded by id) → not a collision.
+        let mut self_update = snip("minha assinatura", "Z");
+        self_update.id = "a".to_string();
+        assert!(!duplicate_trigger(&existing, &self_update, "a"));
     }
 }
