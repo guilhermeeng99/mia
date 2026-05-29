@@ -220,6 +220,13 @@ fn empty_result() -> DictationResult {
     }
 }
 
+/// Emit a terminal HUD event (Cancelled/Error) then always settle the HUD to Idle —
+/// the single tail every non-injecting exit path shares (Rules 7-8, 14).
+fn emit_then_idle(events: &Channel<DictationEvent>, ev: DictationEvent) {
+    let _ = events.send(ev);
+    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+}
+
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
 /// Returns immediately; `stop_dictation` runs the tail. (push-to-hold MVP)
 #[tauri::command]
@@ -252,16 +259,14 @@ pub fn stop_dictation(
     let s = settings.snapshot()?;
     let samples = crate::audio::end_capture(&capture)?;
     if samples.is_empty() {
-        let _ = events.send(DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
-        let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+        emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         return Ok(empty_result());
     }
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
     let t0 = now_ms();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
-        let _ = events.send(DictationEvent::Error { message: e.clone() });
-        let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+        emit_then_idle(events, DictationEvent::Error { message: e.clone() });
         e
     };
 
@@ -279,8 +284,7 @@ pub fn stop_dictation(
     let final_text = crate::snippets::expand_snippets(&dicted, &set).output;
 
     if final_text.trim().is_empty() {
-        let _ = events.send(DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
-        let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+        emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         return Ok(empty_result());
     }
 
@@ -304,8 +308,7 @@ pub fn cancel_dictation(
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let _ = crate::audio::end_capture(&capture); // discard the buffer
-    let _ = events.send(DictationEvent::Cancelled { reason: CancelReason::UserEscape });
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+    emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
     Ok(())
 }
 

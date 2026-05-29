@@ -167,6 +167,13 @@ fn punctuation_map(lang: Lang) -> &'static [(&'static str, Punct)] {
     }
 }
 
+/// True when the `words` phrase matches `tokens` starting at `i`, comparing each
+/// token through `norm`. Shared by spoken-punctuation and filler scanning so both
+/// stay whole-token and single-level (the caller `continue`s on a hit).
+fn phrase_matches_at(tokens: &[&str], i: usize, words: &[&str], norm: impl Fn(&str) -> String) -> bool {
+    i + words.len() <= tokens.len() && words.iter().enumerate().all(|(k, w)| norm(tokens[i + k]) == *w)
+}
+
 fn substitute_spoken_punctuation(s: &str, lang: Lang) -> String {
     let map = punctuation_map(lang);
     if map.is_empty() {
@@ -178,12 +185,9 @@ fn substitute_spoken_punctuation(s: &str, lang: Lang) -> String {
     'outer: while i < tokens.len() {
         for (phrase, punct) in map {
             let words: Vec<&str> = phrase.split(' ').collect();
-            let n = words.len();
-            if i + n <= tokens.len()
-                && (0..n).all(|k| tokens[i + k].to_lowercase() == words[k])
-            {
+            if phrase_matches_at(&tokens, i, &words, str::to_lowercase) {
                 pieces.push(Piece::P(*punct));
-                i += n;
+                i += words.len();
                 continue 'outer;
             }
         }
@@ -288,51 +292,54 @@ fn norm_word(t: &str) -> String {
     t.trim_matches(|c: char| !(c.is_alphanumeric() || c == '\'')).to_lowercase()
 }
 
-fn remove_fillers(s: &str, lang: Lang, opts: &CleanupOptions) -> String {
+/// Build the active filler phrases (built-in stoplist minus `keep`, plus user
+/// `extra_fillers`), each as its lowercased words + guard, longest-first.
+fn build_filler_phrases(lang: Lang, opts: &CleanupOptions) -> Vec<(Vec<String>, GuardKind)> {
     let keep: Vec<String> = opts.keep_fillers.iter().map(|w| w.to_lowercase()).collect();
-    // (words, guarded)
     let mut phrases: Vec<(Vec<String>, GuardKind)> = Vec::new();
     for &f in filler_set(lang) {
-        if keep.iter().any(|k| k == f) {
-            continue;
+        if !keep.iter().any(|k| k == f) {
+            phrases.push((f.split(' ').map(str::to_string).collect(), guard_kind(f)));
         }
-        phrases.push((f.split(' ').map(str::to_string).collect(), guard_kind(f)));
     }
     for f in &opts.extra_fillers {
         let fl = f.to_lowercase();
-        if fl.is_empty() || keep.contains(&fl) {
-            continue;
+        if !fl.is_empty() && !keep.contains(&fl) {
+            // User-added fillers are explicit → always removed.
+            phrases.push((fl.split(' ').map(str::to_string).collect(), GuardKind::Always));
         }
-        // User-added fillers are explicit → always removed.
-        phrases.push((fl.split(' ').map(str::to_string).collect(), GuardKind::Always));
     }
+    phrases.sort_by_key(|p| std::cmp::Reverse(p.0.len())); // longest match first
+    phrases
+}
+
+/// The guard decision: may the phrase occupying `tokens[i..i+n]` be removed given its
+/// `kind`? Content-ambiguous fillers need a comma (or, for `InitialOrComma`, a
+/// sentence-initial position) — when unsure, keep (spec Rule 2).
+fn should_remove(kind: GuardKind, tokens: &[&str], i: usize, n: usize) -> bool {
+    let comma_delimited = tokens[i + n - 1].ends_with(',') || (i > 0 && tokens[i - 1].ends_with(','));
+    let sentence_initial = i == 0 || tokens[i - 1].ends_with(['.', '?', '!', '…']);
+    match kind {
+        GuardKind::Always => true,
+        GuardKind::Comma => comma_delimited,
+        GuardKind::InitialOrComma => sentence_initial || comma_delimited,
+    }
+}
+
+fn remove_fillers(s: &str, lang: Lang, opts: &CleanupOptions) -> String {
+    let phrases = build_filler_phrases(lang, opts);
     if phrases.is_empty() {
         return s.to_string();
     }
-    phrases.sort_by_key(|p| std::cmp::Reverse(p.0.len())); // longest match first
-
     let tokens: Vec<&str> = s.split_whitespace().collect();
     let mut out: Vec<&str> = Vec::with_capacity(tokens.len());
     let mut i = 0;
     'outer: while i < tokens.len() {
         for (words, kind) in &phrases {
-            let n = words.len();
-            if i + n <= tokens.len()
-                && (0..n).all(|k| norm_word(tokens[i + k]) == words[k])
-            {
-                let comma_delimited =
-                    tokens[i + n - 1].ends_with(',') || (i > 0 && tokens[i - 1].ends_with(','));
-                let sentence_initial =
-                    i == 0 || tokens[i - 1].ends_with(['.', '?', '!', '…']);
-                let remove = match kind {
-                    GuardKind::Always => true,
-                    GuardKind::Comma => comma_delimited,
-                    GuardKind::InitialOrComma => sentence_initial || comma_delimited,
-                };
-                if remove {
-                    i += n;
-                    continue 'outer;
-                }
+            let refs: Vec<&str> = words.iter().map(String::as_str).collect();
+            if phrase_matches_at(&tokens, i, &refs, norm_word) && should_remove(*kind, &tokens, i, words.len()) {
+                i += words.len(); // drop the whole filler phrase
+                continue 'outer;
             }
         }
         out.push(tokens[i]);
@@ -569,6 +576,32 @@ mod tests {
         let mut o2 = opts();
         o2.keep_fillers = vec!["like".into()];
         assert_eq!(remove_fillers("it's, like, broken", Lang::En, &o2), "it's, like, broken");
+    }
+
+    #[test]
+    fn phrase_matches_at_is_whole_token_and_bounds_checked() {
+        let tokens = vec!["you", "know", "it"];
+        assert!(phrase_matches_at(&tokens, 0, &["you", "know"], str::to_lowercase));
+        // Past the end: no panic, no match.
+        assert!(!phrase_matches_at(&tokens, 2, &["it", "is"], str::to_lowercase));
+        // norm_word strips trailing punctuation before comparing.
+        let punct = vec!["like,", "broken"];
+        assert!(phrase_matches_at(&punct, 0, &["like"], norm_word));
+        assert!(!phrase_matches_at(&punct, 0, &["like"], str::to_lowercase)); // "like," != "like"
+    }
+
+    #[test]
+    fn should_remove_honors_guard_kind() {
+        // Always: removed regardless of context.
+        assert!(should_remove(GuardKind::Always, &["um", "ok"], 0, 1));
+        // Comma: only when comma-delimited.
+        assert!(!should_remove(GuardKind::Comma, &["like", "this"], 0, 1));
+        assert!(should_remove(GuardKind::Comma, &["a", "like,", "b"], 1, 1));
+        assert!(should_remove(GuardKind::Comma, &["a,", "like", "b"], 1, 1)); // preceding comma
+        // InitialOrComma: sentence-initial counts even without a comma.
+        assert!(should_remove(GuardKind::InitialOrComma, &["então", "foi"], 0, 1));
+        assert!(!should_remove(GuardKind::InitialOrComma, &["e", "então", "foi"], 1, 1));
+        assert!(should_remove(GuardKind::InitialOrComma, &["fim.", "então", "foi"], 1, 1)); // after a period
     }
 
     // ── Rule 3: repeat collapse ─────────────────────────────────────────────

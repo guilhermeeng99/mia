@@ -321,11 +321,16 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_config_dir().map_err(|e| e.to_string())?.join("settings.json"))
 }
 
-fn map_write_err(e: std::io::Error) -> String {
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
+/// Translate a raw write error into the user-presentable wording the spec locks in
+/// (settings.md §error map): a read-only/locked file gets a specific message; anything
+/// else is wrapped. `atomic_write_json` flattens the `io::Error` to a string, so we
+/// detect the permission case by its OS phrasing ("denied" / "permission").
+fn map_write_err(raw: String) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("denied") || lower.contains("permission") {
         "settings file is read-only or locked".to_string()
     } else {
-        format!("could not write settings: {e}")
+        format!("could not write settings: {raw}")
     }
 }
 
@@ -340,6 +345,9 @@ fn sideline_corrupt(path: &Path) {
 }
 
 /// Failure-safe load (Rule 4/5): missing → defaults; corrupt → defaults + backup.
+/// WHY this does NOT use `persist::load_json_or_default`: the primary config must not
+/// silently vanish on a parse error — a corrupt `settings.json` is sidelined to a
+/// timestamped backup (recoverable) rather than discarded like the secondary stores.
 pub fn load_settings(app: &AppHandle) -> Settings {
     let Ok(path) = settings_path(app) else {
         return Settings::default();
@@ -356,16 +364,10 @@ pub fn load_settings(app: &AppHandle) -> Settings {
     }
 }
 
-/// Atomic write: serialize → temp file → rename over `settings.json` (Rule 3).
+/// Atomic write via the shared helper, mapping its error to the spec's locked wording.
 fn save_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     let path = settings_path(app)?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(map_write_err)?;
-    }
-    let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(map_write_err)?;
-    std::fs::rename(&tmp, &path).map_err(map_write_err)
+    crate::persist::atomic_write_json(&path, settings).map_err(map_write_err)
 }
 
 /// Return the in-memory settings (loaded once at startup).

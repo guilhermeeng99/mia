@@ -2,7 +2,7 @@
 //!
 //! Rust is the engine (see `CLAUDE.md` and `docs/specs/architecture.md`). This
 //! file owns the Tauri bootstrap + the `#[tauri::command]` registry; the
-//! dictation modules (audio, vad, stt, cleanup, inject, hotkey, tray, hud,
+//! dictation modules (audio, vad, stt, cleanup, inject, hotkey, tray,
 //! dictation) are wired in here as each Phase-1 stage lands. So far the engine
 //! exposes model management + warm-status (stt), text injection (inject), and the
 //! `app_version` IPC smoke test; cleanup is a pure module called in-process.
@@ -14,10 +14,12 @@ pub mod dictation;
 pub mod dictionary;
 pub mod hotkey;
 pub mod inject;
+pub mod persist;
 pub mod settings;
 pub mod snippets;
 pub mod stats;
 pub mod stt;
+pub mod text_match;
 pub mod tray;
 pub mod vad;
 

@@ -1,15 +1,16 @@
 //! Global push-to-talk hotkey (ADR-001/011, Phase 1) — the *trigger* at the front
 //! of the pipeline (**hotkey** → capture → VAD → STT → cleanup → inject). It turns
-//! raw key edges from the `global-hotkey` crate into a clean, debounced stream of
-//! `DictationIntent`s for the orchestrator. See `docs/specs/hotkeys.md`.
+//! raw key edges from the `tauri-plugin-global-shortcut` plugin into a clean,
+//! debounced stream of `DictationIntent`s for the orchestrator. See
+//! `docs/specs/hotkeys.md`.
 //!
 //! This file owns the **pure, cargo-tested core**: the accelerator parser /
 //! canonicalizer, the debounce + activation-mode reducer, and the bare-key /
 //! reserved-chord guards. They use small internal types (`Mods`, `Accel`) so the
-//! logic is testable without the `global-hotkey` crate or a desktop; the runtime
-//! `GlobalHotKeyManager` registration, the `WM_HOTKEY` event loop, and the Tauri
-//! commands convert `Accel` to the crate's `(Modifiers, Code)` at the boundary and
-//! land in the orchestrator stage (§2/§5 — runtime-pending).
+//! logic is testable without the `tauri-plugin-global-shortcut` plugin or a desktop;
+//! the runtime shortcut registration, the plugin's key-edge handler, and the Tauri
+//! commands convert `Accel` to the plugin's `Shortcut` (`Modifiers` + `Code`) at the
+//! boundary.
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -62,9 +63,9 @@ pub enum DictationIntent {
     Cancel,
 }
 
-/// Modifier bitmask — our own, decoupled from `global-hotkey`'s version-specific
-/// `Modifiers`, so the parser/canonicalizer stay pure and unit-tested. `sup` is the
-/// Super/Win/Meta key.
+/// Modifier bitmask — our own, decoupled from `tauri-plugin-global-shortcut`'s
+/// version-specific `Modifiers`, so the parser/canonicalizer stay pure and
+/// unit-tested. `sup` is the Super/Win/Meta key.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Mods {
     pub ctrl: bool,
@@ -300,12 +301,12 @@ fn reduce_press_to_toggle(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Conversion to the global-hotkey crate's Shortcut (pure; the runtime registration
-// in lib.rs consumes this). Tested for the mapping; OS registration is validated
-// on Windows.
+// Conversion to the tauri-plugin-global-shortcut Shortcut (pure; the runtime
+// registration in lib.rs consumes this). Tested for the mapping; OS registration is
+// validated on Windows.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Map a canonical key token (`"A"`, `"Space"`, `"F8"`, `"Up"`, …) to the crate's
+/// Map a canonical key token (`"A"`, `"Space"`, `"F8"`, `"Up"`, …) to the plugin's
 /// `Code`, reusing keyboard_types' `FromStr` over the W3C code names.
 pub fn key_to_code(key: &str) -> Option<Code> {
     let variant = if key.len() == 1 && key.starts_with(|c: char| c.is_ascii_alphabetic()) {
@@ -346,7 +347,7 @@ pub fn to_shortcut(accel: &Accel) -> Result<Shortcut, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Runtime registration + event loop (global-hotkey plugin; validated on Windows)
+// Runtime registration + event loop (tauri-plugin-global-shortcut; validated on Windows)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Managed runtime state: the active config + the reducer's edge tracker.

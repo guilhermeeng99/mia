@@ -137,21 +137,11 @@ pub fn load_stats(app: &AppHandle) -> UsageStats {
     let Ok(path) = stats_path(app) else {
         return UsageStats::default();
     };
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+    crate::persist::load_json_or_default(&path)
 }
 
 fn save_stats(app: &AppHandle, stats: &UsageStats) -> Result<(), String> {
-    let path = stats_path(app)?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(stats).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    crate::persist::atomic_write_json(&stats_path(app)?, stats)
 }
 
 /// The Hub dashboard view (totals + derived WPM + streak).

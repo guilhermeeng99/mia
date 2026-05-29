@@ -107,31 +107,7 @@ pub fn normalize_trigger(trigger: &str) -> String {
     fold(trigger).split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-enum Tok {
-    Word(String),
-    Sep(String),
-}
-
-fn tokenize(text: &str) -> Vec<Tok> {
-    let mut toks = Vec::new();
-    let mut cur = String::new();
-    let mut cur_word = false;
-    for ch in text.chars() {
-        let is_word = ch.is_alphanumeric();
-        if cur.is_empty() {
-            cur_word = is_word;
-        } else if is_word != cur_word {
-            toks.push(if cur_word { Tok::Word(cur.clone()) } else { Tok::Sep(cur.clone()) });
-            cur.clear();
-            cur_word = is_word;
-        }
-        cur.push(ch);
-    }
-    if !cur.is_empty() {
-        toks.push(if cur_word { Tok::Word(cur) } else { Tok::Sep(cur) });
-    }
-    toks
-}
+use crate::text_match::{reconstruct, tokenize, Tok};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compiled set + expansion (pure)
@@ -206,7 +182,7 @@ pub fn expand_snippets(text: &str, set: &SnippetSet) -> ExpansionResult {
     let folded: Vec<String> = words.iter().map(|w| fold(w)).collect();
 
     // Plan replacements left-to-right; a placed match consumes its span (no recursion).
-    let mut plan: std::collections::HashMap<usize, (usize, String)> = std::collections::HashMap::new();
+    let mut plan = crate::text_match::Plan::new();
     let mut applied = Vec::new();
     let mut p = 0;
     while p < words.len() {
@@ -239,43 +215,6 @@ fn find_match<'a>(folded: &[String], p: usize, set: &'a SnippetSet) -> Option<&'
     })
 }
 
-/// Rebuild the string from the token stream, applying the plan and dropping the
-/// interior separators of a multi-word trigger.
-fn reconstruct(toks: &[Tok], plan: &std::collections::HashMap<usize, (usize, String)>) -> String {
-    let mut out = String::new();
-    let mut wpos = 0usize;
-    let mut i = 0usize;
-    while i < toks.len() {
-        match &toks[i] {
-            Tok::Sep(s) => {
-                out.push_str(s);
-                i += 1;
-            }
-            Tok::Word(w) => {
-                if let Some((k, repl)) = plan.get(&wpos) {
-                    out.push_str(repl);
-                    let mut consumed = 0;
-                    while i < toks.len() && consumed < *k {
-                        if matches!(toks[i], Tok::Word(_)) {
-                            consumed += 1;
-                        }
-                        i += 1;
-                        if consumed == *k {
-                            break;
-                        }
-                    }
-                    wpos += k;
-                } else {
-                    out.push_str(w);
-                    i += 1;
-                    wpos += 1;
-                }
-            }
-        }
-    }
-    out
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Persistence + managed state + commands (CRUD)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,11 +240,7 @@ impl SnippetState {
 }
 
 fn new_id() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("snip-{nanos}")
+    crate::persist::new_id("snip-")
 }
 
 fn snippets_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -317,21 +252,12 @@ pub fn load_snippets(app: &AppHandle) -> Vec<Snippet> {
     let Ok(path) = snippets_path(app) else {
         return Vec::new();
     };
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+    crate::persist::load_json_or_default(&path)
 }
 
 fn save_snippets(app: &AppHandle, snippets: &[Snippet]) -> Result<(), String> {
-    let path = snippets_path(app)?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(snippets).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| format!("failed to write snippets file: {e}"))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("failed to write snippets file: {e}"))
+    // `&snippets` so `T = &[Snippet]` (sized) — a bare slice is unsized for the generic.
+    crate::persist::atomic_write_json(&snippets_path(app)?, &snippets)
 }
 
 /// List all snippets (Hub CRUD).

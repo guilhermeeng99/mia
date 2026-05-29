@@ -112,11 +112,6 @@ fn model_url(id: &str) -> Option<String> {
     model_filename(id).map(|f| format!("{HF_BASE}/{f}"))
 }
 
-/// Clamp a float sample to the i16 PCM range.
-fn f32_to_i16(x: f32) -> i16 {
-    (x.clamp(-1.0, 1.0) * 32767.0) as i16
-}
-
 /// Encode mono/stereo 16-bit PCM as a canonical 44-byte-header WAV (what Whisper
 /// wants). Kept in memory — the buffer never touches disk (ADR-001).
 fn wav_from_pcm16(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
@@ -172,9 +167,11 @@ fn inference_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/inference")
 }
 
-/// whisper-server startup args. Anti-hallucination is applied **per request**
-/// (temperature 0, no fallback) and each `/inference` is independent, so there is
-/// no cross-utterance context drift (ADR-007).
+/// whisper-server startup args. Anti-hallucination is applied **per request**:
+/// `temperature_inc=0` disables whisper's temperature fallback ladder (= whisper-cli
+/// `--no-fallback`), and each `/inference` is an independent, stateless call so no
+/// prior transcript conditions the next one (= whisper-cli `--max-context 0`). Those
+/// literal CLI flags are not whisper-server flags and aren't needed here (ADR-007).
 fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String> {
     vec![
         "-m".into(),
@@ -192,7 +189,9 @@ fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String> {
 fn inference_fields(language: Option<&str>) -> Vec<(String, String)> {
     let mut f = vec![
         ("temperature".into(), "0.0".into()),
-        ("temperature_inc".into(), "0.0".into()), // disable the temperature fallback ladder
+        // temperature_inc=0 disables whisper's temperature fallback ladder (the
+        // whisper-server equivalent of whisper-cli's `--no-fallback`).
+        ("temperature_inc".into(), "0.0".into()),
         ("response_format".into(), "json".into()),
     ];
     if let Some(lang) = language {
@@ -533,7 +532,8 @@ pub fn transcribe_chunk(
         let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
         guard.as_ref().ok_or("no model warm")?.port
     };
-    let pcm: Vec<i16> = samples.iter().map(|&x| f32_to_i16(x)).collect();
+    // Single canonical rounding quantizer (audio.rs) — no truncating duplicate here.
+    let pcm: Vec<i16> = samples.iter().map(|&x| crate::audio::f32_to_s16(x)).collect();
     let wav = wav_from_pcm16(&pcm, 16_000, 1);
     let boundary = "----miaformboundary";
     let fields_owned = inference_fields(language);
@@ -595,13 +595,8 @@ mod tests {
         assert!(model_filename("nope").is_none());
     }
 
-    #[test]
-    fn f32_to_i16_clamps() {
-        assert_eq!(f32_to_i16(0.0), 0);
-        assert_eq!(f32_to_i16(1.0), 32767);
-        assert_eq!(f32_to_i16(2.0), 32767); // clamped
-        assert_eq!(f32_to_i16(-2.0), -32767); // clamped
-    }
+    // NOTE: the f32→i16 quantizer is now the single canonical `audio::f32_to_s16`
+    // (rounding, clamped) — its clamp/round behavior is covered in audio.rs tests.
 
     #[test]
     fn wav_header_is_canonical() {
