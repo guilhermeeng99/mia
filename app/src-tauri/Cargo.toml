@@ -27,6 +27,7 @@ unicode-segmentation = "1"
 unicode-normalization = "0.1"
 cpal = "0.15"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
 
 # Release profile: small, optimized installer binary.
 [profile.release]

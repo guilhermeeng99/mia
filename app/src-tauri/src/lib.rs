@@ -53,12 +53,25 @@ pub fn run() {
                 })
                 .build(),
         )
+        // Launch-at-login (Windows registry Run key). The toggle lives in settings;
+        // we enable/disable to match it at startup and on change (settings.rs).
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             let loaded = settings::load_settings(app.handle());
             let hk_cfg = loaded.hotkey.clone();
+            let launch_at_login = loaded.general.launch_at_login;
             app.manage(settings::SettingsState::new(loaded));
+            // Sync the OS autostart entry to the saved preference (best-effort).
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let mgr = app.autolaunch();
+                let _ = if launch_at_login { mgr.enable() } else { mgr.disable() };
+            }
             // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
             app.manage(hotkey::HotkeyRuntime::new(hk_cfg.clone()));
             hotkey::register_initial(app.handle(), &hk_cfg);

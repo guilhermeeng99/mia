@@ -407,6 +407,12 @@ pub fn update_settings(
     if next.model.model != current.model.model {
         let _ = crate::stt::unload(&stt);
     }
+    // Side effect: keep the OS autostart entry in sync with the toggle (best-effort).
+    if next.general.launch_at_login != current.general.launch_at_login {
+        use tauri_plugin_autostart::ManagerExt;
+        let mgr = app.autolaunch();
+        let _ = if next.general.launch_at_login { mgr.enable() } else { mgr.disable() };
+    }
     save_settings(&app, &next)?;
     state.set(next.clone())?;
     Ok(next)

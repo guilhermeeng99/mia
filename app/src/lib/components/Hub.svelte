@@ -19,6 +19,7 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import Pill from "./ui/Pill.svelte";
+  import Toggle from "./ui/Toggle.svelte";
   import DictionarySection from "./DictionarySection.svelte";
   import SnippetsSection from "./SnippetsSection.svelte";
 
@@ -126,6 +127,16 @@
     if (!general) return;
     try {
       const s = await updateSettings({ general: { ...general, defaultLanguage: value as GeneralSettings["defaultLanguage"] } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function setLaunchAtLogin(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, launchAtLogin: value } });
       general = s.general;
     } catch (e) {
       fail(e);
@@ -261,6 +272,19 @@
             <option value="pressToToggle">Pressionar para ligar/desligar</option>
           </select>
         </Field>
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Inicialização</h2>
+      <div class="mt-3">
+        {#if general}
+          <Toggle
+            checked={general.launchAtLogin}
+            label="Abrir o MIA ao iniciar o Windows"
+            onchange={setLaunchAtLogin}
+          />
+        {/if}
       </div>
     </Card>
 
