@@ -6,8 +6,10 @@
 /app/src-tauri/icons/android/
 /app/src-tauri/icons/ios/
 
-# Fetched native binaries + downloaded models (acquired at build/runtime, never committed)
-/app/src-tauri/binaries/
+# Fetched native binaries + downloaded models (acquired at build/runtime, never committed).
+# Ignore the binaries' contents but keep the dir (.gitkeep) so bundle.resources has a parent.
+/app/src-tauri/binaries/*
+!/app/src-tauri/binaries/.gitkeep
 /app/src-tauri/models/
 
 # Node / Bun / Vite

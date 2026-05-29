@@ -1,0 +1,5 @@
+# Fetched native engine binaries (whisper-server.exe + sibling DLLs) are acquired by
+# scripts/fetch-binaries.mjs at build/dev time and shipped via bundle.resources — never
+# committed. Keep the directory itself (.gitkeep) so the resources glob has a parent dir.
+binaries/*
+!binaries/.gitkeep
