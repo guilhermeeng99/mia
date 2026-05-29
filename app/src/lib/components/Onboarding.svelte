@@ -6,25 +6,34 @@
   import { downloadWhisperModel, listWhisperModels, type DownloadProgress, type WhisperModel } from "../stt";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
+  import Pill from "./ui/Pill.svelte";
 
   // First-run wizard (Phase 4) — welcome → hotkey → mic test → model download.
   // Presentation only; reuses the typed wrappers. `ondone` returns to the Hub.
   let { ondone }: { ondone: () => void } = $props();
 
+  // The Model step mirrors the Hub: all registry models are offered with sizes so
+  // the user can pick (onboarding.md Rule 7), `small` is flagged `recommended` by the
+  // engine, and the step is mandatory — there is no skip and "Concluir" stays disabled
+  // until a model is on disk (Rule 6: dictation is impossible without one).
   let step = $state(0);
   let chord = $state("Ctrl+Space");
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
   let models = $state<WhisperModel[]>([]);
-  let downloading = $state(false);
+  let downloading = $state<string | null>(null);
   let progress = $state(0);
   let error = $state<string | null>(null);
 
   const steps = ["Bem-vindo", "Atalho", "Microfone", "Modelo"];
 
+  async function refreshModels() {
+    models = await listWhisperModels();
+  }
+
   onMount(() => {
     getHotkey().then((h) => (chord = h.accelerator)).catch(() => {});
-    listWhisperModels().then((m) => (models = m)).catch((e) => (error = String(e)));
+    refreshModels().catch((e) => (error = String(e)));
   });
 
   async function runMicTest() {
@@ -40,21 +49,19 @@
     }
   }
 
-  async function downloadRecommended() {
-    const target = models.find((m) => m.id === "small") ?? models[0];
-    if (!target) return;
-    downloading = true;
+  async function download(id: string) {
+    downloading = id;
     progress = 0;
     error = null;
     try {
       const ch = new Channel<DownloadProgress>();
       ch.onmessage = (p) => (progress = Math.round(p.percent));
-      await downloadWhisperModel(target.id, ch);
-      ondone();
+      await downloadWhisperModel(id, ch);
+      await refreshModels();
     } catch (e) {
       error = String(e);
     } finally {
-      downloading = false;
+      downloading = null;
     }
   }
 
@@ -105,19 +112,35 @@
     {:else}
       <h1 class="mt-4 text-heading font-semibold">Baixar o modelo</h1>
       <p class="mt-2 text-body-lg text-slate-blue">
-        Um modelo Whisper é baixado uma vez do Hugging Face (a única saída de rede).
+        Baixe um modelo (uma única vez). <strong>Small</strong> é o recomendado.
       </p>
-      {#if downloading}
-        <p class="mt-4 text-body-lg text-action-blue">Baixando… {progress}%</p>
-      {/if}
+      <ul class="mt-4 flex flex-col gap-3">
+        {#each models as model (model.id)}
+          <li class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-body-lg font-semibold">{model.label}</span>
+                {#if model.recommended}<Pill tone="action">Recomendado</Pill>{/if}
+              </div>
+              <span class="text-body text-slate-blue">{model.sizeMb} MB</span>
+            </div>
+            <div class="shrink-0">
+              {#if model.downloaded}
+                <Pill tone="success">✓ instalado</Pill>
+              {:else if downloading === model.id}
+                <Pill tone="action">{progress}%</Pill>
+              {:else}
+                <Button variant="secondary" disabled={downloading !== null} onclick={() => download(model.id)}>
+                  Baixar
+                </Button>
+              {/if}
+            </div>
+          </li>
+        {/each}
+      </ul>
       <div class="mt-6 flex gap-3">
-        <Button variant="secondary" onclick={() => (step = 2)}>Voltar</Button>
-        {#if hasModel}
-          <Button onclick={ondone}>Concluir</Button>
-        {:else}
-          <Button disabled={downloading} onclick={downloadRecommended}>Baixar e concluir</Button>
-        {/if}
-        <Button variant="ghost" onclick={ondone}>Pular</Button>
+        <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>Voltar</Button>
+        <Button disabled={!hasModel || downloading !== null} onclick={ondone}>Concluir</Button>
       </div>
     {/if}
   </Card>

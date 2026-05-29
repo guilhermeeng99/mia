@@ -35,13 +35,16 @@ struct ModelDef {
     id: &'static str,
     label: &'static str,
     size_mb: u32,
+    // The latency-friendly default for live dictation; the UI flags it so both the
+    // onboarding picker and the Hub stay consistent (docs/specs/onboarding.md Rule 7).
+    recommended: bool,
 }
 
 const MODELS: &[ModelDef] = &[
-    ModelDef { id: "small", label: "Small (fast, recommended)", size_mb: 466 },
-    ModelDef { id: "medium", label: "Medium (balanced)", size_mb: 1500 },
-    ModelDef { id: "large-v3-turbo", label: "Large v3 Turbo", size_mb: 1600 },
-    ModelDef { id: "large-v3", label: "Large v3 (max fidelity)", size_mb: 3100 },
+    ModelDef { id: "small", label: "Small", size_mb: 466, recommended: true },
+    ModelDef { id: "medium", label: "Medium", size_mb: 1500, recommended: false },
+    ModelDef { id: "large-v3-turbo", label: "Large v3 Turbo", size_mb: 1600, recommended: false },
+    ModelDef { id: "large-v3", label: "Large v3", size_mb: 3100, recommended: false },
 ];
 
 #[derive(Serialize)]
@@ -51,6 +54,7 @@ pub struct WhisperModel {
     label: String,
     size_mb: u32,
     downloaded: bool,
+    recommended: bool,
 }
 
 #[derive(Serialize)]
@@ -284,6 +288,7 @@ pub fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModel>, String> 
             label: m.label.into(),
             size_mb: m.size_mb,
             downloaded: dir.join(format!("ggml-{}.bin", m.id)).exists(),
+            recommended: m.recommended,
         })
         .collect())
 }

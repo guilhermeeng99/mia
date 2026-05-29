@@ -6,6 +6,7 @@ export interface WhisperModel {
   label: string;
   sizeMb: number;
   downloaded: boolean;
+  recommended: boolean;
 }
 
 /** NVIDIA GPU presence + CUDA-engine install state; mirrors Rust `stt::GpuStatus`. */

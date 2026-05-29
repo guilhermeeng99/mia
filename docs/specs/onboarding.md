@@ -1,6 +1,6 @@
 # Onboarding Feature Spec
 
-> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → recommended-model download (progress `Channel`). `App.svelte` shows it when no Whisper model is installed yet, with a "Pular" skip. Pending: a persisted "onboarding completed" flag (currently gated on model presence) and the permission-denied deep-link copy.
+> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirroring the Hub; it is **mandatory** — there is no skip and "Concluir" stays disabled until a model is on disk (Rule 6/7). `App.svelte` shows the wizard when no Whisper model is installed yet. Pending: a persisted "onboarding completed" flag (currently gated on model presence) and the permission-denied deep-link copy.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
@@ -99,7 +99,8 @@ import { downloadWhisperModel, listWhisperModels } from "../stt";
 
 - The four shipped steps are **Welcome → Hotkey → Mic test → Model download** (labels in the component:
   "Bem-vindo", "Atalho", "Microfone", "Modelo"). `App.svelte` shows the wizard when **no Whisper model is
-  installed yet** (gated on model presence, not a persisted flag) and offers a **"Pular"** (skip) escape.
+  installed yet** (gated on model presence, not a persisted flag). The Model step is **mandatory — there is
+  no skip** (Rule 6): "Concluir" is disabled until at least one model is on disk; only "Voltar" navigates away.
 - The hotkey step is **read-only**: it *displays* the current PTT chord via `get_hotkey` (the locked
   `Ctrl+Space` default — `DEFAULT_ACCEL` in `hotkey.rs`); the wizard does not yet record/rebind a chord.
   Rebinding lives in [settings.md](settings.md) / [hotkeys.md](hotkeys.md).
@@ -107,7 +108,9 @@ import { downloadWhisperModel, listWhisperModels } from "../stt";
   dedicated permission-probe command — there is none.
 - The model step reuses the existing **`stt.rs`** download surface (`list_whisper_models` /
   `download_whisper_model`) with its `.part`-rename + progress-`Channel` UX from
-  [speech-to-text.md](speech-to-text.md) — no onboarding-specific download command.
+  [speech-to-text.md](speech-to-text.md) — no onboarding-specific download command. It now renders **all four
+  registry models with sizes** and per-row download (the same shape as the Hub), `small` flagged "Recomendado"
+  (Rule 7); each row shows "Baixar" → "baixando… N%" → "✓ instalado".
 - **No TryIt-through-the-engine command exists.** The deeper onboarding-engine commands sketched above
   (lifecycle flag, `check_mic_permission`, `open_windows_mic_settings`, `detect_gpu` for an onboarding
   GPU step, `onboarding_try_dictation`) are **Phase-pending / out of scope** for the shipped wizard.

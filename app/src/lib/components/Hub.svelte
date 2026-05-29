@@ -149,9 +149,12 @@
       <ul class="mt-4 flex flex-col gap-3">
         {#each models as model (model.id)}
           <li class="flex items-center gap-3">
-            <span class="text-body-lg font-semibold">{model.label}</span>
-            <span class="text-body text-slate-blue">{model.sizeMb} MB</span>
-            <span class="ml-auto flex items-center gap-3">
+            <div class="min-w-0 flex flex-1 flex-wrap items-center gap-2">
+              <span class="text-body-lg font-semibold">{model.label}</span>
+              <span class="text-body text-slate-blue">{model.sizeMb} MB</span>
+              {#if model.recommended}<Pill tone="action">Recomendado</Pill>{/if}
+            </div>
+            <div class="shrink-0">
               {#if model.downloaded}
                 <Pill tone="success">✓ instalado</Pill>
               {:else if downloading === model.id}
@@ -161,7 +164,7 @@
                   Baixar
                 </Button>
               {/if}
-            </span>
+            </div>
           </li>
         {/each}
       </ul>

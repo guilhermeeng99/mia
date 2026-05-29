@@ -166,7 +166,7 @@ Every user-facing parameter; the anti-hallucination settings are **fixed**, not 
 | `small` | Small | ~466 MB | **live default** — fast, low latency, good pt-BR for dictation |
 | `medium` | Medium | ~1.5 GB | balanced; recommended if CPU has headroom |
 | `large-v3-turbo` | Large v3 Turbo | ~1.6 GB | more accurate, still reasonable latency (esp. with CUDA) |
-| `large-v3` | Large v3 (max fidelity) | ~3.1 GB | most faithful, slowest on CPU; best with the CUDA engine |
+| `large-v3` | Large v3 | ~3.1 GB | most faithful (max fidelity), slowest on CPU; best with the CUDA engine |
 
 > **Why the default differs from Toolzy.** Toolzy is a one-shot file transcriber where "correctness over speed" rules, so it defaults to `large-v3` and a 20-second run is fine. MIA types at the cursor in real time — the dominant cost is STT inference on the utterance, and a `large-v3` CPU pass would add seconds of perceptible lag after every phrase. So MIA inverts the default to a small/medium model (latency-first), and lets users opt into more accuracy (or pair a larger model with the CUDA engine). The **anti-hallucination policy is identical** in both apps; only the speed/accuracy default moves.
 
