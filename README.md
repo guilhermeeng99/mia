@@ -2,6 +2,8 @@
 
 **Your voice, your machine. Local dictation for Windows.**
 
+### 🌐 [**Website & download → guilhermeeng99.github.io/mia**](https://guilhermeeng99.github.io/mia/)
+
 Open-source, local, privacy-first voice dictation for Windows — an offline alternative to [Wispr Flow](https://wisprflow.ai).
 
 > **Status**: Phases 0, 1, and 3 are **code-complete** and the core loop is **validated on Windows end-to-end**: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 4 (Polish & Distribution) is **done** — signed in-app auto-update and the optional **NVIDIA CUDA** engine (validated on an RTX 4050) ship, and `release.yml` auto-cuts a signed installer + `latest.json` on every push to `main` (see [Releases](../../releases) for the latest). Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
