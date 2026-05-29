@@ -4,7 +4,7 @@
 
 Open-source, local, privacy-first voice dictation for Windows — an offline alternative to [Wispr Flow](https://wisprflow.ai).
 
-> **Status**: Phases 0, 1, and 3 are **code-complete** and the core loop is **validated on Windows end-to-end**: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 4 (Polish & Distribution) is **done** — signed in-app auto-update and the optional **NVIDIA CUDA** engine (validated on an RTX 4050) ship, and `release.yml` auto-cuts a signed installer + `latest.json` on every push to `main` (latest release **v0.1.2**). Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
+> **Status**: Phases 0, 1, and 3 are **code-complete** and the core loop is **validated on Windows end-to-end**: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 4 (Polish & Distribution) is **done** — signed in-app auto-update and the optional **NVIDIA CUDA** engine (validated on an RTX 4050) ship, and `release.yml` auto-cuts a signed installer + `latest.json` on every push to `main` (see [Releases](../../releases) for the latest). Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
@@ -88,7 +88,7 @@ All of this runs in the Rust core — the engine. The Svelte UI is a thin webvie
 
 ## Install
 
-Download the latest **signed installer** (currently **v0.1.2**) from [GitHub Releases](../../releases) and run it. Updates are delivered via signed in-app auto-update (minisign-verified `latest.json`).
+Download the latest **signed installer** from [GitHub Releases](../../releases) and run it. Updates are delivered via signed in-app auto-update (minisign-verified `latest.json`).
 
 > The release pipeline is automated: `.github/workflows/release.yml` runs `cargo test` + clippy + svelte-check, then auto-bumps the version, tags it, and publishes a `tauri-action` signed Windows installer + `latest.json` on every push to `main`.
 
