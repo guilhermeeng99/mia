@@ -32,6 +32,17 @@ tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# Focus-aware injection (text-injection.md Rules 6-7) + per-app context (per-app-context.md):
+# foreground-window process name + elevation probe. Windows-only (ADR-011); win32.rs stubs
+# out elsewhere. windows-sys (flat C ABI) aligned to the copy already in the lock.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_Security",
+] }
+
 # Release profile: small, optimized installer binary.
 [profile.release]
 codegen-units = 1

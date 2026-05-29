@@ -8,6 +8,7 @@
 //! `app_version` IPC smoke test; cleanup is a pure module called in-process.
 
 pub mod ai_commands;
+pub mod app_styles;
 pub mod audio;
 pub mod cleanup;
 pub mod dictation;
@@ -23,8 +24,9 @@ pub mod stt;
 pub mod text_match;
 pub mod tray;
 pub mod vad;
+pub mod win32;
 
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 /// Return the running app version (compiled in from Cargo). Trivial by design —
 /// it is the scaffold's IPC smoke test, called by `App.svelte`.
@@ -40,6 +42,8 @@ pub fn run() {
         // every utterance (ADR-004) — never a cold spawn per utterance.
         .manage(stt::SttState::default())
         .manage(audio::CaptureState::default())
+        // Focused-app captured at session start → per-app style + UIPI checks (dictation.rs).
+        .manage(dictation::FocusContext::default())
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
         // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
         .plugin(
@@ -95,10 +99,22 @@ pub fn run() {
             hud::setup_hud(app.handle());
             Ok(())
         })
+        // Close-to-tray: closing the Hub hides it instead of quitting — MIA keeps
+        // running in the tray so the global PTT hotkey stays live (tray-and-hud.md).
+        // Only the "main" window is intercepted; the click-through HUD is untouched.
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_version,
             audio::list_input_devices,
             audio::test_microphone,
+            audio::open_mic_privacy,
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::cancel_dictation,

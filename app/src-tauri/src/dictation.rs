@@ -9,6 +9,7 @@
 //! the real cpal capture + warm STT + injection are runtime-pending: they depend on
 //! the audio-capture runtime, and are best validated on Windows with a mic.
 
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -17,6 +18,23 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::hotkey::ActivationMode;
 use crate::settings::{CleanupSettings, DefaultLanguage};
+
+/// The focused app's executable name, captured at session **start** and read at injection
+/// time — so a per-app style applies to the app the user was dictating into even if focus
+/// drifts during transcription (per-app-context.md). Managed `State`; one slot.
+#[derive(Default)]
+pub struct FocusContext(Mutex<Option<String>>);
+
+impl FocusContext {
+    fn set(&self, exe: Option<String>) {
+        if let Ok(mut g) = self.0.lock() {
+            *g = exe;
+        }
+    }
+    fn take(&self) -> Option<String> {
+        self.0.lock().ok().and_then(|mut g| g.take())
+    }
+}
 
 /// The HUD/orchestrator phase (spec §2). `Error` is transient → `Idle`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -248,13 +266,28 @@ pub fn start_dictation(
     app: AppHandle,
     capture: State<'_, crate::audio::CaptureState>,
     settings: State<'_, crate::settings::SettingsState>,
+    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let s = settings.snapshot()?;
     eprintln!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
+    // Capture the focused app now (before the HUD or anything can shift focus) so the
+    // per-app style targets the app the user is dictating into (per-app-context.md).
+    focus.set(crate::win32::foreground_process_name());
+    // Arm the energy-based auto-endpoint only in toggle mode (when enabled): the capture
+    // thread will emit `dictation://auto-endpoint` after sustained silence so the session
+    // ends without a 2nd press. Push-to-hold ends on key release, so it never arms.
+    let auto_endpoint =
+        s.hotkey.mode == ActivationMode::PressToToggle && s.general.toggle_auto_endpoint;
     // Pass the AppHandle so the capture thread streams live RMS to the HUD waveform
     // over `hud://level`; the CaptureEvent channel stays unused on this path.
-    crate::audio::begin_capture(&capture, Some(&s.audio.input_device), None, Some(app.clone()))?;
+    crate::audio::begin_capture(
+        &capture,
+        Some(&s.audio.input_device),
+        None,
+        Some(app.clone()),
+        auto_endpoint,
+    )?;
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
     emit_hud(&app, Phase::Listening, None);
     Ok(())
@@ -272,9 +305,19 @@ pub fn stop_dictation(
     dict: State<'_, crate::dictionary::DictState>,
     snips: State<'_, crate::snippets::SnippetState>,
     stats: State<'_, crate::stats::StatsState>,
+    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<DictationResult, String> {
     let s = settings.snapshot()?;
+    // Resolve the per-app style from the app captured at start (per-app-context.md). Holds
+    // an immutable borrow of `s`; `s` is never mutated below so the borrow is safe.
+    let exe = focus.take();
+    let style = if s.per_app.enabled {
+        exe.as_deref().and_then(|e| crate::app_styles::match_style(&s.per_app.styles, e))
+    } else {
+        None
+    };
+    let lang_pref = crate::app_styles::resolve_language(s.general.default_language, style);
     let samples = crate::audio::end_capture(&capture)?;
     eprintln!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
     if samples.is_empty() {
@@ -297,7 +340,7 @@ pub fn stop_dictation(
     crate::stt::warm_model(&app, &stt_state, &s.model.model).map_err(|e| fail(&events, e))?;
     eprintln!("[dictation] warm engine ready (model={})", s.model.model);
     let stt_start = now_ms();
-    let lang = stt_lang(s.general.default_language);
+    let lang = stt_lang(lang_pref);
     // Snapshot the dictionary once: its bias terms become Whisper's initial prompt
     // (spelling nudge) AND the post-STT replacement set (custom-dictionary.md).
     let (entries, dsettings) = dict.snapshot()?;
@@ -307,7 +350,8 @@ pub fn stop_dictation(
     let stt_end = now_ms();
     eprintln!("[dictation] transcript: {} chars in {} ms", raw.chars().count(), stt_end.saturating_sub(stt_start));
 
-    let cleaned = crate::cleanup::clean(&raw, cleanup_lang(s.general.default_language), &cleanup_options(&s.cleanup));
+    let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style);
+    let cleaned = crate::cleanup::clean(&raw, cleanup_lang(lang_pref), &opts);
     let dicted = crate::dictionary::apply_dictionary(&cleaned, &entries, &dsettings);
     // Snippet expansion is gated by a master switch (settings.general.snippets_enabled).
     let final_text = if s.general.snippets_enabled {
@@ -324,9 +368,26 @@ pub fn stop_dictation(
         return Ok(empty_result());
     }
 
+    // Rule 7: a higher-integrity (elevated/UAC) foreground window silently eats SendInput;
+    // detecting it lets us tell the user instead of dropping their text into a black hole.
+    if crate::win32::is_foreground_elevated() {
+        return Err(fail(
+            &events,
+            "janela em foco é elevada (UAC) — execute o MIA como administrador para digitar nela"
+                .to_string(),
+        ));
+    }
+    // Rule 6 (best-effort): with no detectable foreground window, prefer the clipboard over
+    // synthesizing keystrokes into the void. Otherwise use the per-app override (else Auto).
+    let mode = if crate::win32::has_foreground_window() {
+        crate::app_styles::resolve_inject_mode(style)
+    } else {
+        crate::inject::InjectMode::Clipboard
+    };
+
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
     emit_hud(&app, Phase::Inserting, None);
-    crate::inject::inject(&final_text, crate::inject::InjectMode::Auto, &crate::inject::InjectSettings::default())
+    crate::inject::inject(&final_text, mode, &crate::inject::InjectSettings::default())
         .map_err(|e| fail(&events, e))?;
     let done = now_ms();
     eprintln!("[dictation] injected {} chars", final_text.chars().count());
@@ -345,8 +406,10 @@ pub fn stop_dictation(
 pub fn cancel_dictation(
     app: AppHandle,
     capture: State<'_, crate::audio::CaptureState>,
+    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    focus.take(); // drop the captured focus target — this session injects nothing
     let _ = crate::audio::end_capture(&capture); // discard the buffer
     emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
     emit_hud(&app, Phase::Idle, None);

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { InjectMode } from "./inject";
 
 // Typed mirror of the Rust `settings::Settings` tree (serde camelCase). The Hub
 // reads via getSettings and PATCHes whole groups via updateSettings.
@@ -17,6 +18,7 @@ export interface GeneralSettings {
   collectStats: boolean;
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;
+  toggleAutoEndpoint: boolean;
 }
 
 export interface HotkeyConfig {
@@ -55,6 +57,21 @@ export interface UpdatesSettings {
   autoCheckUpdates: boolean;
 }
 
+/** One per-app override rule; mirrors Rust `app_styles::AppStyle` (omitted = inherit). */
+export interface AppStyle {
+  matchExe: string;
+  language?: DefaultLanguage | null;
+  injectMode?: InjectMode | null;
+  ensureTrailingPeriod?: boolean | null;
+  spokenPunctuation?: boolean | null;
+}
+
+/** Per-app writing styles / context; mirrors Rust `settings::PerAppSettings`. */
+export interface PerAppSettings {
+  enabled: boolean;
+  styles: AppStyle[];
+}
+
 export interface Settings {
   schemaVersion: number;
   general: GeneralSettings;
@@ -65,6 +82,7 @@ export interface Settings {
   hud: HudSettings;
   ai: AiSettings;
   updates: UpdatesSettings;
+  perApp: PerAppSettings;
 }
 
 /** Group-granular merge patch — send only the groups you changed. */
@@ -77,6 +95,7 @@ export interface SettingsPatch {
   hud?: HudSettings;
   ai?: AiSettings;
   updates?: UpdatesSettings;
+  perApp?: PerAppSettings;
 }
 
 /** The in-memory settings (loaded once at startup; defaults if missing/corrupt). */

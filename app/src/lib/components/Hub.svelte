@@ -1,7 +1,13 @@
 <script lang="ts">
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { listInputDevices, testMicrophone, type AudioDevice } from "../audio";
+  import {
+    isMicPermissionDenied,
+    listInputDevices,
+    openMicPrivacy,
+    testMicrophone,
+    type AudioDevice,
+  } from "../audio";
   import { injectText } from "../inject";
   import { checkForUpdate, installUpdate, type Update } from "../update";
   import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../hotkey";
@@ -24,6 +30,7 @@
   import Toggle from "./ui/Toggle.svelte";
   import DictionarySection from "./DictionarySection.svelte";
   import SnippetsSection from "./SnippetsSection.svelte";
+  import PerAppSection from "./PerAppSection.svelte";
 
   // The Settings/Hub window — presentation only. All logic lives behind the typed
   // invoke() wrappers in lib/*.ts (architecture rule); this component never calls
@@ -45,6 +52,8 @@
   let injectMsg = $state<string | null>(null);
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
+  let micLevel = $state(0);
+  let micDenied = $state(false);
   let general = $state<GeneralSettings | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
   let recording = $state(false);
@@ -161,6 +170,16 @@
     }
   }
 
+  async function setAutoEndpoint(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, toggleAutoEndpoint: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function loadModels() {
     models = await listWhisperModels();
   }
@@ -213,18 +232,26 @@
   async function runMicTest() {
     micMsg = null;
     error = null;
+    micDenied = false;
     micTesting = true;
+    micLevel = 0;
     try {
-      const r = await testMicrophone(1500);
+      const r = await testMicrophone(1500, (rms) => (micLevel = rms));
       micMsg =
         r.peak > 0.02
           ? `Ouvimos você (pico ${(r.peak * 100).toFixed(0)}%).`
           : "Quase nenhum som captado — verifique o microfone.";
     } catch (e) {
+      micDenied = isMicPermissionDenied(String(e));
       fail(e);
     } finally {
       micTesting = false;
+      micLevel = 0;
     }
+  }
+
+  function openMicSettings() {
+    openMicPrivacy().catch(fail);
   }
 
   async function runInjectTest() {
@@ -282,10 +309,27 @@
         <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
           {micTesting ? "Ouvindo…" : "Testar microfone"}
         </Button>
-        {#if micMsg}
+        {#if micTesting}
+          <div class="h-2 w-40 overflow-hidden rounded-full bg-platinum-tint" aria-hidden="true">
+            <div
+              class="h-full rounded-full bg-action-blue transition-[width] duration-75"
+              style="width: {Math.min(100, micLevel * 600)}%"
+            ></div>
+          </div>
+        {:else if micMsg}
           <span class="text-body text-slate-blue">{micMsg}</span>
         {/if}
       </div>
+      {#if micDenied}
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <span class="text-body text-danger">
+            Acesso ao microfone bloqueado pelo Windows.
+          </span>
+          <Button variant="secondary" onclick={openMicSettings}>
+            Abrir configurações de microfone
+          </Button>
+        </div>
+      {/if}
     </Card>
 
     <Card>
@@ -319,6 +363,15 @@
           </select>
         </Field>
       </div>
+      {#if hotkey?.mode === "pressToToggle" && general}
+        <div class="mt-4">
+          <Toggle
+            checked={general.toggleAutoEndpoint}
+            label="Encerrar automaticamente após silêncio"
+            onchange={setAutoEndpoint}
+          />
+        </div>
+      {/if}
     </Card>
 
     <Card>
@@ -434,5 +487,6 @@
 
     <DictionarySection />
     <SnippetsSection />
+    <PerAppSection />
   </div>
 </main>

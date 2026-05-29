@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { testMicrophone } from "../audio";
+  import { isMicPermissionDenied, openMicPrivacy, testMicrophone } from "../audio";
   import { getHotkey } from "../hotkey";
   import { downloadWhisperModel, listWhisperModels, type DownloadProgress, type WhisperModel } from "../stt";
   import Button from "./ui/Button.svelte";
@@ -20,6 +20,8 @@
   let chord = $state("Ctrl+Space");
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
+  let micLevel = $state(0);
+  let micDenied = $state(false);
   let models = $state<WhisperModel[]>([]);
   let downloading = $state<string | null>(null);
   let progress = $state(0);
@@ -39,14 +41,22 @@
   async function runMicTest() {
     micTesting = true;
     micMsg = null;
+    micDenied = false;
+    micLevel = 0;
     try {
-      const r = await testMicrophone(1500);
+      const r = await testMicrophone(1500, (rms) => (micLevel = rms));
       micMsg = r.peak > 0.02 ? "Ouvimos você! 🎤" : "Quase nenhum som — confira o microfone.";
     } catch (e) {
+      micDenied = isMicPermissionDenied(String(e));
       error = String(e);
     } finally {
       micTesting = false;
+      micLevel = 0;
     }
+  }
+
+  function openMicSettings() {
+    openMicPrivacy().catch((e) => (error = String(e)));
   }
 
   async function download(id: string) {
@@ -103,8 +113,23 @@
         <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
           {micTesting ? "Ouvindo…" : "Testar"}
         </Button>
-        {#if micMsg}<span class="text-body text-slate-blue">{micMsg}</span>{/if}
+        {#if micTesting}
+          <div class="h-2 w-40 overflow-hidden rounded-full bg-platinum-tint" aria-hidden="true">
+            <div
+              class="h-full rounded-full bg-action-blue transition-[width] duration-75"
+              style="width: {Math.min(100, micLevel * 600)}%"
+            ></div>
+          </div>
+        {:else if micMsg}
+          <span class="text-body text-slate-blue">{micMsg}</span>
+        {/if}
       </div>
+      {#if micDenied}
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <span class="text-body text-danger">Acesso ao microfone bloqueado pelo Windows.</span>
+          <Button variant="secondary" onclick={openMicSettings}>Abrir configurações</Button>
+        </div>
+      {/if}
       <div class="mt-6 flex gap-3">
         <Button variant="secondary" onclick={() => (step = 1)}>Voltar</Button>
         <Button onclick={() => (step = 3)}>Próximo</Button>

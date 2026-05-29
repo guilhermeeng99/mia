@@ -78,6 +78,10 @@ pub struct GeneralSettings {
     /// First-run gate (onboarding.md Rule 1): once the wizard finishes, MIA boots
     /// straight to the tray instead of re-opening onboarding.
     pub onboarding_completed: bool,
+    /// Toggle-mode auto-endpoint: in `PressToToggle` mode, end the session automatically
+    /// after sustained silence (energy-gated, audio-capture.md §5) instead of requiring a
+    /// second press. No effect in `PushToHold`. Silero still gates recognition server-side.
+    pub toggle_auto_endpoint: bool,
 }
 
 impl Default for GeneralSettings {
@@ -90,6 +94,7 @@ impl Default for GeneralSettings {
             collect_stats: true,
             snippets_enabled: true,
             onboarding_completed: false,
+            toggle_auto_endpoint: true,
         }
     }
 }
@@ -166,6 +171,16 @@ impl Default for UpdatesSettings {
     }
 }
 
+/// Per-app writing styles / context (Phase 3 — per-app-context.md). Off by default; when
+/// enabled, the orchestrator matches the focused app's executable and applies any override
+/// (language / injection backend / trailing period / spoken punctuation).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PerAppSettings {
+    pub enabled: bool,
+    pub styles: Vec<crate::app_styles::AppStyle>,
+}
+
 /// The full preferences tree (Rule 1). `schemaVersion` drives migration (Rule 6).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -188,6 +203,8 @@ pub struct Settings {
     pub ai: AiSettings,
     #[serde(default)]
     pub updates: UpdatesSettings,
+    #[serde(default)]
+    pub per_app: PerAppSettings,
 }
 
 impl Default for Settings {
@@ -202,6 +219,7 @@ impl Default for Settings {
             hud: HudSettings::default(),
             ai: AiSettings::default(),
             updates: UpdatesSettings::default(),
+            per_app: PerAppSettings::default(),
         }
     }
 }
@@ -220,6 +238,7 @@ pub struct SettingsPatch {
     pub hud: Option<HudSettings>,
     pub ai: Option<AiSettings>,
     pub updates: Option<UpdatesSettings>,
+    pub per_app: Option<PerAppSettings>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -253,6 +272,9 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     if let Some(u) = &patch.updates {
         s.updates = *u;
     }
+    if let Some(p) = &patch.per_app {
+        s.per_app = p.clone();
+    }
     validate(s)
 }
 
@@ -269,6 +291,8 @@ pub fn validate(mut s: Settings) -> Settings {
     if s.model.model.trim().is_empty() {
         s.model.model = DEFAULT_MODEL_ID.to_string();
     }
+    // Drop blank / duplicate per-app rules so a malformed UI write can't break matching.
+    s.per_app.styles = crate::app_styles::sanitize(std::mem::take(&mut s.per_app.styles));
     s
 }
 
@@ -442,6 +466,7 @@ mod tests {
         assert!(s.general.dictation_enabled);
         assert!(!s.general.launch_at_login);
         assert!(s.general.collect_stats);
+        assert!(s.general.toggle_auto_endpoint);
         assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);
@@ -451,6 +476,22 @@ mod tests {
         assert_eq!(s.hud.position, HudPosition::Caret);
         assert!(!s.ai.enabled);
         assert!(s.updates.auto_check_updates);
+        assert!(!s.per_app.enabled);
+        assert!(s.per_app.styles.is_empty());
+    }
+
+    #[test]
+    fn validate_sanitizes_per_app_styles() {
+        use crate::app_styles::AppStyle;
+        let mut s = Settings::default();
+        s.per_app.styles = vec![
+            AppStyle { match_exe: "  code  ".to_string(), ..Default::default() },
+            AppStyle { match_exe: "code".to_string(), ..Default::default() }, // dup
+            AppStyle { match_exe: "".to_string(), ..Default::default() },      // blank
+        ];
+        let v = validate(s);
+        assert_eq!(v.per_app.styles.len(), 1);
+        assert_eq!(v.per_app.styles[0].match_exe, "code"); // trimmed
     }
 
     #[test]

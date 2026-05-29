@@ -4,16 +4,19 @@
 //! `arboard` clipboard + simulated `Ctrl+V` (fallback / forced; **saves and
 //! restores** the user's prior clipboard). See `docs/specs/text-injection.md`.
 //!
-//! NOTE (runtime-pending): focused-target and elevated-window (UIPI) detection
-//! (spec rules 6-7) need Win32 (`GetForegroundWindow` + integrity checks) and are
-//! wired during the dictation stage; the injection backends below are complete.
+//! Focused-target and elevated-window (UIPI) detection (spec Rules 6-7) are wired in the
+//! **dictation orchestrator** (`dictation.rs`), not here, via `win32.rs`: it forces the
+//! clipboard backend when no foreground window is detectable (Rule 6, best-effort) and
+//! returns the run-as-administrator error when the target outranks MIA (Rule 7). These
+//! backends stay focus-agnostic — they just type into whatever currently has focus.
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Backend selection requested by the caller (`Auto` resolves via `pick_backend`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+/// `Serialize` so it can be persisted as a per-app style override (per-app-context.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InjectMode {
     Auto,
