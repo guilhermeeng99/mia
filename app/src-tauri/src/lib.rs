@@ -8,6 +8,7 @@
 //! IPC bridge end-to-end.
 
 pub mod cleanup;
+pub mod stt;
 
 /// Return the running app version (compiled in from Cargo). Trivial by design —
 /// it is the scaffold's IPC smoke test, called by `App.svelte`.

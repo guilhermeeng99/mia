@@ -20,6 +20,7 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
+ureq = "3"
 
 # Release profile: small, optimized installer binary.
 [profile.release]
