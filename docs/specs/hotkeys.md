@@ -25,10 +25,12 @@ IPC), and the Windows-only scope of [ADR-011](architecture.md).
 - **Two activation modes only.** `push-to-hold` (dictate while held, finish on release) and
   `press-to-toggle` (press to start, press again to stop). No "tap to toggle, hold to dictate"
   hybrid in v1 — it conflicts with debounce edge handling and is hard to discover (Phase 1).
-- **Default chord = `Ctrl + Win` (held together), rebindable.** Reason: low collision risk with
-  app shortcuts, ergonomic for hold, and registrable by `global-hotkey`. **`Fn` is not a default
-  option** — it is a firmware/EC-level key that does not reliably surface as a Windows virtual-key
-  and cannot be hooked portably. The user can rebind to any registrable chord in Settings.
+- **Default chord = `Ctrl + Space`, rebindable.** Reason: low collision risk, ergonomic for hold,
+  and **registrable by `global-hotkey`** — a modifier-only chord (e.g. `Ctrl+Win`) is *not*
+  registrable via `RegisterHotKey`, so the default carries a real key. (Resolves the prior
+  `Ctrl+Super` note; aligned with [settings.md](settings.md).) **`Fn` is not a default option** — it
+  is a firmware/EC-level key that does not reliably surface as a Windows virtual-key and cannot be
+  hooked portably. The user can rebind to any registrable chord in Settings.
 - **`global-hotkey` (RegisterHotKey under the hood), not a raw low-level keyboard hook.** Reason:
   `WH_KEYBOARD_LL` hooks are fragile, flagged by AV, and a perf/foreground-window liability. We
   accept `RegisterHotKey`'s constraints (modifier-anchored chords; UIPI limits — see Edge Cases)
@@ -197,7 +199,7 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
 
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `accelerator` | string (canonical chord) | any registrable modifier-anchored chord | `"Ctrl+Super"` (Ctrl + Win) | The global PTT trigger. |
+| `accelerator` | string (canonical chord) | any registrable modifier-anchored chord (with a non-modifier key) | `"Ctrl+Space"` | The global PTT trigger. |
 | `mode` | enum | `pushToHold` \| `pressToToggle` | `pushToHold` | Hold-to-dictate vs. press-to-start/stop. |
 | `debounce_ms` | int (ms) | 0–200 | `40` | Window that collapses key chatter/auto-repeat (Rule 9). Advanced; rarely changed. |
 | `max_hold_ms` | int (ms) | 5 000–120 000 | `30 000` | Missing-release watchdog timeout (Rule 11). |

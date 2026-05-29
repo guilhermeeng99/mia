@@ -408,7 +408,7 @@ mod tests {
         assert!(s.general.dictation_enabled);
         assert!(!s.general.launch_at_login);
         assert!(s.general.collect_stats);
-        assert_eq!(s.hotkey.accelerator, "Ctrl+Super");
+        assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);
         assert!(s.model.unload_on_idle);
@@ -439,7 +439,7 @@ mod tests {
         s.audio.input_device = "   ".to_string();
         s.model.model = "".to_string();
         let v = validate(s);
-        assert_eq!(v.hotkey.accelerator, "Ctrl+Super");
+        assert_eq!(v.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(v.audio.input_device, "default");
         assert_eq!(v.model.model, "small");
     }

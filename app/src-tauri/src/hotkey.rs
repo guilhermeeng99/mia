@@ -13,8 +13,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Default PTT chord — `Ctrl + Win`, low collision risk and ergonomic to hold (§4).
-pub const DEFAULT_ACCEL: &str = "Ctrl+Super";
+/// Default PTT chord — `Ctrl + Space`. A modifier-anchored chord with a real key
+/// (a modifier-only chord like `Ctrl+Win` is not registrable via `RegisterHotKey`),
+/// low collision risk, ergonomic to hold (§4; aligned with settings.md).
+pub const DEFAULT_ACCEL: &str = "Ctrl+Space";
 /// Window that collapses key chatter / OS auto-repeat into one intent (Rule 9, §4).
 pub const DEBOUNCE_MS: u64 = 40;
 /// Missing-release watchdog timeout for push-to-hold (Rule 11, §4).
@@ -400,10 +402,11 @@ mod tests {
     }
 
     #[test]
-    fn default_config_is_ctrl_super_push_to_hold() {
+    fn default_config_is_ctrl_space_push_to_hold() {
         let c = HotkeyConfig::default();
-        assert_eq!(c.accelerator, "Ctrl+Super");
+        assert_eq!(c.accelerator, "Ctrl+Space");
         assert_eq!(c.mode, ActivationMode::PushToHold);
-        assert!(parse_accelerator(&c.accelerator).is_ok());
+        let parsed = parse_accelerator(&c.accelerator).unwrap();
+        assert_eq!(parsed.key.as_deref(), Some("Space")); // a registrable chord (has a key)
     }
 }
