@@ -1,6 +1,6 @@
 # MIA — Project Conventions
 
-> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing (cleanup, warm STT, injection wired into the command registry). Phase 0 docs complete. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status**: Phase 1 (Core Dictation MVP) — **core loop validated on Windows** (PTT → capture → server-side Silero-VAD-gated warm STT → cleanup → inject, pt-BR + English, with the floating HUD). Phase 2 (AI) LLM runtime built (opt-in warm `llama-server`; on-device inference validation pending). Phase 0 docs complete. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 > **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
