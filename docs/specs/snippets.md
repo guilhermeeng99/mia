@@ -1,6 +1,6 @@
 # Snippets Feature Spec
 
-> **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). CRUD commands (`list_snippets`/`upsert_snippet`/`delete_snippet`/`preview_expansion`) + atomic `snippets.json` persistence + managed state + cross-trigger duplicate rejection (`duplicate_trigger`) + `snippets.ts` wrapper are implemented (build-verified). Runtime-pending: the Hub snippets section and the master `snippets_enabled` toggle.
+> **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). CRUD commands (`list_snippets`/`upsert_snippet`/`delete_snippet`/`preview_expansion`) + atomic `snippets.json` persistence + managed state + cross-trigger duplicate rejection (`duplicate_trigger`) + `snippets.ts` wrapper are implemented (build-verified). The Hub snippets section (add / remove / live preview) is built + build-verified. Runtime-pending: the master `snippets_enabled` toggle.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)

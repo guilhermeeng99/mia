@@ -1,6 +1,6 @@
 # Custom Dictionary (Personal Vocabulary) Feature Spec
 
-> **Status**: Phase 3 — pure mechanism-(a) core implemented & cargo-tested in `dictionary.rs`: `apply_dictionary` (exact / case / whole-word / multi-word / fuzzy / longest-match / idempotent), `match_case`, `osa_distance`+`fuzzy_match`, `build_bias_prompt`, `validate_entry` (Rules 1-13). CRUD commands (`dict_list/add/update/remove`, `dict_settings_get/set`) + atomic `dictionary.json` persistence + managed state + cross-entry duplicate rejection (`duplicate_variant`) + `dictionary.ts` wrapper are implemented (build-verified). Runtime-pending: the Hub dictionary section and wiring the bias prompt into the warm-Whisper call.
+> **Status**: Phase 3 — pure mechanism-(a) core implemented & cargo-tested in `dictionary.rs`: `apply_dictionary` (exact / case / whole-word / multi-word / fuzzy / longest-match / idempotent), `match_case`, `osa_distance`+`fuzzy_match`, `build_bias_prompt`, `validate_entry` (Rules 1-13). CRUD commands (`dict_list/add/update/remove`, `dict_settings_get/set`) + atomic `dictionary.json` persistence + managed state + cross-entry duplicate rejection (`duplicate_variant`) + `dictionary.ts` wrapper are implemented (build-verified). The Hub dictionary section (add / remove / enable) is built + build-verified. Runtime-pending: wiring the bias prompt into the warm-Whisper call.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted (engine contract + business rules are the load-bearing parts)
 > **Environment**: desktop (Windows, native)

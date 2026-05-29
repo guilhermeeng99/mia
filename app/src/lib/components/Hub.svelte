@@ -17,6 +17,8 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import Pill from "./ui/Pill.svelte";
+  import DictionarySection from "./DictionarySection.svelte";
+  import SnippetsSection from "./SnippetsSection.svelte";
 
   // The Settings/Hub window — presentation only. All logic lives behind the typed
   // invoke() wrappers in lib/*.ts (architecture rule); this component never calls
@@ -174,5 +176,8 @@
         </div>
       </div>
     </Card>
+
+    <DictionarySection />
+    <SnippetsSection />
   </div>
 </main>
