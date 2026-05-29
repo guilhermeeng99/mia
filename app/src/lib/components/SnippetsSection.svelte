@@ -7,9 +7,11 @@
     upsertSnippet,
     type Snippet,
   } from "../snippets";
+  import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
+  import Toggle from "./ui/Toggle.svelte";
 
   // Snippets CRUD + preview section. Presentation only — all logic via snippets.ts.
   let snippets = $state<Snippet[]>([]);
@@ -17,6 +19,7 @@
   let expansion = $state("");
   let sample = $state("");
   let preview = $state<string | null>(null);
+  let general = $state<GeneralSettings | null>(null);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
@@ -27,8 +30,20 @@
     snippets = await listSnippets();
   }
 
+  // Master switch — expansion is skipped in the pipeline when off (settings.general).
+  async function setEnabled(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, snippetsEnabled: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   onMount(() => {
     reload().catch(fail);
+    getSettings().then((s) => (general = s.general)).catch(fail);
   });
 
   async function add() {
@@ -72,7 +87,14 @@
 </script>
 
 <Card>
-  <h2 class="text-heading font-semibold">Snippets</h2>
+  <div class="flex items-center gap-3">
+    <h2 class="text-heading font-semibold">Snippets</h2>
+    {#if general}
+      <span class="ml-auto">
+        <Toggle checked={general.snippetsEnabled} label="Ativado" onchange={setEnabled} />
+      </span>
+    {/if}
+  </div>
   <p class="mt-1 text-body text-slate-blue">
     Frases-gatilho que expandem em texto pronto (assinatura, endereço, links).
   </p>

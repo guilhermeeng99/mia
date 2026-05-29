@@ -309,8 +309,13 @@ pub fn stop_dictation(
 
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(s.general.default_language), &cleanup_options(&s.cleanup));
     let dicted = crate::dictionary::apply_dictionary(&cleaned, &entries, &dsettings);
-    let set = crate::snippets::compile_snippets(&snips.snapshot()?);
-    let final_text = crate::snippets::expand_snippets(&dicted, &set).output;
+    // Snippet expansion is gated by a master switch (settings.general.snippets_enabled).
+    let final_text = if s.general.snippets_enabled {
+        let set = crate::snippets::compile_snippets(&snips.snapshot()?);
+        crate::snippets::expand_snippets(&dicted, &set).output
+    } else {
+        dicted
+    };
 
     if final_text.trim().is_empty() {
         eprintln!("[dictation] nothing to inject (empty after cleanup)");

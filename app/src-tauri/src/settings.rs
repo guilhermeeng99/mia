@@ -73,6 +73,8 @@ pub struct GeneralSettings {
     pub default_language: DefaultLanguage,
     pub play_sounds: bool,
     pub collect_stats: bool,
+    /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
+    pub snippets_enabled: bool,
 }
 
 impl Default for GeneralSettings {
@@ -83,6 +85,7 @@ impl Default for GeneralSettings {
             default_language: DefaultLanguage::Auto,
             play_sounds: false,
             collect_stats: true,
+            snippets_enabled: true,
         }
     }
 }

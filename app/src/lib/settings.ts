@@ -15,6 +15,7 @@ export interface GeneralSettings {
   defaultLanguage: DefaultLanguage;
   playSounds: boolean;
   collectStats: boolean;
+  snippetsEnabled: boolean;
 }
 
 export interface HotkeyConfig {
