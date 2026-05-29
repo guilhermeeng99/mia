@@ -1,6 +1,6 @@
 # Text Injection Feature Spec
 
-> **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the `inject_text` command (registered in `lib.rs`), all cargo-tested. Runtime-pending: focused-target + elevated-window (UIPI) detection (Rules 6–7), wired in the orchestrator stage.
+> **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the `inject_text` command (registered in `lib.rs`), all cargo-tested. **Rules 6–7 now wired** in the orchestrator via `win32.rs`: an elevated/UAC target (token-elevation probe) returns the run-as-administrator error (Rule 7), and no detectable foreground window falls back to the clipboard backend (Rule 6, best-effort — full editable-target/UIAutomation detection stays out of scope). On-device UAC validation is owner-gated.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
@@ -81,10 +81,9 @@ pub struct SendInputInjector { /* enigo handle */ }
 pub struct ClipboardInjector { /* arboard handle + chunk size */ }
 
 #[tauri::command]
-async fn inject_text(
-    state: tauri::State<'_, AppState>,
+fn inject_text(
     text: String,
-    mode: InjectMode,            // default Auto
+    mode: Option<InjectMode>,    // None → Auto (the Option encodes the default)
 ) -> Result<(), String>;
 ```
 

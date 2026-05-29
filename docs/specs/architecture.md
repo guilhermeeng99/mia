@@ -41,11 +41,14 @@ no dictation logic and only calls typed `invoke()` wrappers (one per command gro
    ┌──────────────▼───────────────────┐   ┌───────────▼───────────────────────┐
    │ resident / loaded:                 │   │ OS interaction:                    │
    │  • cpal            (16 kHz mic)    │   │  • enigo / SendInput  (inject text)│
-   │  • whisper-rs      (WARM STT)      │   │  • arboard            (clipboard)  │
-   │    └ or whisper-server (sidecar)   │   │  • tauri-plugin-global-shortcut    │
-   │  • Silero VAD      (endpointing)   │   │      (global PTT hotkey)           │
-   │  • llama.cpp       (Phase 2 LLM)   │   │  • Tauri tray-icon feature (tray)  │
+   │  • whisper-server  (WARM STT,      │   │  • arboard            (clipboard)  │
+   │      MVP default · sidecar)        │   │  • tauri-plugin-global-shortcut    │
+   │    └ or whisper-rs in-process      │   │      (global PTT hotkey)           │
+   │        (later optimization)        │   │  • Tauri tray-icon feature (tray)  │
+   │  • Silero VAD      (endpointing)   │   │                                    │
+   │  ⛔ llama.cpp (Phase 2 LLM) DESCOPED│   │                                    │
    └────────────────────────────────────┘   └────────────────────────────────────┘
+   ⛔ Phase 2 local-LLM was reverted/descoped — no llama dep in Cargo.toml.
 ```
 
 **The latency-critical seam** is the warm STT (see [ADR-004](#adr-004-warmresident-stt-for-live-dictation)):

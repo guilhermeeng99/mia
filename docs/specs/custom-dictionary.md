@@ -99,7 +99,7 @@ pub struct DictSettings {
     pub bias_max_terms: u16,          // cap how many terms go into the initial prompt (default 64)
 }
 
-// ---- Commands (CRUD; the UI holds no rewrite logic) ----------------------
+// ---- Commands (CRUD; the UI holds no rewrite logic) — IMPLEMENTED & registered ----
 #[tauri::command]
 async fn dict_list() -> Result<Vec<DictEntry>, String>;
 #[tauri::command]
@@ -112,10 +112,15 @@ async fn dict_remove(id: String) -> Result<(), String>;
 async fn dict_settings_get() -> Result<DictSettings, String>;
 #[tauri::command]
 async fn dict_settings_set(settings: DictSettings) -> Result<DictSettings, String>;
+
+// ---- Phase-pending (specified, NOT yet implemented or registered) ----
+// Bulk import/export (backup / sharing of the dictionary JSON) is designed here
+// but is not wired in lib.rs yet. Only the CRUD + settings group above is live
+// today; the section below is the forward contract.
 #[tauri::command]
-async fn dict_import(json: String) -> Result<usize, String>;          // bulk add/merge; returns count
+async fn dict_import(json: String) -> Result<usize, String>;          // bulk add/merge; returns count — Phase-pending
 #[tauri::command]
-async fn dict_export() -> Result<String, String>;                     // dictionary JSON for backup/sharing
+async fn dict_export() -> Result<String, String>;                     // dictionary JSON for backup/sharing — Phase-pending
 
 // ---- Pure helpers (#[cfg(test)], no I/O) — the testable core -------------
 // apply_dictionary(text, &[DictEntry], &DictSettings) -> String   // mechanism a; pure
@@ -125,14 +130,20 @@ async fn dict_export() -> Result<String, String>;                     // diction
 // validate_entry(&DictEntry) -> Result<(), String>               // dedupe/empty/length checks
 ```
 
+> **Implementation status.** The CRUD + settings group (`dict_list` / `dict_add` / `dict_update` /
+> `dict_remove` / `dict_settings_get` / `dict_settings_set`) is registered in `lib.rs` and
+> build-verified. The bulk **`dict_import` / `dict_export`** commands are **Phase-pending** — the
+> contract is locked here, but neither is implemented or registered yet. The import/export edge case
+> (§7) and the round-trip test row (§8) are flagged deferred accordingly.
+
 - **`DictEntry` fields** — `replacement` (required, the canonical output), `soundsLike` (optional
   surface variants to match on; if empty, the matcher derives a default variant from `replacement`),
   `caseSensitive` (default `false`), `wholeWord` (default `true`), `fuzzy` (default `false`),
   `biasPrompt` (default `true`), `enabled` (default `true`).
 - **`Err(String)` cases**: `"entry must have a non-empty replacement"`,
   `"duplicate term: <variant>"`, `"replacement too long"` (defensive length cap),
-  `"invalid dictionary json: <detail>"` (import), `"dictionary file write failed: <detail>"`.
-  Each maps 1:1 to a Hub validation/error state.
+  `"dictionary file write failed: <detail>"`. Each maps 1:1 to a Hub validation/error state.
+  (`"invalid dictionary json: <detail>"` belongs to the Phase-pending `dict_import` above.)
 - **No native model, no sidecar**: mechanism (a) is pure Rust; mechanism (b) only contributes a
   string to the existing warm-Whisper call. This feature cold-spawns nothing.
 - **Pure helpers** above (`apply_dictionary`, `fuzzy_match`, `match_case`, `build_bias_prompt`,
@@ -297,10 +308,13 @@ Hub "Dictionary" panel:
 | Output of a replacement could re-trigger another entry | Idempotent scan; replaced spans are skipped; no cascading/looping rewrites (Rule 10). |
 | pt-BR accented term (`Tchéka`, `não`) | Unicode-aware boundaries and matching; accents are word characters; `replacement` emitted verbatim. |
 | Duplicate variant added | `dict_add`/`dict_update` reject with `"duplicate term: <variant>"` (Rule 12). |
-| Malformed import JSON | `dict_import` returns `Err("invalid dictionary json: …")`; existing dictionary untouched. |
 | Biasing prompt grows huge | Capped at `biasMaxTerms` (default 64); excess terms still enforced by mechanism (a) (Rule 13). |
 | Biasing disabled or unsupported by backend | Mechanism (a) still enforces every term — full correctness without (b) (Scope decision 1). |
 | Empty / all-disabled dictionary | No-op; input returned unchanged (Rule 11). |
+
+> **Phase-pending (import/export).** Malformed import JSON → `dict_import` returns
+> `Err("invalid dictionary json: …")` and leaves the existing dictionary untouched. This edge case
+> is deferred with the `dict_import` / `dict_export` commands (§2) — designed, not yet implemented.
 
 ---
 
@@ -322,6 +336,7 @@ Hub "Dictionary" panel:
   - [ ] case-sensitive term does not clobber the common lowercase word.
   - [ ] fuzzy entry corrects a realistic near-miss without breaking neighboring words.
   - [ ] biasing on vs off: term recognized more reliably with biasing, still corrected either way.
+- **Phase-pending (import/export)** — deferred with the `dict_import` / `dict_export` commands (§2):
   - [ ] import/export round-trips the dictionary; validation errors surface inline in the Hub.
 
 ---

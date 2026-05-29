@@ -1,6 +1,6 @@
 # Audio Capture & VAD Endpointing Feature Spec
 
-> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. Runtime-pending: live Silero per-frame inference + VAD-gated trimming / toggle-endpoint (the push-to-hold MVP captures release-to-release; anti-hallucination VAD is applied at transcription time by whisper-server).
+> **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. **Toggle-mode auto-endpoint is now wired** (energy-gated): the capture thread frames the live buffer to 30 ms, maps RMS → a pseudo speech probability (`energy_to_prob`), and feeds the cargo-tested `EndpointDetector`, emitting `dictation://auto-endpoint` after the hangover so a toggle session ends on sustained silence. Anti-hallucination VAD-gated trimming is still applied at transcription time by whisper-server (`--vad`); **in-process per-frame Silero ONNX** remains a backlog accuracy optimization over the energy gate.
 > **Last updated**: 2026-05-29
 > **Coverage**: all sections drafted (1–9)
 > **Environment**: desktop (Windows, native)
@@ -81,39 +81,58 @@ the IPC boundary ([ADR-006](architecture.md#adr-006-resultt-string-error-model-a
 resample/downmix, RMS) · `app/src-tauri/src/vad.rs` (Silero load + frame classification +
 endpoint state machine).
 
+There are **two surfaces** here. (a) The **registered Tauri commands** the Svelte UI calls
+directly (device list + mic test + the privacy deep-link). (b) The **in-process orchestrator
+helpers** (`begin_capture` / `end_capture`) that the dictation orchestrator
+([dictation.md](dictation.md)) calls on the Rust side on hotkey press/release — these are plain
+`pub fn`, **not** `#[tauri::command]`s, because live capture is driven entirely Rust-side (the UI
+never starts/stops a dictation session; it only presses the hotkey). **Device selection is not its
+own command** — it is persisted as `settings.audio.input_device` through `update_settings`
+([settings.md](settings.md)), and the orchestrator passes that id into `begin_capture`.
+
 ```rust
-// ── audio.rs ─────────────────────────────────────────────────────────────────
+// ── audio.rs — REGISTERED COMMANDS (UI-callable) ──────────────────────────────
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AudioDevice { id: String, name: String, is_default: bool }
 
-/// Enumerate input devices for the settings picker. Pure-ish (queries cpal hosts).
+/// Enumerate input devices for the Settings picker. Pure-ish (queries cpal hosts).
 #[tauri::command]
 fn list_input_devices() -> Result<Vec<AudioDevice>, String>;
 
-/// Persisted device selection (None = follow OS default input).
+/// One-shot mic test for onboarding/settings: capture briefly from the default mic and
+/// return peak/RMS so the UI can show "we can hear you" without running STT. An optional
+/// `level` Channel streams `CaptureEvent::Level` for a live meter while the test runs.
 #[tauri::command]
-fn set_input_device(state: State<'_, AppState>, device_id: Option<String>) -> Result<(), String>;
+fn test_microphone(
+    state: State<'_, CaptureState>,
+    ms: Option<u32>,
+    level: Option<tauri::ipc::Channel<CaptureEvent>>,
+) -> Result<MicTest, String>;
 
-/// Open the cpal stream and start capture for one dictation session. Streams level +
-/// VAD events to the UI/orchestrator over a Channel. Audio frames go to the warm STT
-/// in-process (NOT over this Channel). Idempotent re-entry is rejected (Rule 11).
+/// Deep-link the user to Windows' microphone privacy settings (used by the denied-permission
+/// error affordance in the Hub/HUD — see §6/§7).
 #[tauri::command]
-async fn start_capture(
-    state: State<'_, AppState>,
-    channel: tauri::ipc::Channel<CaptureEvent>,
-    opts: Option<CaptureOpts>,
+fn open_mic_privacy() -> Result<(), String>;
+
+// ── audio.rs — IN-PROCESS ORCHESTRATOR HELPERS (NOT commands) ─────────────────
+// Called by dictation.rs on hotkey press/release; the UI never invokes these. The
+// `device_id` comes from `settings.audio.input_device` (resolved by the orchestrator,
+// `"default"`/None = OS default — Rule 14). The optional Channel streams level events to
+// the HUD; speech samples are returned by value (in-process), never over the Channel.
+
+/// Open the cpal stream and start capture for one dictation session. Rejects a second
+/// concurrent session (Rule 11). Blocks only until the stream is confirmed live.
+pub fn begin_capture(
+    state: &CaptureState,
+    device_id: Option<&str>,
+    channel: Option<tauri::ipc::Channel<CaptureEvent>>,
+    app: Option<tauri::AppHandle>,
 ) -> Result<(), String>;
 
-/// Stop capture (hotkey release / toggle-off / cancel). Flushes the trailing buffer
-/// per mode, tears down the cpal stream, returns to Idle.
-#[tauri::command]
-async fn stop_capture(state: State<'_, AppState>) -> Result<(), String>;
-
-/// One-shot 1–2 s mic test for onboarding/settings: returns peak/RMS so the UI can
-/// show "we can hear you" without running STT.
-#[tauri::command]
-async fn test_microphone(state: State<'_, AppState>, ms: Option<u32>) -> Result<MicTest, String>;
+/// Stop capture (hotkey release / toggle-off / cancel), tear down the cpal stream, and
+/// return the utterance as 16 kHz mono `f32` (resampled once). No active session → `Ok(vec![])`.
+pub fn end_capture(state: &CaptureState) -> Result<Vec<f32>, String>;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -123,7 +142,17 @@ enum CaptureEvent {
     SpeechEnd,                              // VAD endpoint reached (utterance boundary)
     Error { message: String },              // device lost mid-stream, etc.
 }
+```
 
+> **Not implemented (Phase-pending).** A UI-facing capture surface — discrete
+> `set_input_device` / `start_capture` / `stop_capture` **commands** — was envisioned in early
+> drafts but is **not built and not registered**. In the shipped MVP the UI does not start/stop
+> dictation (the global hotkey does, Rust-side, via `begin_capture`/`end_capture`), and device
+> choice is persisted through `update_settings` (`settings.audio.input_device`), so no
+> `set_input_device` command exists. These would only land if a future phase adds a UI-driven
+> capture surface (e.g. an in-window "record" button distinct from the global PTT hotkey).
+
+```rust
 // ── vad.rs (pure-ish: load model once, classify fixed-size frames) ─────────────
 struct Vad { /* Silero session + ring of recent frame probabilities */ }
 impl Vad {
@@ -134,15 +163,17 @@ impl Vad {
 enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
 ```
 
-- `CaptureOpts` (serde `camelCase`): `mode: "pushToTalk" | "toggle"` (default `"pushToTalk"`),
-  `vadEnabled: bool` (default `true`; off only for diagnostics), `inputDeviceId: Option<String>`
-  (default `None` → OS default). VAD endpointing parameters (thresholds/hangover) are **fixed
-  defaults**, not in `CaptureOpts` — see §4.
+- **Capture mode** (`pushToTalk` | `toggle`, default `pushToTalk`) and `vadEnabled` (default
+  `true`; off only for diagnostics) are orchestrator-side concerns ([dictation.md](dictation.md)),
+  not arguments the UI passes here. The device id `begin_capture` receives comes from
+  `settings.audio.input_device` (`"default"`/None → OS default). VAD endpointing parameters
+  (thresholds/hangover) are **fixed defaults** — see §4.
 - `MicTest` (`camelCase`): `{ peak: f32, rms: f32, deviceName: String }`.
 - `Err(String)` cases (each maps 1:1 to a UI error state, §6/§7): `"no input device available"`,
   `"microphone access denied — enable it in Windows Settings → Privacy → Microphone"`,
   `"input device is in use by another application"`, `"failed to open audio stream: …"`,
   `"VAD model not downloaded"`, `"capture already in progress"`, `"selected device not found"`.
+  These surface from `begin_capture`/`end_capture` (live path) and `test_microphone` (mic test).
 - Native in-process only — `cpal` (WASAPI) and the Silero model run inside MIA's process. **No
   sidecar, no ffmpeg, no `whisper-cli` cold spawn** on this path
   ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)).
@@ -152,9 +183,12 @@ enum VadDecision { Silence, SpeechOngoing, SpeechStarted, SpeechEnded }
   transitions given a synthetic sequence of frame probabilities), and frame chunking (splitting
   arbitrary callback buffers into fixed 30 ms frames). The device-enumeration name normalizer is
   also pure.
-- Typed UI wrapper: `app/src/lib/audio.ts` (`invoke<AudioDevice[]>("list_input_devices")`,
-  `setInputDevice`, `startCapture`, `stopCapture`, `testMicrophone`). The UI holds **no** capture
-  or VAD logic — it renders the device picker and the level meter only.
+- Typed UI wrapper: `app/src/lib/audio.ts` exposes only the registered commands —
+  `listInputDevices()` (`invoke<AudioDevice[]>("list_input_devices")`), `testMicrophone()`, and
+  `openMicPrivacy()`. There is **no** `setInputDevice`/`startCapture`/`stopCapture` wrapper: device
+  choice is saved through the settings wrapper ([settings.md](settings.md)), and live capture is
+  driven by the global hotkey on the Rust side. The UI holds **no** capture or VAD logic — it
+  renders the device picker and the level meter only.
 
 ---
 

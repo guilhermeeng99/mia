@@ -73,8 +73,11 @@ and renders HUD state from a `Channel` ([architecture.md](architecture.md)). All
 `audio.rs`, `vad.rs`, `stt.rs`, `cleanup.rs`, `inject.rs`, and reads start/stop from `hotkey.rs`.
 
 ```rust
-// Long-lived state held in the Tauri-managed AppState.
-struct DictationState {
+// CONCEPTUAL view of the long-lived state. In the code this is NOT one unified
+// `DictationState` managed type — it is split across several Tauri-managed States
+// (CaptureState, SttState, SettingsState, DictState, SnippetState, StatsState, …),
+// each injected independently into the commands below.
+struct DictationState {        // conceptual; not a real managed type
     phase: Mutex<Phase>,            // Idle | Listening | Transcribing | Inserting | Error
     session: Mutex<Option<Session>>,// active audio stream + accumulation buffer + start instant
     cancel: Arc<AtomicBool>,        // set by abort/escape; checked between stages
@@ -96,21 +99,39 @@ enum DictationEvent {
 /// the HUD. The transcript/`DictationResult` is produced by `stop_dictation` (the
 /// tail of the pipeline), not here — `start_dictation` only opens the capture.
 #[tauri::command]
-async fn start_dictation(
+fn start_dictation(
+    app: AppHandle,
     capture: State<'_, CaptureState>,
     settings: State<'_, SettingsState>,
+    focus: State<'_, FocusContext>,   // captures the focused-app EXE for the per-app style
     events: tauri::ipc::Channel<DictationEvent>,
 ) -> Result<(), String>;
 
 /// End-of-speech signal for push-to-hold (hotkey released). Stops capture and runs
 /// the tail end-to-end: endpoint → warm STT → cleanup → dictionary → snippets →
 /// inject, emitting HUD events and recording stats; returns the session summary.
+/// State is split across several managed States, each injected independently.
 #[tauri::command]
-async fn stop_dictation(state: State<'_, DictationState>) -> Result<DictationResult, String>;
+fn stop_dictation(
+    app: AppHandle,
+    capture: State<'_, CaptureState>,
+    stt_state: State<'_, SttState>,
+    settings: State<'_, SettingsState>,
+    dict: State<'_, DictState>,
+    snips: State<'_, SnippetState>,
+    stats: State<'_, StatsState>,
+    focus: State<'_, FocusContext>,   // resolves the per-app style + UIPI/elevation check (per-app-context.md)
+    events: tauri::ipc::Channel<DictationEvent>,
+) -> Result<DictationResult, String>;
 
 /// Abort: discard the in-flight session and any pending STT/injection; HUD → Idle. Idempotent.
 #[tauri::command]
-async fn cancel_dictation(state: State<'_, DictationState>) -> Result<(), String>;
+fn cancel_dictation(
+    app: AppHandle,
+    capture: State<'_, CaptureState>,
+    focus: State<'_, FocusContext>,   // clears the captured focus target
+    events: tauri::ipc::Channel<DictationEvent>,
+) -> Result<(), String>;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,7 +140,7 @@ struct DictationResult {
     detected_language: Option<String>,
     total_ms: u64,                          // end-to-end (capture start → injection done)
     stt_ms: u64,                            // STT inference portion
-    backend: String,                        // "enigo" | "clipboard" (which injection path won)
+    backend: String,                        // the injection backend actually used ("enigo" | "clipboard"), as returned by inject()
 }
 ```
 

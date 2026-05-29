@@ -24,7 +24,7 @@ MIA is a live dictation app, so the engine is framed around **audio in → text 
 
 | Aspect | This feature |
 |---|---|
-| **Trigger** | An endpointed utterance handed off from [audio-capture.md](audio-capture.md) (VAD detected speech-end, or push-to-talk released — see [hotkeys.md](hotkeys.md)). The engine itself exposes `warm_model` / `transcribe_chunk` / `unload_model` commands; it does not own the hotkey. |
+| **Trigger** | An endpointed utterance handed off from [audio-capture.md](audio-capture.md) (VAD detected speech-end, or push-to-talk released — see [hotkeys.md](hotkeys.md)). The engine itself exposes in-process `warm_model` / `transcribe_chunk` / `unload` helpers; it does not own the hotkey. |
 | **Audio in** | 16 kHz **mono** PCM `f32` samples (cpal capture), already in Whisper's required format — **no ffmpeg, no resample, no temp WAV**. One utterance's worth of samples per `transcribe_chunk`. |
 | **Text in** | N/A (the transcript is produced here). |
 | **Text out** | Raw UTF-8 transcript string + detected/forced language code, returned to the dictation orchestrator → cleanup → injection. Never written to disk. |
@@ -47,7 +47,7 @@ The warm model lives in managed Tauri `State` so it is loaded once and shared. T
 // app/src-tauri/src/stt.rs
 
 #[derive(serde::Serialize)]            // rename_all = "camelCase"
-struct WhisperModel { id: String, label: String, size_mb: u32, downloaded: bool }
+struct WhisperModel { id: String, label: String, size_mb: u32, downloaded: bool, recommended: bool }
 
 #[derive(serde::Serialize)]
 struct GpuStatus { gpu_present: bool, downloaded: bool } // nvcuda.dll present; CUDA engine installed
@@ -63,22 +63,22 @@ struct Transcript { text: String, language: String } // raw transcript + detecte
 /// Tauri State; loaded ONCE.
 struct SttState { /* Mutex<Option<WarmModel>>, current model id, backend, gpu flag */ }
 
-// ---- lifecycle (driven by the UI: onboarding warm-up, settings) ----
+// ---- lifecycle (in-process helpers, NOT #[tauri::command]; called by the orchestrator/settings) ----
 
 /// Load the chosen model into RAM and keep it resident (warm whisper-server sidecar by
 /// default — MVP, cmake-free; in-process whisper-rs is the later optimization). Idempotent:
 /// a no-op if the same model+backend is already warm; reloads if the model/backend changed.
-/// Err if the model isn't downloaded (require_model) — the UI gates with download_whisper_model first.
-#[tauri::command]
-async fn warm_model(app: AppHandle, model: String, state: State<'_, SttState>) -> Result<WarmStatus, String>;
+/// Err if the model isn't downloaded (require_model) — callers gate with download_whisper_model first.
+/// NOT exposed to the UI: an in-process fn called by the dictation orchestrator / settings.
+pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String>;
 
 /// Whether a model is currently warm, which one, and on which backend/engine.
 #[tauri::command]
 fn warm_status(state: State<'_, SttState>) -> Result<WarmStatus, String>;
 
-/// Free the resident model (RAM reclaim; e.g. settings "release model when idle").
-#[tauri::command]
-fn unload_model(state: State<'_, SttState>) -> Result<(), String>;
+/// Free the resident model (RAM reclaim; e.g. update_settings releasing the model).
+/// In-process helper (NOT a command); also runs on app exit via Drop.
+pub fn unload(state: &SttState) -> Result<(), String>;
 
 // ---- recognition (called IN-PROCESS by dictation.rs on the hot path; see dictation.md) ----
 
@@ -98,7 +98,7 @@ async fn download_whisper_model(app: AppHandle, model: String, on_progress: Chan
 #[tauri::command]
 fn gpu_engine_status(app: AppHandle) -> Result<GpuStatus, String>;
 #[tauri::command]
-async fn download_gpu_engine(app: AppHandle, on_progress: Channel<DownloadProgress>) -> Result<(), String>;
+async fn download_gpu_engine(app: AppHandle, stt: State<'_, SttState>, on_progress: Channel<DownloadProgress>) -> Result<(), String>; // stt: hot-swap the warm engine to CUDA after install
 ```
 
 **Pure helpers** (`#[cfg(test)]` cargo-tested, no I/O — lifted from Toolzy):
@@ -144,7 +144,7 @@ Numbered, testable.
 9. **Empty / no-speech utterance** — if VAD finds no speech, recognition returns an **empty** string (`Ok`, never hallucinated text); the orchestrator injects nothing and returns the HUD to Idle.
 10. **GPU when available** — if `gpu_engine_status.downloaded` is true (and `gpu_present`), `warm_model` loads the **CUDA** engine/build (≈7–10× faster); otherwise the bundled **CPU** build. No NVIDIA ⇒ CPU, transparently.
 11. **Download integrity** — `download_whisper_model` and `download_gpu_engine` stream to a `.part` file and rename on completion; an interrupted download leaves **no** half model/engine in place. Progress is reported via the `Channel` (reused from Toolzy `download_file`).
-12. **Unload frees RAM** — `unload_model` drops the resident context; subsequent `transcribe_chunk` → `Err("no model loaded")` until re-warmed.
+12. **Unload frees RAM** — `unload` drops the resident context; subsequent `transcribe_chunk` → `Err("no model loaded")` until re-warmed.
 
 ---
 
@@ -185,7 +185,7 @@ Live dictation is latency-critical — the warm-model contract is the whole poin
 - **Recognition off the UI/audio threads**: `transcribe_chunk` runs on a worker (spawned/blocking task), never on the cpal callback and never blocking the webview. The result is handed back to the dictation orchestrator, then to cleanup + injection.
 - **Latency budget**: utterance-end → first injected char. The dominant cost is **STT inference** on the warm model; model load (the expensive part) is already paid. Everything else — VAD endpointing, deterministic cleanup, SendInject — is off the critical inference path and sub-100 ms. The model choice (rule 6 / §4) is the main lever; the CUDA engine (rule 10) is the other (≈7–10×).
 - **Cancellation**: a release-to-cancel or timeout discards the in-flight utterance — the warm model is **not** killed (it's warm, not a child process), the in-flight `transcribe_chunk` result is dropped, and the HUD returns to Idle. This adapts Toolzy's `TranscribeState` "cancel" (which killed a child) into "discard the current utterance against the still-warm model" — see [dictation.md](dictation.md).
-- **Resource use**: model RAM is the loaded ggml size (≈0.5–3 GB depending on model; CPU vs CUDA build). Models and the CUDA engine are **lazy** — fetched only on the download gate, never bundled (CPU whisper.cpp build is the only bundled engine). One model is warm at a time; `unload_model` reclaims its RAM.
+- **Resource use**: model RAM is the loaded ggml size (≈0.5–3 GB depending on model; CPU vs CUDA build). Models and the CUDA engine are **lazy** — fetched only on the download gate, never bundled (CPU whisper.cpp build is the only bundled engine). One model is warm at a time; `unload` reclaims its RAM.
 
 ---
 
@@ -235,7 +235,7 @@ Hub/onboarding (model lifecycle):
   - [ ] `inference_fields` — **always** emits `temperature=0.0` + `temperature_inc=0.0` (fallback-ladder kill) (+ optional forced `language`), regardless of language/model; Silero VAD on and stateless per-utterance recognition supply the rest of the policy (rules 7–8).
   - [ ] `nvidia_present` / `find_file` — driver detection + locating the CUDA exe/DLLs in an extracted archive (lifted Toolzy tests).
   - [ ] each `Err(String)` path: unknown model, model-not-downloaded, VAD-not-downloaded, no-model-loaded.
-  - [ ] warm-state transitions where pure: warm → re-warm same model is a no-op; warm different model reloads; `unload_model` → not-loaded.
+  - [ ] warm-state transitions where pure: warm → re-warm same model is a no-op; warm different model reloads; `unload` → not-loaded.
 - **Manual / runtime** (needs mic, a downloaded model, and a real focused app):
   - [ ] happy path: hotkey → speak → text appears at cursor (pt-BR **and** English).
   - [ ] warm model: second utterance shows **no** model-reload delay (warm, not cold).
