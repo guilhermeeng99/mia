@@ -1,7 +1,7 @@
 # Speech-to-Text Feature Spec
 
-> **Status**: Draft / Planned (Phase 1 — code does not exist yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — engine implemented (whisper-server sidecar, ADR-004 revised default): model registry + on-demand download (progress `Channel`, `.part` rename), optional CUDA engine fetch, warm server lifecycle (spawn/wait/Drop), in-memory `transcribe_chunk`, and the `warm_status` command — all complete; pure helpers cargo-tested. Remaining: wire `transcribe_chunk` into the live dictation orchestrator (capture → VAD → STT → cleanup → inject) + cancellation; whisper-rs in-process as a later optimization.
+> **Last updated**: 2026-05-29
 > **Coverage**: all sections drafted
 > **Environment**: desktop (Windows, native)
 

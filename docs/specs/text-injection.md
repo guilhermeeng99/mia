@@ -1,7 +1,7 @@
 # Text Injection Feature Spec
 
-> **Status**: Draft / Planned (Phase 1 — no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the `inject_text` command (registered in `lib.rs`), all cargo-tested. Runtime-pending: focused-target + elevated-window (UIPI) detection (Rules 6–7), wired in the orchestrator stage.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
 
@@ -245,12 +245,12 @@ Transitions: cleaned text ready → Inserting; inject Ok(()) → brief check →
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] `chunk_for_sendinput` — splits at the chunk size; never mid-surrogate / mid-grapheme; emoji
+  - [x] `chunk_for_sendinput` — splits at the chunk size; never mid-surrogate / mid-grapheme; emoji
         and `ç`/`ã`/combining marks stay intact; empty input → empty/`[""]` per contract
-  - [ ] `pick_backend` — `Auto` picks SendInput below threshold, clipboard at/over threshold, and
+  - [x] `pick_backend` — `Auto` picks SendInput below threshold, clipboard at/over threshold, and
         clipboard when `force_clipboard_mode`; `SendInput`/`Clipboard` force their backend
-  - [ ] `should_use_clipboard` at the threshold boundary (n-1, n, n+1)
-  - [ ] `redact_for_log` returns no verbatim text (length-only)
+  - [x] `should_use_clipboard` at the threshold boundary (n-1, n, n+1)
+  - [x] `redact_for_log` returns no verbatim text (length-only)
   - [ ] each `Err(String)` variant is produced by the right branch (where testable without Win32)
 - **Manual / runtime** (needs a real focused app):
   - [ ] happy path: dictate → text appears at cursor in Notepad, VS Code, a browser field, a chat box

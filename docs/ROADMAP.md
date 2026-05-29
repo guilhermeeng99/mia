@@ -1,7 +1,7 @@
 # MIA — Roadmap
 
-> **Status**: Draft / Planned — Phase 0 (Docs & Design) in progress; no application code exists yet.
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing (deterministic cleanup, warm STT, text injection); Phase 0 (Docs & Design) complete.
+> **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 > Single source of truth for what is **done**, **in progress**, and **planned**. Update in the same change that shifts scope (see [`/CLAUDE.md`](../CLAUDE.md) → Post-Change Checklist).
 
@@ -17,8 +17,8 @@ MIA is a free, open-source, **privacy-first, fully local** voice-to-text **dicta
 
 | Phase | Theme | Status |
 |---|---|---|
-| 0 | Docs & Design — this documentation set + design system | 🚧 In progress |
-| 1 | Core Dictation MVP — PTT → capture → VAD → warm STT → cleanup → inject; tray + HUD; pt-BR + English | ⬜ Planned |
+| 0 | Docs & Design — this documentation set + design system | ✅ Done |
+| 1 | Core Dictation MVP — PTT → capture → VAD → warm STT → cleanup → inject; tray + HUD; pt-BR + English | 🚧 In progress |
 | 2 | AI Magic — optional local LLM Command Mode (voice editing) + opt-in Polish; intent routing | ⬜ Planned |
 | 3 | Personalization — custom dictionary, snippets, per-app writing styles/context | ⬜ Planned |
 | 4 | Polish & Distribution — onboarding, settings/"Hub" dashboard + stats, signed auto-update, NVIDIA CUDA, release pipeline | ⬜ Planned |
@@ -28,24 +28,24 @@ MIA is a free, open-source, **privacy-first, fully local** voice-to-text **dicta
 
 ## Detail
 
-### Phase 0 — Docs & Design 🚧
+### Phase 0 — Docs & Design ✅
 
-Define the product, architecture, and design system before any code is written. This phase **is in progress now**; everything below it is planned.
+Define the product, architecture, and design system before any code is written. This phase is **complete**; Phase 1 implementation is now underway.
 
-- 🚧 Documentation set: [`/README.md`](../README.md), [`/CLAUDE.md`](../CLAUDE.md), this roadmap, [docs/FEATURE-MAP.md](FEATURE-MAP.md) (Wispr Flow → MIA parity + phase), [docs/REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md), and all feature specs under [docs/specs/](specs/) following [docs/specs/_template.md](specs/_template.md).
-- 🚧 [Architecture](specs/architecture.md) — the canonical ADRs (ADR-001 … ADR-011) and the "Rust is the engine, Svelte is a thin webview" principle.
-- 🚧 [Design system](specs/design-system.md) — the **"Calm Focus"** identity: the light **Settings/Hub** surface (Toolzy tokens + "Sky Blueprint" palette, Montserrat) and the new dark translucent **floating mic HUD**. Shared UI components in `app/src/lib/components/ui/`.
+- ✅ Documentation set: [`/README.md`](../README.md), [`/CLAUDE.md`](../CLAUDE.md), this roadmap, [docs/FEATURE-MAP.md](FEATURE-MAP.md) (Wispr Flow → MIA parity + phase), [docs/REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md), and all feature specs under [docs/specs/](specs/) following [docs/specs/_template.md](specs/_template.md).
+- ✅ [Architecture](specs/architecture.md) — the canonical ADRs (ADR-001 … ADR-011) and the "Rust is the engine, Svelte is a thin webview" principle.
+- ✅ [Design system](specs/design-system.md) — the **"Calm Focus"** identity: the light **Settings/Hub** surface (Toolzy tokens + "Sky Blueprint" palette, Montserrat) and the new dark translucent **floating mic HUD**. Shared UI components in `app/src/lib/components/ui/`.
 
-### Phase 1 — Core Dictation MVP ⬜
+### Phase 1 — Core Dictation MVP 🚧
 
 The end-to-end live loop: global PTT hotkey → cpal capture → Silero VAD endpoint → **warm** whisper.cpp → deterministic cleanup → SendInput injection at the cursor; system tray + floating mic HUD; on-demand model download gate; pt-BR + English. Orchestration spec: [dictation.md](specs/dictation.md). All IPC uses `Result<T, String>` ([ADR-006](specs/architecture.md#adr-006-result-error-model)); pure helpers carry `#[cfg(test)]` cargo tests.
 
-- ⬜ **Scaffold** the Tauri 2 + Svelte 5 (runes) + Vite + TypeScript (strict) + Tailwind v4 project with **Bun** tooling (pnpm fallback) and WebView2. Establish `app/src-tauri/src/*.rs` (engine) and typed `invoke()` wrappers in `app/src/lib/*.ts`. → [architecture.md](specs/architecture.md) · [ADR-002](specs/architecture.md#adr-002-tauri-2--svelte-5--vite--tailwind-v4-bun-tooling)
+- ✅ **Scaffold** the Tauri 2 + Svelte 5 (runes) + Vite + TypeScript (strict) + Tailwind v4 project with **Bun** tooling (pnpm fallback) and WebView2. Engine modules live under `app/src-tauri/src/*.rs`; the `#[tauri::command]` registry + warm-STT managed state are wired in `lib.rs`; typed `invoke()` wrappers begun in `app/src/lib/*.ts` (`stt.ts`, `inject.ts`). → [architecture.md](specs/architecture.md) · [ADR-002](specs/architecture.md#adr-002-tauri-2--svelte-5--vite--tailwind-v4-bun-tooling)
 - ⬜ **Audio capture** — `cpal` mic input at 16 kHz mono PCM, device selection, level metering. `app/src-tauri/src/audio.rs`. → [audio-capture.md](specs/audio-capture.md) · [ADR-001](specs/architecture.md#adr-001-native-on-device-privacy-first)
 - ⬜ **Silero VAD endpointing** — voice-activity gating + utterance endpoint detection feeding the STT (reuse Toolzy's Silero VAD constants). → [audio-capture.md](specs/audio-capture.md), [speech-to-text.md](specs/speech-to-text.md) · [ADR-007](specs/architecture.md#adr-007-on-demand-models--anti-hallucination)
-- ⬜ **Warm whisper-rs STT** — resident/warm model loaded once (**whisper-rs in-process**, default; **whisper-server** documented fallback), NOT a cold `whisper-cli` spawn per utterance. On-demand model download from Hugging Face to app-data with a download gate, `.part` rename, streamed progress via a Tauri `Channel`, and cancel via managed `State` — **reused/adapted from Toolzy's `transcription.rs`** (MODELS registry, `model_url`/`model_filename`, `whisper_args` anti-hallucination builder, parsers). Anti-hallucination defaults fixed: Silero VAD + greedy (temperature 0, `--no-fallback`) + `--max-context 0`. `app/src-tauri/src/stt.rs`. → [speech-to-text.md](specs/speech-to-text.md), [REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md) · [ADR-003](specs/architecture.md#adr-003-whisper-stt), [ADR-004](specs/architecture.md#adr-004-warm-resident-stt), [ADR-007](specs/architecture.md#adr-007-on-demand-models--anti-hallucination)
-- ⬜ **Deterministic cleanup** — a pure Rust module: filler-word stoplist (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence-case/capitalization fixer. Always-on, fidelity-safe; cargo-tested rules. `app/src-tauri/src/cleanup.rs`. → [text-cleanup.md](specs/text-cleanup.md) · [ADR-008](specs/architecture.md#adr-008-hybrid-text-intelligence)
-- ⬜ **Windows text injection** — `enigo` SendInput Unicode keystrokes (default) + `arboard` clipboard + simulated Ctrl+V fallback for long text (save & restore the user's clipboard), behind a Rust trait with a runtime-selected backend. `app/src-tauri/src/inject.rs`. → [text-injection.md](specs/text-injection.md) · [ADR-005](specs/architecture.md#adr-005-system-wide-text-injection)
+- ✅ **Warm whisper-server STT** — resident/warm model loaded once via a **whisper-server** sidecar (ADR-004 revised MVP default, cmake-free; **whisper-rs in-process** is the later optimization behind the same seam), NOT a cold `whisper-cli` spawn per utterance. On-demand model download from Hugging Face to app-data with a download gate, `.part` rename, streamed progress via a Tauri `Channel` — **reused/adapted from Toolzy's `transcription.rs`** (MODELS registry, `model_url`/`model_filename`, parsers). Per-request anti-hallucination fixed: greedy (temperature 0, no fallback ladder) + independent per-utterance `/inference`; Silero VAD model fetched alongside the model. Warm lifecycle (spawn/wait/drop), in-memory `transcribe_chunk`, and the `warm_status` command are complete + tested. `app/src-tauri/src/stt.rs`. Remaining: wire `transcribe_chunk` into the live dictation orchestrator (capture → VAD → STT → cleanup → inject) + cancellation — the orchestrator (`dictation.rs`) does not exist yet. → [speech-to-text.md](specs/speech-to-text.md), [REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md) · [ADR-003](specs/architecture.md#adr-003-whisper-stt), [ADR-004](specs/architecture.md#adr-004-warm-resident-stt), [ADR-007](specs/architecture.md#adr-007-on-demand-models--anti-hallucination)
+- ✅ **Deterministic cleanup** — a pure Rust module: filler-word stoplist (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence-case/capitalization fixer, light number spacing, optional trailing period. Always-on, fidelity-safe; per-language (pt-BR/En/Other) rule sets; cargo-tested rules. `app/src-tauri/src/cleanup.rs`. → [text-cleanup.md](specs/text-cleanup.md) · [ADR-008](specs/architecture.md#adr-008-hybrid-text-intelligence)
+- 🚧 **Windows text injection** — `enigo` SendInput Unicode keystrokes (default) + `arboard` clipboard + simulated Ctrl+V fallback for long text (save & restore the user's clipboard), behind the `TextInjector` trait with a runtime-selected backend; grapheme-safe chunking + `pick_backend` Auto decision, all cargo-tested; `inject_text` command registered. `app/src-tauri/src/inject.rs`. Remaining: focused-target + elevated-window (UIPI) detection (Rules 6–7, need Win32) wired during the orchestrator stage. → [text-injection.md](specs/text-injection.md) · [ADR-005](specs/architecture.md#adr-005-system-wide-text-injection)
 - ⬜ **Global PTT hotkey** — `global-hotkey` crate, push-to-talk that works while unfocused; press-and-hold + toggle modes. `app/src-tauri/src/hotkey.rs`. → [hotkeys.md](specs/hotkeys.md) · [ADR-005](specs/architecture.md#adr-005-system-wide-text-injection)
 - ⬜ **System tray + floating mic HUD** — `tray-icon` crate for the tray; a dark translucent always-on-top mic HUD with the listening → transcribing → inserting → error state machine and a live waveform/level meter. → [tray-and-hud.md](specs/tray-and-hud.md), [design-system.md](specs/design-system.md)
 - ⬜ **Wire the end-to-end pipeline** — orchestrate hotkey → capture → VAD → warm STT → cleanup → inject, with HUD state transitions and cancel. → [dictation.md](specs/dictation.md) · [ADR-004](specs/architecture.md#adr-004-warm-resident-stt)

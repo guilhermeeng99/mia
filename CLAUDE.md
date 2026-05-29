@@ -1,7 +1,7 @@
 # MIA — Project Conventions
 
-> **Status**: Draft / Planned (Phase 0 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing (cleanup, warm STT, injection wired into the command registry). Phase 0 docs complete. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Last updated**: 2026-05-29
 > **Environment**: desktop (Windows, native)
 
 Free, open-source, **privacy-first, local** voice-to-text **dictation** app for **Windows**.
