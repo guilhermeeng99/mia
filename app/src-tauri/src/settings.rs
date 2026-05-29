@@ -376,14 +376,15 @@ pub fn get_settings(state: State<'_, SettingsState>) -> Result<Settings, String>
     state.get()
 }
 
-/// Merge a patch, validate, persist atomically, update the in-memory copy. Side
-/// effects (hotkey re-register, warm-model swap, launch-at-login) land as those
-/// subsystems are wired (§2) — for now this validates + persists.
+/// Merge a patch, validate, persist atomically, update the in-memory copy, and apply
+/// the runtime side effects of changed groups (§2): re-register the PTT hotkey and
+/// invalidate the warm engine on a model change. (launch-at-login lands in Phase 4.)
 #[tauri::command]
 pub fn update_settings(
     app: AppHandle,
     state: State<'_, SettingsState>,
     hotkey: State<'_, crate::hotkey::HotkeyRuntime>,
+    stt: State<'_, crate::stt::SttState>,
     patch: SettingsPatch,
 ) -> Result<Settings, String> {
     let current = state.get()?;
@@ -392,6 +393,12 @@ pub fn update_settings(
     // so a conflicting chord is rejected and the old binding/config stays (Rule 8).
     if next.hotkey != current.hotkey {
         crate::hotkey::register_hotkey(app.clone(), hotkey, next.hotkey.clone())?;
+    }
+    // Side effect: a model change invalidates the warm engine. Drop it so the next
+    // dictation warms the newly chosen model — a lazy swap, avoiding a multi-second
+    // server spawn inside this settings write. warm_status reflects it immediately.
+    if next.model.model != current.model.model {
+        let _ = crate::stt::unload(&stt);
     }
     save_settings(&app, &next)?;
     state.set(next.clone())?;
