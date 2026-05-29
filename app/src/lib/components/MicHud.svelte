@@ -3,7 +3,7 @@
   // §8b). Presentation only: the dictation orchestrator drives `state` + `level`
   // (RMS 0–1) over a Tauri event; this component just renders. The dedicated
   // transparent HUD window (hud.rs + tauri.conf) that mounts it is runtime-pending.
-  type HudState = "listening" | "transcribing" | "inserting" | "error";
+  type HudState = "idle" | "listening" | "transcribing" | "inserting" | "error";
 
   interface Props {
     state?: HudState;
@@ -21,7 +21,7 @@
   }
 
   const label = $derived(
-    state === "listening"
+    state === "listening" || state === "idle"
       ? "Ouvindo…"
       : state === "transcribing"
         ? "Transcrevendo…"
@@ -36,7 +36,7 @@
          px-4 py-2 text-hud-text shadow-hud select-none"
   data-state={state}
 >
-  {#if state === "listening"}
+  {#if state === "listening" || state === "idle"}
     <span class="flex items-end gap-1 h-6" aria-hidden="true">
       {#each bars as mult, i (i)}
         <span

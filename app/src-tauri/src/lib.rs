@@ -36,11 +36,27 @@ pub fn run() {
         // every utterance (ADR-004) — never a cold spawn per utterance.
         .manage(stt::SttState::default())
         .manage(audio::CaptureState::default())
+        // Global push-to-talk: the plugin delivers key edges; the handler runs the
+        // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    hotkey::on_shortcut_event(
+                        app,
+                        matches!(event.state, tauri_plugin_global_shortcut::ShortcutState::Pressed),
+                    );
+                })
+                .build(),
+        )
         .setup(|app| {
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             let loaded = settings::load_settings(app.handle());
+            let hk_cfg = loaded.hotkey.clone();
             app.manage(settings::SettingsState::new(loaded));
+            // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
+            app.manage(hotkey::HotkeyRuntime::new(hk_cfg.clone()));
+            hotkey::register_initial(app.handle(), &hk_cfg);
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
             app.manage(stats::StatsState::new(stats));
@@ -59,6 +75,10 @@ pub fn run() {
             dictation::start_dictation,
             dictation::stop_dictation,
             dictation::cancel_dictation,
+            hotkey::register_hotkey,
+            hotkey::unregister_hotkey,
+            hotkey::update_hotkey,
+            hotkey::get_hotkey,
             dictionary::dict_list,
             dictionary::dict_add,
             dictionary::dict_update,

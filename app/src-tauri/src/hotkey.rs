@@ -11,7 +11,12 @@
 //! commands convert `Accel` to the crate's `(Modifiers, Code)` at the boundary and
 //! land in the orchestrator stage (§2/§5 — runtime-pending).
 
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
 /// Default PTT chord — `Ctrl + Space`. A modifier-anchored chord with a real key
 /// (a modifier-only chord like `Ctrl+Win` is not registrable via `RegisterHotKey`),
@@ -294,6 +299,145 @@ fn reduce_press_to_toggle(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversion to the global-hotkey crate's Shortcut (pure; the runtime registration
+// in lib.rs consumes this). Tested for the mapping; OS registration is validated
+// on Windows.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Map a canonical key token (`"A"`, `"Space"`, `"F8"`, `"Up"`, …) to the crate's
+/// `Code`, reusing keyboard_types' `FromStr` over the W3C code names.
+pub fn key_to_code(key: &str) -> Option<Code> {
+    let variant = if key.len() == 1 && key.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        format!("Key{}", key.to_ascii_uppercase())
+    } else if key.len() == 1 && key.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("Digit{key}")
+    } else {
+        match key {
+            "Up" => "ArrowUp".to_string(),
+            "Down" => "ArrowDown".to_string(),
+            "Left" => "ArrowLeft".to_string(),
+            "Right" => "ArrowRight".to_string(),
+            other => other.to_string(), // Space / Tab / Enter / Escape / Delete / F1..F24
+        }
+    };
+    variant.parse::<Code>().ok()
+}
+
+/// Convert a parsed `Accel` into a registrable `Shortcut` (needs a non-modifier key;
+/// a modifier-only chord is not registrable — Rule 5 / Ctrl+Space default).
+pub fn to_shortcut(accel: &Accel) -> Result<Shortcut, String> {
+    let mut mods = Modifiers::empty();
+    if accel.mods.ctrl {
+        mods |= Modifiers::CONTROL;
+    }
+    if accel.mods.alt {
+        mods |= Modifiers::ALT;
+    }
+    if accel.mods.shift {
+        mods |= Modifiers::SHIFT;
+    }
+    if accel.mods.sup {
+        mods |= Modifiers::SUPER;
+    }
+    let key = accel.key.as_deref().ok_or("hotkey must include a key")?;
+    let code = key_to_code(key).ok_or_else(|| format!("unparseable hotkey: {key}"))?;
+    Ok(Shortcut::new(Some(mods), code))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Runtime registration + event loop (global-hotkey plugin; validated on Windows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Managed runtime state: the active config + the reducer's edge tracker.
+pub struct HotkeyRuntime {
+    cfg: Mutex<HotkeyConfig>,
+    edge: Mutex<EdgeState>,
+}
+
+impl HotkeyRuntime {
+    pub fn new(cfg: HotkeyConfig) -> Self {
+        Self { cfg: Mutex::new(cfg), edge: Mutex::new(EdgeState::default()) }
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Drive the pure `reduce` from a raw global-shortcut edge and emit the resulting
+/// intent to the frontend over the `dictation://intent` Tauri event. Called by the
+/// plugin handler in `lib.rs`.
+pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
+    let Some(rt) = app.try_state::<HotkeyRuntime>() else {
+        return;
+    };
+    let Ok(mode) = rt.cfg.lock().map(|c| c.mode) else {
+        return;
+    };
+    let edge = if pressed { RawEdge::Pressed } else { RawEdge::Released };
+    let intent = {
+        let Ok(mut e) = rt.edge.lock() else { return };
+        let (next, intent) = reduce(*e, edge, mode, now_ms(), DEBOUNCE_MS);
+        *e = next;
+        intent
+    };
+    if let Some(intent) = intent {
+        let _ = app.emit("dictation://intent", intent);
+    }
+}
+
+/// Register `cfg`'s chord, replacing any prior registration (Rule 1; rolls back the
+/// stored config only after the OS accepts the new chord).
+#[tauri::command]
+pub fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+    let accel = parse_accelerator(&cfg.accelerator)?;
+    if is_reserved(&accel) {
+        return Err(format!("hotkey already in use by the system or another app: {}", cfg.accelerator));
+    }
+    let shortcut = to_shortcut(&accel)?;
+    let gs = app.global_shortcut();
+    let prev = rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone();
+    if let Ok(prev_sc) = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)) {
+        let _ = gs.unregister(prev_sc);
+    }
+    gs.register(shortcut)
+        .map_err(|e| format!("hotkey already in use by the system or another app: {e}"))?;
+    *rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())? = cfg;
+    *rt.edge.lock().map_err(|_| "hotkey state poisoned".to_string())? = EdgeState::default();
+    Ok(())
+}
+
+/// Unregister the active chord (idempotent).
+#[tauri::command]
+pub fn unregister_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>) -> Result<(), String> {
+    let prev = rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone();
+    if let Ok(sc) = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)) {
+        let _ = app.global_shortcut().unregister(sc);
+    }
+    Ok(())
+}
+
+/// = unregister + register (persists only on OS acceptance).
+#[tauri::command]
+pub fn update_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+    register_hotkey(app, rt, cfg)
+}
+
+/// The active chord + mode.
+#[tauri::command]
+pub fn get_hotkey(rt: State<'_, HotkeyRuntime>) -> Result<HotkeyConfig, String> {
+    Ok(rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone())
+}
+
+/// Best-effort startup registration from the saved config (Rule 14: a conflict
+/// leaves the chord unregistered rather than stealing a different key).
+pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
+    if let Ok(sc) = parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) {
+        let _ = app.global_shortcut().register(sc);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,6 +543,25 @@ mod tests {
         let s0 = EdgeState::default();
         let (_s, i) = reduce(s0, RawEdge::Released, ActivationMode::PushToHold, 100, DEBOUNCE_MS);
         assert_eq!(i, None);
+    }
+
+    #[test]
+    fn key_to_code_maps_known_keys() {
+        assert!(key_to_code("Space").is_some());
+        assert!(key_to_code("A").is_some());
+        assert!(key_to_code("F8").is_some());
+        assert!(key_to_code("Up").is_some());
+        assert!(key_to_code("1").is_some());
+        assert!(key_to_code("Nope").is_none());
+    }
+
+    #[test]
+    fn to_shortcut_needs_a_key() {
+        assert!(to_shortcut(&accel("Ctrl+Space")).is_ok());
+        assert!(to_shortcut(&accel("Ctrl+Shift+D")).is_ok());
+        // A modifier-only chord has no key → not registrable.
+        let mods_only = Accel { mods: Mods { ctrl: true, sup: true, ..Default::default() }, key: None };
+        assert!(to_shortcut(&mods_only).is_err());
     }
 
     #[test]

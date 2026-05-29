@@ -1,6 +1,6 @@
 # Hotkeys Feature Spec
 
-> **Status**: Phase 1 — pure core implemented & cargo-tested in `hotkey.rs`: `parse_accelerator` / `to_canonical` (round-trips, exact error messages), `is_bare_key` / `is_reserved` guards, and the debounce + activation-mode `reduce()` reducer (Rules 3/4/9/10). Runtime-pending: `GlobalHotKeyManager` registration, the `WM_HOTKEY` event loop, the commands (`register/unregister/update/get/check`, recorder), `Esc`-cancel, and the missing-release watchdog.
+> **Status**: Phase 1 — pure core + runtime both implemented. Pure (cargo-tested): `parse_accelerator`/`to_canonical`, `is_bare_key`/`is_reserved`, `reduce` (Rules 3/4/9/10), and `key_to_code`/`to_shortcut`. Runtime (compile/build-verified, validated on Windows): registration via `tauri-plugin-global-shortcut`, the handler that runs `reduce` and emits `dictation://intent`, startup registration (Rule 14), and the `register/unregister/update/get_hotkey` commands. The frontend (`ptt.ts`) drives the orchestrator off the intent. Runtime-pending: the `Esc`-cancel transient binding, the missing-release watchdog, and the Settings hotkey-recorder + conflict-probe.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
