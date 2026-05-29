@@ -62,7 +62,7 @@ Optional, opt-in **local** intelligence via **llama.cpp** — Qwen2.5-3B-Instruc
 
 ### Phase 3 — Personalization ⬜
 
-- ⬜ **Custom dictionary** — personal vocabulary / word replacement (names, jargon, acronyms). → [custom-dictionary.md](specs/custom-dictionary.md)
+- 🚧 **Custom dictionary** — personal vocabulary / word replacement (names, jargon, acronyms). Pure mechanism-(a) core in `dictionary.rs` cargo-tested (`apply_dictionary` exact/case/whole-word/multi-word/fuzzy/longest-match/idempotent, `match_case`, `fuzzy_match`, `build_bias_prompt`, `validate_entry`; Rules 1-13). Remaining: CRUD commands + `dictionary.json` persistence + bias-prompt wiring into the warm-Whisper call. → [custom-dictionary.md](specs/custom-dictionary.md)
 - ⬜ **Snippets** — voice-triggered text expansion. → [snippets.md](specs/snippets.md)
 - ⬜ **Per-app writing styles / context** — style or context selection keyed to the focused application.
 

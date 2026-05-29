@@ -1,7 +1,7 @@
 # Custom Dictionary (Personal Vocabulary) Feature Spec
 
-> **Status**: Draft / Planned (Phase 3 — docs being written; no code exists yet)
-> **Last updated**: 2026-05-28
+> **Status**: Phase 3 — pure mechanism-(a) core implemented & cargo-tested in `dictionary.rs`: `apply_dictionary` (exact / case / whole-word / multi-word / fuzzy / longest-match / idempotent), `match_case`, `osa_distance`+`fuzzy_match`, `build_bias_prompt`, `validate_entry` (Rules 1-13). Runtime-pending: the CRUD commands + `dictionary.json` persistence + managed state, cross-entry duplicate rejection, and wiring the bias prompt into the warm-Whisper call.
+> **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted (engine contract + business rules are the load-bearing parts)
 > **Environment**: desktop (Windows, native)
 
@@ -307,16 +307,16 @@ Hub "Dictionary" panel:
 ## 8. Testing Checklist
 
 - **Rust** (`cargo test`, no I/O — pure helpers only):
-  - [ ] `apply_dictionary`: exact, case-insensitive, case-sensitive, whole-word vs partial, multi-word
+  - [x] `apply_dictionary`: exact, case-insensitive, case-sensitive, whole-word vs partial, multi-word
         phrase variants (Rules 1-6).
-  - [ ] `match_case`: verbatim brand output, sentence-start capital carry-over (Rules 2-4).
-  - [ ] `fuzzy_match`: hits within distance, misses beyond it, short-token floor, exact-over-fuzzy
+  - [x] `match_case`: verbatim brand output, sentence-start capital carry-over (Rules 2-4).
+  - [x] `fuzzy_match`: hits within distance, misses beyond it, short-token floor, exact-over-fuzzy
         priority (Rules 7-8).
-  - [ ] overlap/longest-match resolution and no-re-match-in-replaced-span (Rule 9).
-  - [ ] idempotency: `apply_dictionary(apply_dictionary(x)) == apply_dictionary(x)` (Rule 10).
-  - [ ] disabled/empty dictionary is a no-op (Rule 11).
-  - [ ] `validate_entry`: empty replacement, duplicate variant, over-length → correct `Err(String)` (Rule 12).
-  - [ ] `build_bias_prompt`: respects `biasEnabled`, `biasPrompt` per entry, and `biasMaxTerms` cap (Rule 13).
+  - [x] overlap/longest-match resolution and no-re-match-in-replaced-span (Rule 9).
+  - [x] idempotency: `apply_dictionary(apply_dictionary(x)) == apply_dictionary(x)` (Rule 10).
+  - [x] disabled/empty dictionary is a no-op (Rule 11).
+  - [x] `validate_entry`: empty replacement, over-length → correct `Err(String)` (Rule 12). (Duplicate-variant rejection is command-level, pending CRUD.)
+  - [x] `build_bias_prompt`: respects `biasEnabled`, `biasPrompt` per entry, and `biasMaxTerms` cap (Rule 13).
 - **Manual / runtime** (needs mic, model, a real focused app):
   - [ ] add a term, dictate it (pt-BR and English), confirm correct spelling/casing appears at cursor.
   - [ ] case-sensitive term does not clobber the common lowercase word.
