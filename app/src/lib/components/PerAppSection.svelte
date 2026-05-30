@@ -12,6 +12,7 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import PageHeader from "./ui/PageHeader.svelte";
+  import ErrorBanner from "./ui/ErrorBanner.svelte";
   import Toggle from "./ui/Toggle.svelte";
   import { inputClass, selectClass } from "./ui/inputClass";
 
@@ -85,11 +86,7 @@
   {/snippet}
 </PageHeader>
 
-{#if error}
-  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
-    <p class="text-body-lg text-danger">⚠ {error}</p>
-  </div>
-{/if}
+<ErrorBanner message={error} />
 
 <Card>
   <p class="text-body text-ink-soft">

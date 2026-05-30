@@ -1,7 +1,7 @@
 # Architecture & Decision Records
 
-> **Status**: Phase 1 (Core Dictation MVP) in progress — engine modules landing; ADRs accepted
-> **Last updated**: 2026-05-29
+> **Status**: Phases 0/1/3 code-complete and validated on Windows; Phase 4 (polish & distribution — signed auto-update + on-demand CUDA + release pipeline) done with signed releases live; Phase 2 (AI) descoped by product decision; ADRs accepted
+> **Last updated**: 2026-05-30
 > **Environment**: desktop (Windows, native)
 > Cross-cutting design + the rationale (ADRs) behind the big choices. Feature-level contracts
 > live in sibling specs (see the [file list](#cross-references)); start new ones from
@@ -27,8 +27,11 @@ no dictation logic and only calls typed `invoke()` wrappers (one per command gro
 ```
               ┌──────────────────────────────────────────┐
               │        app/src  (Svelte 5 + Vite + TS)    │  ← thin webview UI
-              │  Settings/Hub (light) · Onboarding ·       │    (WebView2)
-              │  Floating mic HUD (dark)                   │
+              │  Settings/Hub · Onboarding ·               │    (WebView2)
+              │  Floating mic HUD (Blush — white outlined  │
+              │    pill) — one Blush language both surfaces│
+              │  Hub.svelte = sidebar + per-view shell      │
+              │    (lib/components/views/)                  │
               │  components → lib/*.ts invoke() wrappers    │
               └─────────────────────┬──────────────────────┘
                                     │ invoke() (IPC)  ·  Result<T, String>

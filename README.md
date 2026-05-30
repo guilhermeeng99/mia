@@ -7,7 +7,7 @@
 Open-source, local, privacy-first voice dictation for Windows — an offline alternative to [Wispr Flow](https://wisprflow.ai).
 
 > **Status**: Phases 0, 1, and 3 are **code-complete** and the core loop is **validated on Windows end-to-end**: global PTT → cpal capture → **server-side Silero-VAD-gated** warm whisper-server → deterministic cleanup → SendInput injection, in pt-BR + English, with the floating HUD reflecting each phase. Phase 4 (Polish & Distribution) is **done** — signed in-app auto-update and the optional **NVIDIA CUDA** engine (validated on an RTX 4050) ship, and `release.yml` auto-cuts a signed installer + `latest.json` on every push to `main` (see [Releases](../../releases) for the latest). Phase 2 (AI Command Mode / Polish) is **descoped** — MIA stays a faithful dictation tool. See [docs/ROADMAP.md](docs/ROADMAP.md) for per-feature status.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Environment**: desktop (Windows, native)
 
 Press a global hotkey (push-to-talk), speak, and MIA types polished text at your cursor — in whatever app is focused. Everything runs on your machine. No cloud, no account, no server. Your voice never leaves the device.
@@ -42,7 +42,7 @@ Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlo
 - ✅ Focused-target + elevated-window (UIPI) injection detection is wired; on-device UAC validation is owner-gated. A dictation session ends only on an explicit user action (hotkey release / 2nd toggle press) — never on silence.
 
 ### AI magic (Phase 2 — ❌ Descoped)
-**Dropped by product decision (2026-05-29):** MIA stays a faithful, deterministic dictation tool — the local-LLM Command Mode / Polish layer is **not** wanted. A runtime (warm `llama-server` + GGUF download) was built and then **reverted**; only the pure, cargo-tested helpers remain dormant in `ai_commands.rs`, wired to nothing. If AI is ever reconsidered, that core is the starting point.
+**Dropped by product decision (2026-05-29):** MIA stays a faithful, deterministic dictation tool — the local-LLM Command Mode / Polish layer is **not** wanted. A runtime (warm `llama-server` + GGUF download) was built and then **reverted**, and the pure helpers in `ai_commands.rs` have since been removed from the engine — the design is preserved in [docs/specs/ai-commands.md](docs/specs/ai-commands.md) and git history. If AI is ever reconsidered, that record is the starting point.
 
 ### Personalization (Phase 3 — ✅ Code-complete)
 - ✅ Custom dictionary / personal vocabulary and word replacement (pure core + CRUD commands + Hub section + bias-prompt wired into warm Whisper).
@@ -140,7 +140,7 @@ The phased plan lives in [docs/ROADMAP.md](docs/ROADMAP.md).
 - [CLAUDE.md](CLAUDE.md) — project conventions and quick reference.
 - [docs/specs/](docs/specs/) — the spec set, including:
   - [architecture.md](docs/specs/architecture.md) — decision records (ADR-001…011).
-  - [design-system.md](docs/specs/design-system.md) — the "Calm Focus" design system.
+  - [design-system.md](docs/specs/design-system.md) — the "Blush Playground" (Lpalo) design system.
   - [dictation.md](docs/specs/dictation.md) — core orchestration.
   - [speech-to-text.md](docs/specs/speech-to-text.md) — Whisper engine, models, GPU, VAD.
   - [audio-capture.md](docs/specs/audio-capture.md) · [text-injection.md](docs/specs/text-injection.md) · [text-cleanup.md](docs/specs/text-cleanup.md) · [hotkeys.md](docs/specs/hotkeys.md) · [tray-and-hud.md](docs/specs/tray-and-hud.md) · [onboarding.md](docs/specs/onboarding.md) · [settings.md](docs/specs/settings.md) · [custom-dictionary.md](docs/specs/custom-dictionary.md) · [snippets.md](docs/specs/snippets.md) · [per-app-context.md](docs/specs/per-app-context.md) · [ai-commands.md](docs/specs/ai-commands.md)

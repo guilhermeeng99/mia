@@ -392,27 +392,41 @@ fn collapse_repeats(s: &str) -> String {
 // Rule 4 — Whitespace normalization (always on)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn cached(slot: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    slot.get_or_init(|| Regex::new(pattern).expect("valid regex"))
+/// Compile-once, apply-once regex replace. WHY `Option` + skip instead of `expect`:
+/// `clean()` runs inside the `stop_dictation` command, and ADR-006 forbids a panic
+/// crossing the IPC boundary — so a (developer-only) malformed pattern degrades to
+/// "skip this normalization stage" rather than panicking. Every `pattern` here is a
+/// static literal covered by tests, so the `None` branch is unreachable at runtime; it
+/// exists purely to uphold the no-panic rule.
+fn re_replace(
+    slot: &'static OnceLock<Option<Regex>>,
+    pattern: &'static str,
+    hay: &str,
+    rep: &str,
+) -> String {
+    match slot.get_or_init(|| Regex::new(pattern).ok()) {
+        Some(re) => re.replace_all(hay, rep).into_owned(),
+        None => hay.to_string(),
+    }
 }
 
 fn normalize_whitespace(s: &str) -> String {
-    static SPACE_BEFORE: OnceLock<Regex> = OnceLock::new();
-    static AFTER_OPEN: OnceLock<Regex> = OnceLock::new();
-    static MULTISPACE: OnceLock<Regex> = OnceLock::new();
-    static MULTINL: OnceLock<Regex> = OnceLock::new();
+    static SPACE_BEFORE: OnceLock<Option<Regex>> = OnceLock::new();
+    static AFTER_OPEN: OnceLock<Option<Regex>> = OnceLock::new();
+    static MULTISPACE: OnceLock<Option<Regex>> = OnceLock::new();
+    static MULTINL: OnceLock<Option<Regex>> = OnceLock::new();
 
     let s = s.replace('\t', " ");
     // No space before terminators / closing brackets.
-    let s = cached(&SPACE_BEFORE, r" +([.,;:?!…)\]])").replace_all(&s, "$1").into_owned();
+    let s = re_replace(&SPACE_BEFORE, r" +([.,;:?!…)\]])", &s, "$1");
     // No space right after an opening bracket.
-    let s = cached(&AFTER_OPEN, r"([(\[]) +").replace_all(&s, "$1").into_owned();
+    let s = re_replace(&AFTER_OPEN, r"([(\[]) +", &s, "$1");
     // Collapse runs of spaces.
-    let s = cached(&MULTISPACE, r"  +").replace_all(&s, " ").into_owned();
+    let s = re_replace(&MULTISPACE, r"  +", &s, " ");
     // Trim each line (kills space-before-newline and leading line space).
     let s = s.split('\n').map(str::trim).collect::<Vec<_>>().join("\n");
     // Collapse 3+ newlines to a paragraph break.
-    let s = cached(&MULTINL, r"\n{3,}").replace_all(&s, "\n\n").into_owned();
+    let s = re_replace(&MULTINL, r"\n{3,}", &s, "\n\n");
     s.trim().to_string()
 }
 
@@ -444,8 +458,8 @@ fn fix_capitalization(s: &str, lang: Lang) -> String {
 
 /// Standalone English `i` (incl. contractions `i'm`, `i'll`) → `I`. En only.
 fn capitalize_pronoun_i(s: &str) -> String {
-    static I_WORD: OnceLock<Regex> = OnceLock::new();
-    cached(&I_WORD, r"\bi\b").replace_all(s, "I").into_owned()
+    static I_WORD: OnceLock<Option<Regex>> = OnceLock::new();
+    re_replace(&I_WORD, r"\bi\b", s, "I")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -453,13 +467,13 @@ fn capitalize_pronoun_i(s: &str) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn normalize_numbers(s: &str, lang: Lang) -> String {
-    static PT_DEC: OnceLock<Regex> = OnceLock::new();
-    static EN_DEC: OnceLock<Regex> = OnceLock::new();
+    static PT_DEC: OnceLock<Option<Regex>> = OnceLock::new();
+    static EN_DEC: OnceLock<Option<Regex>> = OnceLock::new();
     match lang {
         // pt decimal comma: "3 , 14" → "3,14"
-        Lang::PtBr => cached(&PT_DEC, r"(\d) *, *(\d)").replace_all(s, "$1,$2").into_owned(),
+        Lang::PtBr => re_replace(&PT_DEC, r"(\d) *, *(\d)", s, "$1,$2"),
         // en decimal point: "3 . 14" → "3.14"
-        Lang::En => cached(&EN_DEC, r"(\d) *\. *(\d)").replace_all(s, "$1.$2").into_owned(),
+        Lang::En => re_replace(&EN_DEC, r"(\d) *\. *(\d)", s, "$1.$2"),
         Lang::Other => s.to_string(),
     }
 }
@@ -615,6 +629,17 @@ mod tests {
     fn broken_word_stutter_collapses() {
         assert_eq!(collapse_repeats("th-the cat"), "the cat");
         assert_eq!(collapse_repeats("wh-what is it"), "what is it");
+    }
+
+    #[test]
+    fn destutter_token_only_collapses_a_true_prefix_stutter() {
+        // Positive: left is a strict alphabetic prefix of the right → collapse.
+        assert_eq!(destutter_token("th-the"), "the");
+        // Negative guards: a real hyphenated compound must survive untouched.
+        assert_eq!(destutter_token("well-known"), "well-known"); // left not a prefix of right
+        assert_eq!(destutter_token("ab-cd"), "ab-cd"); // no prefix relation
+        assert_eq!(destutter_token("a-b-c"), "a-b-c"); // a second hyphen disqualifies it
+        assert_eq!(destutter_token("the-the"), "the-the"); // left.len() >= right.len()
     }
 
     #[test]

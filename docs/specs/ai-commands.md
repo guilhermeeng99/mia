@@ -3,11 +3,14 @@
 > **Status**: ❌ **DESCOPED (product decision, 2026-05-29).** MIA stays a faithful,
 > deterministic dictation tool — this local-LLM layer is not part of the product. A
 > runtime (warm `llama-server` + GGUF download + `run_command`/`polish`) was built and
-> then reverted; only the pure, cargo-tested helpers (`route_intent`, `command_grammar`,
-> `build_prompt`, `validate_parsed`, `Intent`/`ParsedCommand`) remain **dormant** in
-> `ai_commands.rs`, wired to nothing. This spec is retained as the design of record in
+> then reverted; the pure, cargo-tested helpers (`route_intent`, `command_grammar`,
+> `build_prompt`, `validate_parsed`, `Intent`/`ParsedCommand`) lived **dormant** in
+> `ai_commands.rs`, wired to nothing.
+> **Note (2026-05-30)**: the dormant `ai_commands.rs` helpers (and the `AiSettings`/`AiModel`
+> settings group) have now been **removed from the engine** — this spec plus git history are
+> the design of record; the feature remains descoped. This spec is retained in
 > case AI is ever reconsidered; nothing below is shipped.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -280,10 +283,10 @@ Live dictation stays **latency-critical**; this tier must not bleak its cost ont
 
 ## 6. UI States
 
-Two surfaces: the **floating mic HUD** (dark, translucent, always-on-top —
-[tray-and-hud.md](tray-and-hud.md)) for the live transform, and the **Settings/Hub window** (light
-theme — [settings.md](settings.md), [design-system.md](design-system.md)) for enabling, model
-management, and stats.
+Two surfaces: the **floating mic HUD** (a solid white Blush pill — white, 2px charcoal outline,
+always-on-top — [tray-and-hud.md](tray-and-hud.md)) for the live transform, and the **Settings/Hub
+window** (the Blush Playground design — [settings.md](settings.md),
+[design-system.md](design-system.md)) for enabling, model management, and stats.
 
 ```
 States (transform): Idle → [router: Command/Polish] → LoadingModel(spinner, first use only)
@@ -296,8 +299,9 @@ Model lifecycle (Settings): NotInstalled → Downloading(%) → Installed(Unload
 - **HUD** (while transforming): a distinct **"thinking"** state (spinner) separate from STT's
   *Transcribing*, a one-time **"loading model"** state on a cold start, a brief **check** on apply,
   and an **Undo** affordance for `undo_window_secs` (Rule 10). Errors (Rule 7, ambiguous/timeout)
-  show a short message; the text is never altered on error. Keep the single action-blue accent and
-  the listening-pulse discipline; nothing of the LLM output renders in the HUD beyond status.
+  show a short message; the text is never altered on error. Keep the single pumpkin accent (the
+  HUD waveform/focus ring) and the listening-pulse discipline; nothing of the LLM output renders in
+  the HUD beyond status.
 - **Settings/Hub** ("AI Magic" panel): master toggle, model picker + **download gate** with progress
   (Rule 3), Command Mode + trigger config, Polish toggle + tone, delivery/undo/idle options, the
   current `ai_status` (installed / loaded / RAM), an explicit **Unload model** button, and a clear

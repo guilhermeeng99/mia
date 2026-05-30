@@ -1,7 +1,7 @@
 # Text Injection Feature Spec
 
 > **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the `inject_text` command (registered in `lib.rs`), all cargo-tested. **Rules 6–7 now wired** in the orchestrator via `win32.rs`: an elevated/UAC target (token-elevation probe) returns the run-as-administrator error (Rule 7), and no detectable foreground window falls back to the clipboard backend (Rule 6, best-effort — full editable-target/UIAutomation detection stays out of scope). On-device UAC validation is owner-gated.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
 
@@ -204,7 +204,7 @@ STT anti-hallucination defaults are fixed elsewhere (ADR-007; see
 
 ## 6. UI States
 
-Injection is the **Inserting** state of the dictation HUD state machine (dark, translucent,
+Injection is the **Inserting** state of the dictation HUD state machine (white Blush pill,
 always-on-top). See [tray-and-hud.md](tray-and-hud.md) and [design-system.md](design-system.md).
 
 ```
@@ -214,7 +214,7 @@ Transitions: cleaned text ready → Inserting; inject Ok(()) → brief check →
              inject Err → Error(message) shown in HUD, then Idle
 ```
 
-- **HUD** (while dictating): `Inserting` shows the brief action-blue check; an `Err` flips to the
+- **HUD** (while dictating): `Inserting` shows the brief success-token ✓ check; an `Err` flips to the
   error state with a one-line message ("Window is elevated — run MIA as admin", "Copied to clipboard
   — no field focused"). Single action color; ≥40px hit targets on any actionable toast; never rely on
   color alone (icon + text).

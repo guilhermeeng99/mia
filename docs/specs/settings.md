@@ -1,11 +1,11 @@
 # Settings & "The Hub" Feature Spec
 
 > **Status**: Phase 1 — `settings.rs` persistence implemented: the full `Settings` tree (§4) with per-group defaults + `schemaVersion`, the pure `apply_patch` / `validate` / `migrate` / `parse_settings` core (cargo-tested), failure-safe `load_settings` (missing → defaults; corrupt → defaults + sidelined backup), atomic `save_settings`, and the `get/update/reset_settings` commands wired into the handler + a managed `SettingsState` loaded at startup. Typed `settings.ts` wrapper. `update_settings` re-registers the PTT hotkey when it changes (Rule 8, before persisting), invalidates the warm engine on a model change, and syncs launch-at-login. The mic test now streams a **live level meter** (`test_microphone` takes a `Channel<CaptureEvent>`; the Hub + onboarding render a live bar). New group: the `perApp` group (per-app writing styles — see [per-app-context.md](per-app-context.md)). The signed updater is wired (ADR-009).
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted. Phase 2 (AI tab) and Phase 4 (auto-update, stats) sections are forward-looking.
 > **Environment**: desktop (Windows, native)
 
-The **Settings window** is MIA's one and only real window — a light-theme [Calm Focus](design-system.md)
+The **Settings window** is MIA's one and only real window — the [Blush Playground](design-system.md)
 surface that the user opens from the system tray. It is "The Hub": a sidebar-navigated dashboard
 that hosts every user-facing control (general behavior, hotkey, model/engine, audio device,
 cleanup rules, dictionary, snippets, AI, about/updates) plus a small **local-only usage stats**
@@ -310,10 +310,10 @@ exercised here except via deliberate model/engine swaps.
 
 ## 6. UI States
 
-The Hub is a **light-theme window** ([design-system.md](design-system.md#8a-settings--hub-window-light));
-it owns no HUD state (the floating mic HUD is a separate dark surface — see
-[tray-and-hud.md](tray-and-hud.md)). Its states are per-section data states plus a global
-load/error.
+The Hub is a **Blush Playground window** ([design-system.md](design-system.md#8a-settings--hub-window-light));
+it owns no HUD state (the floating mic HUD is a white Blush pill — white, 2px charcoal outline —
+sharing the one Blush language, see [tray-and-hud.md](tray-and-hud.md)). Its states are
+per-section data states plus a global load/error.
 
 ```
 Window: Loading(settings fetch) → Ready(sections interactive) → SavingPatch(optimistic) → Ready
@@ -323,14 +323,15 @@ Model swap: Selected → LoadingModel(progress) → Active | Error(revert)
 Update (About tab): Idle → Checking → UpToDate | UpdateAvailable → Downloading(progress) → Restart
 ```
 
-- **Layout** — left **sidebar** of sections (General, Hotkey, Model, Audio, Cleanup, Dictionary,
-  Snippets, AI, About/Updates) + a content area, one `Card` per logical group. A **header strip**
-  shows the logo, a `native` "100% local · offline" badge, and a right-aligned version /
-  "Update to vX" button. Active nav item = `text-action-blue`; the single action color discipline
-  holds (design §2, §8a).
+- **Layout** — left **sidebar** of views (Visão geral, Ditado, Modelos & Motor, Dicionário,
+  Snippets, Por app) + a content area, one `Card` per logical group. Hotkey, audio device, and
+  default language live **inside the "Ditado" view** (there is no separate Hotkey/Audio/Cleanup/AI
+  tab). A **header strip** shows the logo, a `native` "100% local · offline" badge, and a
+  right-aligned version / "Update to vX" button. Active nav item = **pumpkin fill** (the active
+  `NavItem` is `border-charcoal bg-pumpkin`); the action-color discipline holds (design §2, §8a).
 - **The Hub dashboard** (top of General, or its own "Stats" panel): three local-only stat cards —
   **words dictated** (total + this week), **average words-per-minute**, and **day streak** — each a
-  `snow-white` `Card` with `text-heading` figures and `text-slate-blue` labels. Empty state before
+  `StatTile` with its accent fill, charcoal figures and ink-soft labels. Empty state before
   any dictation: a friendly "Start dictating to see your stats" placeholder. A small "Reset stats"
   ghost/danger action and the `collectStats` toggle live here.
 - **Controls** use the shared `ui/` components: `Toggle` (launch-at-login, cleanup rules, AI,
@@ -340,8 +341,8 @@ Update (About tab): Idle → Checking → UpToDate | UpdateAvailable → Downloa
 - **Empty / loading / error per section**: device list loading spinner; model row "downloading…"
   progress; update "Checking…"; corrupt-settings notice banner (rule 5). Errors render inline in
   `danger`, paired with text (accessibility §9c of the design system).
-- Keyboard-first and accessible: visible `action-blue` focus rings, hit targets ≥ 40px, no
-  color-only states (design §9c).
+- Keyboard-first and accessible: visible `focus-visible:ring-4 ring-pumpkin/45` focus rings, hit
+  targets ≥ 40px, no color-only states (design §9c).
 
 ---
 
@@ -393,16 +394,14 @@ Update (About tab): Idle → Checking → UpToDate | UpdateAvailable → Downloa
 
 ## 9. Out of Scope (this version)
 
-- **AI tab functionality** — the controls render but are inert until Phase 2
-  ([ai-commands.md](ai-commands.md), ADR-008).
 - **Dictionary / Snippet editors** — the Hub only *links* to those sections; their data models and
   editors live in [custom-dictionary.md](custom-dictionary.md) and [snippets.md](snippets.md)
   (Phase 3).
-- **Per-app writing styles / context** — deferred to Phase 3 ([../ROADMAP.md](../ROADMAP.md)).
 - **Cloud sync / account / settings backup-to-server** — never (privacy-first, ADR-001). Settings
   are a local file the user can copy themselves.
 - **Telemetry / analytics** — none, ever. Stats are local-only and disable-able (ADR-001).
-- **Full dark theme for the Hub** — only the mic HUD is dark in V1
+- **A separate dark theme** — there is one Blush Playground language across both surfaces; the
+  mic HUD is a white Blush pill, not a dark surface
   ([design-system.md](design-system.md#11-out-of-scope-v1)).
 - **Exposing anti-hallucination STT internals** as tunable settings — fixed by ADR-007.
 - **macOS / Linux settings parity** — Windows-only V1 (ADR-011); Phase 5 / Backlog.

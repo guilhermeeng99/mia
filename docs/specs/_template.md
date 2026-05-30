@@ -104,7 +104,8 @@ Live dictation is **latency-critical** — be explicit about threads and the war
 
 ## 6. UI States
 
-The state machine and which surface owns it — the **floating mic HUD** (dark, translucent,
+The state machine and which surface owns it — the **floating mic HUD** (white Blush pill, 2px
+charcoal outline, pumpkin waveform/spinner; success/danger tokens for tick/error;
 always-on-top; idle→listening→transcribing→inserting→error) and/or the **Settings/Hub window**
 (light theme). See [tray-and-hud.md](tray-and-hud.md) and [design-system.md](design-system.md).
 
@@ -115,7 +116,7 @@ Transitions: <hotkey down → Listening; endpoint/release → Transcribing; inje
 ```
 
 - **HUD** (while dictating): per-state visual (waveform level meter, spinner, check, error), the
-  single action-blue accent, click-through where possible.
+  pumpkin waveform/spinner with success/danger tokens for tick/error, click-through where possible.
 - **Settings/Hub** (if this feature has settings/stats): layout, controls, empty/loading/error.
 - Keep the one-action-color discipline and ≥40px hit targets; don't rely on color alone.
 

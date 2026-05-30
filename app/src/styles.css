@@ -15,8 +15,8 @@
   /* Display: Alfa Slab One — heavy slab, single weight. Body: Manrope. Both
      bundled offline via @fontsource (no CDN — privacy-first). */
   --font-display: "Alfa Slab One", ui-serif, Georgia, "Times New Roman", serif;
-  --font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, sans-serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
 
   /* ── Surfaces ─────────────────────────────────────────────────────────── */
   --color-canvas: #f6e0db; /* page background (surface 0) */
@@ -37,7 +37,6 @@
   --color-lavender: #e69dff; /* soft accent fill */
   --color-lemon: #e7db4c; /* highlight splash */
   --color-spring: #6ed311; /* positive / "on" accent */
-  --color-deep-blue: #5196ff; /* precise accent */
 
   /* ── Semantic status (palette doesn't carry reliable error/ok hues) ─────── */
   --color-success: #1a7f4b;

@@ -1,7 +1,7 @@
 # Custom Dictionary (Personal Vocabulary) Feature Spec
 
-> **Status**: Phase 3 — pure mechanism-(a) core implemented & cargo-tested in `dictionary.rs`: `apply_dictionary` (exact / case / whole-word / multi-word / fuzzy / longest-match / idempotent), `match_case`, `osa_distance`+`fuzzy_match`, `build_bias_prompt`, `validate_entry` (Rules 1-13). CRUD commands (`dict_list/add/update/remove`, `dict_settings_get/set`) + atomic `dictionary.json` persistence + managed state + cross-entry duplicate rejection (`duplicate_variant`) + `dictionary.ts` wrapper are implemented (build-verified). The Hub dictionary section (add / remove / enable) is built + build-verified. Runtime-pending: wiring the bias prompt into the warm-Whisper call.
-> **Last updated**: 2026-05-29
+> **Status**: Phase 3 — pure mechanism-(a) core implemented & cargo-tested in `dictionary.rs`: `apply_dictionary` (exact / case / whole-word / multi-word / fuzzy / longest-match / idempotent), `match_case`, `osa_distance`+`fuzzy_match`, `build_bias_prompt`, `validate_entry` (Rules 1-13). CRUD commands (`dict_list/add/update/remove`, `dict_settings_get/set`) + atomic `dictionary.json` persistence + managed state + cross-entry duplicate rejection (`duplicate_variant`) + `dictionary.ts` wrapper are implemented (build-verified). The Hub dictionary section (add / remove / enable) is built + build-verified.
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted (engine contract + business rules are the load-bearing parts)
 > **Environment**: desktop (Windows, native)
 
@@ -292,8 +292,9 @@ Hub "Dictionary" panel:
   `caseSensitive` / `wholeWord` / `fuzzy` / `biasPrompt` (Toggle), inline validation errors, and
   Import/Export actions. Empty state explains the feature with one example. Global fuzzy/bias
   switches live in a small "Matching" subsection.
-- One action-blue accent only; hit targets ≥40px; validation errors use text + icon, not color
-  alone (accessibility).
+- Blush accent guidance: pumpkin for active nav/accent; charcoal primary buttons;
+  focus-visible:ring-4 ring-pumpkin/45. Hit targets ≥40px; validation errors use text + icon,
+  not color alone (accessibility).
 
 ---
 

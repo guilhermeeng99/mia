@@ -209,6 +209,16 @@ mod tests {
     }
 
     #[test]
+    fn reset_clears_run_state_mid_utterance() {
+        // Drive into an active utterance, reset, then a single speech frame must NOT
+        // immediately re-emit SpeechStarted — the debounce run was cleared (Rule 8 primitive).
+        let mut det = EndpointDetector::with_params(0.5, 150, 700, 30);
+        run(&mut det, &[0.9; 5]); // SpeechStarted: now in-speech
+        det.reset();
+        assert_eq!(det.push(0.9), VadDecision::Silence); // re-arming from scratch, not ongoing
+    }
+
+    #[test]
     fn brief_pause_inside_utterance_does_not_end_it() {
         // A silence run shorter than the hangover keeps the utterance open (Rule 6/7).
         let mut det = EndpointDetector::with_params(0.5, 150, 700, 30);

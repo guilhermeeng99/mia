@@ -1,7 +1,7 @@
 # Audio Capture & VAD Endpointing Feature Spec
 
 > **Status**: Phase 1 — partial: the pure DSP core (`audio.rs`: downmix, linear resample, `f32`→`s16`, RMS/peak, `FrameChunker`, device-name normalize) and the VAD endpoint state machine (`vad.rs`: debounce/hangover, Rules 4/5/8) are implemented & cargo-tested, and `list_input_devices` is live. The cpal capture path is implemented (compile/build-verified, **runtime-validated on Windows**): a `!Send`-safe capture thread builds the stream, accumulates mono PCM, emits `Level`, and `end_capture` resamples to 16 kHz once; `begin_capture`/`end_capture` (in-process for the orchestrator) + the `test_microphone` command + Hub mic-test button. **A session never auto-ends on silence** — it ends only on an explicit user action (hotkey release / 2nd toggle press); a pause mid-utterance keeps recording. The earlier energy-gated auto-endpoint was **removed** (it cut dictations on natural pauses). Anti-hallucination VAD-gated trimming is still applied at transcription time by whisper-server (`--vad`). The `vad.rs` `EndpointDetector` is retained, cargo-tested, as the primitive for the backlog **in-process per-frame Silero** endpoint path — not wired to the live path today.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: all sections drafted (1–9)
 > **Environment**: desktop (Windows, native)
 
@@ -334,9 +334,9 @@ Transitions:
   device lost / denied     → Error(message) → Idle
 ```
 
-- **HUD (while listening)** — the dark, translucent, always-on-top mic pill. The **waveform /
+- **HUD (while listening)** — the white Blush mic pill (always-on-top). The **waveform /
   level meter is driven by the `Level` (RMS/peak) events** from §2, animating with the
-  **action-blue "listening" pulse** (the single accent color). When VAD reports `SpeechEnd`/the
+  **pumpkin "listening" waveform**. When VAD reports `SpeechEnd`/the
   hotkey releases, the HUD transitions to the transcribing spinner (owned by
   [speech-to-text.md](speech-to-text.md)). The HUD transitions only when the user ends the
   session (release / 2nd press) — never on a silent pause. Errors (no mic, denied, device lost)

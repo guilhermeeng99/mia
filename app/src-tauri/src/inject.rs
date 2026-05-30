@@ -85,6 +85,28 @@ fn pick_backend(mode: InjectMode, len: usize, settings: &InjectSettings) -> Back
     }
 }
 
+/// The backend `inject` will resolve to for this `(mode, len)` — exposed so the
+/// dictation summary can report the path actually taken instead of a placeholder.
+pub fn resolved_backend(mode: InjectMode, len: usize, settings: &InjectSettings) -> &'static str {
+    match pick_backend(mode, len, settings) {
+        Backend::SendInput => "send_input",
+        Backend::Clipboard => "clipboard",
+    }
+}
+
+/// Combine the paste outcome with the (already-attempted) clipboard-restore outcome.
+/// WHY pure + separate: ADR-006 + Rule 4 require the user's clipboard be restored even
+/// when the paste fails — the caller computes `restored` *before* calling this, so the
+/// restore always runs; this only decides which error to surface (the paste error first).
+fn settle_clipboard(
+    pasted: Result<(), String>,
+    restored: Result<(), String>,
+) -> Result<(), String> {
+    pasted?;
+    restored?;
+    Ok(())
+}
+
 /// Split text into `max`-char chunks **on grapheme boundaries** — never mid-scalar,
 /// mid-surrogate, or mid-combining-sequence (Rules 9-10). `max` is clamped to its
 /// documented range. Empty input → empty vec.
@@ -154,14 +176,13 @@ impl TextInjector for ClipboardInjector {
         cb.set_text(text.to_string()).map_err(|_| "clipboard unavailable".to_string())?;
 
         let pasted = paste_shortcut();
-        // Restore the prior clipboard regardless of paste outcome (Rule 4).
+        // Compute the restore BEFORE settling so the user's prior clipboard is restored
+        // even when the paste failed (Rule 4); settle_clipboard only picks which error wins.
         let restored = match saved {
             Some(prev) => cb.set_text(prev).map_err(|_| "clipboard restore failed".to_string()),
             None => Ok(()),
         };
-        pasted?;
-        restored?;
-        Ok(())
+        settle_clipboard(pasted, restored)
     }
     fn name(&self) -> &'static str {
         "clipboard"
@@ -263,6 +284,28 @@ mod tests {
         let s = "a😀b😀c";
         let joined: String = chunk_for_sendinput(s, 16).concat();
         assert_eq!(joined, s);
+    }
+
+    #[test]
+    fn settle_clipboard_surfaces_paste_error_first_restore_always_runs() {
+        assert!(settle_clipboard(Ok(()), Ok(())).is_ok());
+        // paste failed → its error surfaces (the caller still attempted the restore).
+        assert_eq!(settle_clipboard(Err("paste".into()), Ok(())).unwrap_err(), "paste");
+        // paste ok, restore failed → restore error surfaces.
+        assert_eq!(settle_clipboard(Ok(()), Err("restore".into())).unwrap_err(), "restore");
+        // both failed → the paste error wins (it is surfaced first).
+        assert_eq!(
+            settle_clipboard(Err("paste".into()), Err("restore".into())).unwrap_err(),
+            "paste"
+        );
+    }
+
+    #[test]
+    fn resolved_backend_names_the_path() {
+        let s = InjectSettings::default();
+        assert_eq!(resolved_backend(InjectMode::Auto, 10, &s), "send_input");
+        assert_eq!(resolved_backend(InjectMode::Auto, 1000, &s), "clipboard");
+        assert_eq!(resolved_backend(InjectMode::Clipboard, 1, &s), "clipboard");
     }
 
     #[test]

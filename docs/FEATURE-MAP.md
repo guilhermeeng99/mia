@@ -1,7 +1,7 @@
 # MIA — Feature Map (Wispr Flow parity)
 
 > **Status**: Phase 1 (Core Dictation MVP) — **core loop validated on Windows** (PTT → capture → server-side Silero-VAD-gated warm STT → cleanup → inject, pt-BR + English, with the floating HUD); Phase 0 docs complete. **Phase 2 (AI Command Mode / Polish) is descoped** by product decision — MIA stays a faithful dictation tool. See [ROADMAP.md](ROADMAP.md).
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Environment**: desktop (Windows, native)
 > **Coverage**: inventory of [Wispr Flow](https://wisprflow.ai) features mapped to MIA's local-first plan.
 
@@ -73,7 +73,7 @@ definitions and [specs/architecture.md](specs/architecture.md) for the ADRs refe
 
 | Wispr Flow feature | Description | MIA equivalent | MIA spec | Phase |
 |---|---|---|---|---|
-| **100+ languages, auto-detect, mid-sentence switching** | Broad language coverage with automatic detection and code-switching. | **Same, local.** Whisper covers ~99 languages with auto-detect. **pt-BR (Brazilian Portuguese) is first-class** — the reason MIA picked Whisper over NVIDIA Parakeet/Canary, which are trained on European Portuguese (ADR-003). English also first-class. Mid-utterance switching follows Whisper's behavior. | [speech-to-text.md](specs/speech-to-text.md) | **1** ⬜ |
+| **100+ languages, auto-detect, mid-sentence switching** | Broad language coverage with automatic detection and code-switching. | **Same, local.** Whisper covers ~99 languages with auto-detect. **pt-BR (Brazilian Portuguese) is first-class** — the reason MIA picked Whisper over NVIDIA Parakeet/Canary, which are trained on European Portuguese (ADR-003). English also first-class. Mid-utterance switching follows Whisper's behavior. | [speech-to-text.md](specs/speech-to-text.md) | **1** ✅ |
 
 ---
 

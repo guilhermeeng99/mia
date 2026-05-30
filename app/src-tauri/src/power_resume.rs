@@ -84,6 +84,20 @@ mod imp {
         }
     }
 
+    /// Pure classifier: does this `(msg, wparam)` signal a resume-from-sleep or a
+    /// session-unlock that should trigger a PTT re-claim? Split out of `wndproc` so the
+    /// event→recovery mapping (and the three locally-redefined ABI constants) are
+    /// unit-tested without pumping a real Win32 message loop.
+    fn is_recovery_message(msg: u32, wparam: u32) -> bool {
+        match msg {
+            WM_POWERBROADCAST => {
+                wparam == PBT_APMRESUMEAUTOMATIC || wparam == PBT_APMRESUMESUSPEND
+            }
+            WM_WTSSESSION_CHANGE => wparam == WTS_SESSION_UNLOCK,
+            _ => false,
+        }
+    }
+
     /// Re-claim the PTT chord on resume-from-sleep or session-unlock; default everything
     /// else (these messages must still reach `DefWindowProcW`).
     unsafe extern "system" fn wndproc(
@@ -92,15 +106,7 @@ mod imp {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        let recovered = match msg {
-            WM_POWERBROADCAST => {
-                let e = wparam as u32;
-                e == PBT_APMRESUMEAUTOMATIC || e == PBT_APMRESUMESUSPEND
-            }
-            WM_WTSSESSION_CHANGE => wparam as u32 == WTS_SESSION_UNLOCK,
-            _ => false,
-        };
-        if recovered {
+        if is_recovery_message(msg, wparam as u32) {
             if let Some(app) = APP.get() {
                 crate::hotkey::request_reregister(app);
             }
@@ -111,6 +117,23 @@ mod imp {
     fn encode_wide(s: &str) -> Vec<u16> {
         use std::os::windows::ffi::OsStrExt;
         std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn recovery_message_matches_resume_and_unlock_only() {
+            assert!(is_recovery_message(WM_POWERBROADCAST, PBT_APMRESUMEAUTOMATIC));
+            assert!(is_recovery_message(WM_POWERBROADCAST, PBT_APMRESUMESUSPEND));
+            assert!(is_recovery_message(WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK));
+            // wrong wparam for the right message → no recovery.
+            assert!(!is_recovery_message(WM_POWERBROADCAST, 0));
+            assert!(!is_recovery_message(WM_WTSSESSION_CHANGE, 0));
+            // unrelated message → no recovery even with a "resume" wparam.
+            assert!(!is_recovery_message(0, PBT_APMRESUMEAUTOMATIC));
+        }
     }
 }
 

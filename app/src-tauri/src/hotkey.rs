@@ -14,7 +14,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -403,10 +403,6 @@ fn is_escape(shortcut: &Shortcut) -> bool {
     shortcut == &escape_shortcut()
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
 /// Route a raw global-shortcut edge from the plugin handler (`lib.rs`). `Escape` —
 /// registered only while a session is active — cancels; every other chord is the PTT
 /// binding and drives the reducer. (The plugin handler can't tell them apart, so we
@@ -434,7 +430,7 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     let edge = if pressed { RawEdge::Pressed } else { RawEdge::Released };
     let intent = {
         let Ok(mut e) = rt.edge.lock() else { return };
-        let (next, intent) = reduce(*e, edge, mode, now_ms(), DEBOUNCE_MS);
+        let (next, intent) = reduce(*e, edge, mode, crate::persist::now_ms(), DEBOUNCE_MS);
         *e = next;
         intent
     };
@@ -641,16 +637,16 @@ pub fn request_reregister(app: &AppHandle) {
 pub fn start_self_heal(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        let mut last = now_ms();
+        let mut last = crate::persist::now_ms();
         loop {
             std::thread::sleep(Duration::from_millis(SELF_HEAL_POLL_MS));
             let active = app
                 .try_state::<HotkeyRuntime>()
                 .and_then(|rt| rt.edge.lock().ok().map(|e| e.active))
                 .unwrap_or(false);
-            if should_self_heal(active, now_ms().saturating_sub(last), SELF_HEAL_INTERVAL_MS) {
+            if should_self_heal(active, crate::persist::now_ms().saturating_sub(last), SELF_HEAL_INTERVAL_MS) {
                 do_reregister(&app);
-                last = now_ms();
+                last = crate::persist::now_ms();
             }
         }
     });

@@ -5,12 +5,10 @@
 //! This file is the **pure, cargo-tested core**: the `next_phase` HUD state
 //! machine, the trigger-mode `interpret_down` interpreter, the `classify_cancel`
 //! reason classifier, and the `build_result` latency-summary builder — all with no
-//! I/O (vad/hotkey pattern). The `start/stop/cancel_dictation` commands that wire
-//! the real cpal capture + warm STT + injection are runtime-pending: they depend on
-//! the audio-capture runtime, and are best validated on Windows with a mic.
+//! I/O (vad/hotkey pattern). The `start/stop/cancel_dictation` commands wire the real
+//! cpal capture + warm STT + injection end-to-end (validated on Windows with a mic).
 
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -187,16 +185,13 @@ pub fn build_result(
 //
 // MVP shape: start_dictation opens capture and returns; stop_dictation runs the
 // whole tail (STT → cleanup → dictionary → snippets → inject) and returns the
-// summary. Live HUD waveform Level wiring (forwarding CaptureEvent::Level into the
-// DictationEvent channel) is a follow-up; the core loop works without it. The
-// anti-hallucination VAD is applied by whisper-server at transcription time.
-
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
+// summary. The live HUD waveform is driven directly by the capture thread over
+// `hud://level`; the DictationEvent::Level channel variant stays available for a
+// future main-window meter but is unused on this path. The anti-hallucination VAD is
+// applied by whisper-server at transcription time.
 
 fn today_days() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| (d.as_secs() / 86_400) as i64).unwrap_or(0)
+    (crate::persist::now_secs() / 86_400) as i64
 }
 
 fn stt_lang(lang: DefaultLanguage) -> Option<String> {
@@ -324,7 +319,7 @@ pub fn stop_dictation(
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
     emit_hud(&app, Phase::Transcribing, None);
-    let t0 = now_ms();
+    let t0 = crate::persist::now_ms();
     let app_for_err = app.clone();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
         crate::dlog!("[dictation] error: {e}");
@@ -335,7 +330,7 @@ pub fn stop_dictation(
 
     crate::stt::warm_model(&app, &stt_state, &s.model.model).map_err(|e| fail(&events, e))?;
     crate::dlog!("[dictation] warm engine ready (model={})", s.model.model);
-    let stt_start = now_ms();
+    let stt_start = crate::persist::now_ms();
     let lang = stt_lang(lang_pref);
     // Snapshot the dictionary once: its bias terms become Whisper's initial prompt
     // (spelling nudge) AND the post-STT replacement set (custom-dictionary.md).
@@ -343,7 +338,7 @@ pub fn stop_dictation(
     let bias = crate::dictionary::build_bias_prompt(&entries, &dsettings);
     let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref(), (!bias.is_empty()).then_some(bias.as_str()))
         .map_err(|e| fail(&events, e))?;
-    let stt_end = now_ms();
+    let stt_end = crate::persist::now_ms();
     crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
 
     let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style);
@@ -381,11 +376,15 @@ pub fn stop_dictation(
         crate::inject::InjectMode::Clipboard
     };
 
+    // v1 uses fixed injection defaults (there is no user-facing injection settings group
+    // yet); resolved_backend records which path actually ran so the summary reports the
+    // real backend instead of a placeholder.
+    let inj_settings = crate::inject::InjectSettings::default();
+    let backend = crate::inject::resolved_backend(mode, final_text.chars().count(), &inj_settings);
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
     emit_hud(&app, Phase::Inserting, None);
-    crate::inject::inject(&final_text, mode, &crate::inject::InjectSettings::default())
-        .map_err(|e| fail(&events, e))?;
-    let done = now_ms();
+    crate::inject::inject(&final_text, mode, &inj_settings).map_err(|e| fail(&events, e))?;
+    let done = crate::persist::now_ms();
     crate::dlog!("[dictation] injected {} chars", final_text.chars().count());
 
     let chars = final_text.chars().count();
@@ -394,7 +393,7 @@ pub fn stop_dictation(
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     emit_hud(&app, Phase::Idle, None);
-    Ok(build_result(chars, lang, t0, stt_start, stt_end, done, "auto"))
+    Ok(build_result(chars, lang, t0, stt_start, stt_end, done, backend))
 }
 
 /// Abort: discard the in-flight session, inject nothing, HUD → Idle (Rule 8).

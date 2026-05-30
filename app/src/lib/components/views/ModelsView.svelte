@@ -12,6 +12,7 @@
     type WarmStatus,
     type WhisperModel,
   } from "../../stt";
+  import ErrorBanner from "../ui/ErrorBanner.svelte";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
   import PageHeader from "../ui/PageHeader.svelte";
@@ -79,11 +80,7 @@
 
 <PageHeader title="Modelos & Motor" subtitle="Baixe um modelo Whisper uma vez — depois, 100% offline." />
 
-{#if error}
-  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
-    <p class="text-body-lg text-danger">⚠ {error}</p>
-  </div>
-{/if}
+<ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card>

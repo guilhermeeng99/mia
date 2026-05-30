@@ -1,7 +1,7 @@
 # Dictation Feature Spec
 
-> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. A session ends only on an explicit user action (release / 2nd toggle press) — it never auto-ends on a pause in speech. Runtime-pending: the `tauri-plugin-global-shortcut` trigger wiring (separate — see [hotkeys.md](hotkeys.md)) and the live HUD waveform `Level` forwarding.
-> **Last updated**: 2026-05-29
+> **Status**: Phase 1 — pure orchestrator core implemented & cargo-tested in `dictation.rs`: the `next_phase` HUD state machine (Idle/Listening/Transcribing/Inserting/Error, illegal-signal no-op, cancel-from-any), `interpret_down` (trigger-mode), `classify_cancel`, `build_result` (latency), and the `Phase`/`DictationEvent`/`DictationResult` types. The `start/stop/cancel_dictation` commands wire the **real pipeline** end-to-end — cpal capture → warm whisper-server STT → deterministic cleanup → dictionary → snippets → injection, emitting HUD `DictationEvent`s + recording stats (compile/build-verified; runtime-validated on Windows). `dictation.ts` wrapper. push-to-hold MVP: start opens capture, stop runs the tail. A session ends only on an explicit user action (release / 2nd toggle press) — it never auto-ends on a pause in speech.
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted. The `start/stop/cancel_dictation` commands exist and are registered in `lib.rs`.
 > **Environment**: desktop (Windows, native)
 
@@ -289,7 +289,7 @@ Live dictation is latency-critical; the design keeps the slow work off the real-
 
 ## 6. UI States
 
-The **floating mic HUD** (dark, translucent, always-on-top) owns the live state; the Settings/Hub
+The **floating mic HUD** (white Blush pill, always-on-top) owns the live state; the Settings/Hub
 window (light theme) only exposes options/stats. See [tray-and-hud.md](tray-and-hud.md) and
 [design-system.md](design-system.md).
 
@@ -307,7 +307,7 @@ Transitions:
 ```
 
 - **HUD per state**: `Listening` shows the live waveform / level meter driven by `Level` events with
-  the signature action-blue "listening" pulse; `Transcribing` shows a spinner; `Inserting` a brief
+  the signature pumpkin "listening" waveform; `Transcribing` shows a spinner; `Inserting` a brief
   check; `Error` a short message. Idle = hidden. The single action color and click-through-where-
   possible discipline hold ([design-system.md](design-system.md)).
 - **Settings/Hub**: surfaces the options in Section 4 and session stats (words dictated, avg latency)

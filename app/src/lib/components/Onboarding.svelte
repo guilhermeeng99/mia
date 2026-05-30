@@ -6,6 +6,7 @@
   import { downloadWhisperModel, listWhisperModels, type DownloadProgress, type WhisperModel } from "../stt";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
+  import LevelMeter from "./ui/LevelMeter.svelte";
   import Pill from "./ui/Pill.svelte";
 
   // First-run wizard (Phase 4) — welcome → hotkey → mic test → model download.
@@ -120,12 +121,7 @@
             {micTesting ? "Ouvindo…" : "Testar"}
           </Button>
           {#if micTesting}
-            <div class="h-3 w-40 overflow-hidden rounded-pill border-2 border-charcoal bg-surface" aria-hidden="true">
-              <div
-                class="h-full bg-spring transition-[width] duration-75"
-                style="width: {Math.min(100, micLevel * 600)}%"
-              ></div>
-            </div>
+            <LevelMeter level={micLevel} />
           {:else if micMsg}
             <span class="text-body text-ink-soft">{micMsg}</span>
           {/if}

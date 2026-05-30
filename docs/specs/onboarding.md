@@ -1,14 +1,14 @@
 # Onboarding Feature Spec
 
 > **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirroring the Hub; it is **mandatory** — there is no skip and "Concluir" stays disabled until a model is on disk (Rule 6/7). `App.svelte` shows the wizard only when onboarding hasn't been completed **and** no model is installed; "Concluir" persists `settings.general.onboarding_completed=true` (Rule 1/14) so MIA then boots straight to the Hub. The **permission-denied deep-link is now wired**: a denied mic capture is tagged by `classify_mic_error` (sentinel `mic-permission-denied:`) and the mic-test step surfaces an "Abrir configurações" button that launches `ms-settings:privacy-microphone` (the `open_mic_privacy` command). Live mic level meter during the test.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
 First-run onboarding is the guided wizard MIA shows the very first time it launches (and on demand
 later from [settings.md](settings.md)). It walks the user from a cold install to a working dictation
-loop in five steps: welcome + privacy promise → microphone permission → pick & download the first
-Whisper model → set the push-to-talk hotkey → a guided first dictation. When the wizard finishes, the
+loop in four steps: welcome + privacy promise → set the push-to-talk hotkey → microphone test → pick &
+download the first Whisper model. When the wizard finishes, the
 window closes and the app lives in the system tray, ready for global push-to-talk. Onboarding is the
 **front door** to the dictation pipeline (hotkey → capture → VAD → STT → cleanup → inject) — it does
 not run dictation itself, but it provisions and validates every prerequisite that pipeline needs. It
@@ -19,9 +19,10 @@ gate UX (see [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)).
 
 **Scope decisions** (locked at design time):
 
-- **Linear wizard with five named steps** (Welcome → Mic → Model → Hotkey → TryIt → Done), back/next
+- **Linear wizard with four named steps** (Welcome → Hotkey → Mic → Model → Done), back/next
   navigation allowed, but the **Model** step cannot be skipped — dictation is impossible without at
-  least one model on disk (ADR-007 / Phase 4).
+  least one model on disk (ADR-007 / Phase 4). _(A guided in-wizard first-dictation "TryIt" step is
+  backlog — see §9; the real first dictation happens via the live PTT path after the wizard closes.)_
 - **Privacy is the first thing the user reads.** The Welcome step states plainly that voice never
   leaves the machine: no cloud, no account, no server (ADR-001). This is the product's whole pitch
   versus [Wispr Flow](https://wisprflow.ai); we lead with it.
@@ -232,33 +233,30 @@ here (ADR-007).
 
 ## 6. UI States
 
-Onboarding lives entirely in the **Settings/Hub window (light "Calm Focus" theme)** — it is a webview
-wizard, not a HUD overlay. The TryIt step is the only place the dark **floating mic HUD** may briefly
-appear (it is the real capture path). See [tray-and-hud.md](tray-and-hud.md) and
-[design-system.md](design-system.md).
+Onboarding lives entirely in the **Settings/Hub window (Blush Playground)** — it is a webview
+wizard, not a HUD overlay. The shipped wizard has no in-wizard capture step; the **floating mic HUD**
+(a white Blush pill — white, 2px charcoal outline) only appears later during the real PTT path. See
+[tray-and-hud.md](tray-and-hud.md) and [design-system.md](design-system.md).
 
 ```
-Wizard:  Welcome ──▶ Mic ──▶ Model(download) ──▶ Hotkey ──▶ TryIt ──▶ Done ──▶ (window closes → tray)
-                      ▲        │ (mandatory)        ▲          │
-                      └────────┘ Back allowed       └──────────┘   GPU step inserted before Done iff gpuAvailable
+Wizard:  Welcome ──▶ Hotkey ──▶ Mic ──▶ Model(download) ──▶ Done ──▶ (window closes → tray)
+                                         │ (mandatory)
+                                Back allowed   GPU step inserted before Done iff gpuAvailable
 
 Mic step:    Checking → Granted | Denied/Unknown(guide + open-settings + recheck) | NoDevice(block)
 Model step:  Choose → Downloading(% bar, cancelable) → Installed(check) | DownloadError(retry/resume)
 Hotkey step: Idle(default prefilled) → Recording(capturing chord) → Bound(check) | Conflict(error, re-record)
-TryIt step:  Ready("hold the key & say hello") → Listening(waveform) → Transcribing(spinner)
-             → Result(transcript shown) | NoSpeech("didn't hear anything") → Ready
 ```
 
-- **Settings/Hub (light)**: a left rail or stepper showing the five (or six) steps with check marks for
-  completed ones; a single primary **action-blue** button (Next / Download / Finish) per step; Back as a
+- **Settings/Hub (Blush Playground)**: a left rail or stepper showing the four steps with check marks for
+  completed ones; a single primary **charcoal** button (Next / Download / Finish) per step; Back as a
   secondary control. Empty/loading/error states per step as above (spinner while checking mic/GPU,
   progress bar while downloading, inline error cards with a retry affordance).
-- **HUD (TryIt only)**: the dark translucent pill with the action-blue pulsing waveform during Listening
-  and a spinner during Transcribing — the same component used in live dictation, so the user sees exactly
-  what they'll see later.
-- Maintain the **one-action-color** discipline (action-blue #006BFF is the only action color), ≥40px hit
-  targets, visible focus rings, and never rely on color alone (mic-granted shows a check icon + label, not
-  just green). Wizard is keyboard-navigable: Enter = Next, Esc = Back where non-destructive.
+- Follow the Blush Playground accent discipline: **pumpkin (#EF724F)** is reserved for accent emphasis and
+  focus rings (`focus-visible:ring-4 ring-pumpkin/45`), not button fills — primary buttons are charcoal.
+  Keep ≥40px hit targets, visible focus rings, and never rely on color alone (mic-granted shows a check
+  icon + label, not just green). Wizard is keyboard-navigable: Enter = Next, Esc = Back where
+  non-destructive.
 
 ---
 

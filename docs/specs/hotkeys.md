@@ -1,7 +1,7 @@
 # Hotkeys Feature Spec
 
 > **Status**: Phase 1 — pure core + runtime both implemented. Pure (cargo-tested): `parse_accelerator`/`to_canonical`, `is_bare_key`/`is_reserved`, `reduce` (Rules 3/4/9/10), and `key_to_code`/`to_shortcut`. Runtime (compile/build-verified, validated on Windows): registration via `tauri-plugin-global-shortcut`, the handler that runs `reduce` and emits `dictation://intent`, startup registration (Rule 14), and the `register/unregister/update/get_hotkey` commands. The frontend (`ptt.ts`) drives the orchestrator off the intent. The `Esc`-cancel transient binding (Rule 13 — `Escape` registered only while a session is active, routed by the plugin handler) and the missing-release watchdog (Rule 11 — push-to-hold force-Stop after `MAX_HOLD_MS`, disarmed by a session generation) are now implemented in the runtime. The Hub hotkey-recorder (capture a modifier+key chord) + activation-mode picker are wired to `update_hotkey`, whose registration step is the conflict-probe (rejects an already-claimed chord, keeps the prior binding). **Self-healing registration (Rule 15)** is now implemented — `start_self_heal` (idle re-register tick, cargo-tested `should_self_heal` predicate), `request_reregister` (tray "Reativar atalho" + Hub-focus), and `power_resume.rs` (resume/unlock watcher) re-claim a silently-dropped `RegisterHotKey` routing so `Ctrl+Space` no longer goes dead until the app is restarted. Pending: broad on-device chord testing only.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -289,7 +289,7 @@ Hotkey-recorder (Settings/Hub, light theme):
 ```
 
 - **HUD** (while dictating): this module triggers the *transitions*; the per-state visuals
-  (waveform level meter, spinner, check, error) and the single action-blue accent live in
+  (waveform level meter, spinner, check, error) and the pumpkin accent live in
   [tray-and-hud.md](tray-and-hud.md) / [design-system.md](design-system.md).
 - **Settings/Hub recorder**: a `Field` with a "Recording…" `Pill`, a live-rendered chord, an inline
   validation message, and the mode toggle (`Toggle`/segmented control: *Hold* vs. *Toggle*). Empty

@@ -38,6 +38,25 @@ pub fn load_json_or_default<T: serde::de::DeserializeOwned + Default>(path: &Pat
 /// Process-lifetime counter so two ids minted in the same nanosecond still differ.
 static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Wall-clock milliseconds since the Unix epoch (saturating to 0 on a pre-epoch clock).
+/// The one shared time stamp so the hotkey debounce, the dictation latency math, and
+/// any future timestamp all derive it the same way instead of re-implementing it (DRY).
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Wall-clock seconds since the Unix epoch (saturating to 0). Used for the day-streak
+/// math and the corrupt-settings backup filename timestamp.
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// A unique id `"{prefix}{nanos}-{counter}"`. WHY the counter suffix: a coarse clock
 /// can return identical nanos for back-to-back inserts; the atomic counter guarantees
 /// uniqueness within a single process run regardless of clock resolution.
@@ -93,6 +112,14 @@ mod tests {
         let back: Sample = load_json_or_default(&path);
         assert_eq!(back, Sample::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn now_helpers_are_post_epoch_and_consistent() {
+        // now_secs is read first, now_ms after, so now_ms's instant is >= now_secs's.
+        let secs = now_secs();
+        assert!(secs > 1_700_000_000); // comfortably after 2023, so the clock is sane
+        assert!(now_ms() >= secs * 1000); // ms granularity at the same-or-later instant
     }
 
     #[test]

@@ -8,6 +8,7 @@
   import PageHeader from "../ui/PageHeader.svelte";
   import Pill from "../ui/Pill.svelte";
   import StatTile from "../ui/StatTile.svelte";
+  import ErrorBanner from "../ui/ErrorBanner.svelte";
 
   // The landing view — a warm greeting, the live usage stats, and the engine
   // status at a glance. Presentation only; reads through the typed wrappers.
@@ -41,11 +42,7 @@
 
 <PageHeader title="Visão geral" subtitle="Sua voz, sua máquina. Ditado local para Windows." />
 
-{#if error}
-  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
-    <p class="text-body-lg text-danger">⚠ {error}</p>
-  </div>
-{/if}
+<ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card tone="seafoam">

@@ -20,7 +20,9 @@ use tauri::{AppHandle, Manager, State};
 
 /// Hugging Face source for Whisper ggml models (one resolve URL per file).
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-/// Silero VAD model — used by `vad.rs` for live endpointing (same `.bin` Toolzy fetches).
+/// Silero VAD model — passed to `whisper-server` (`server_args` → `--vad-model`) for
+/// server-side silence gating / anti-hallucination, NOT to `vad.rs` (which is a pure
+/// probability-fed state machine that loads no model). Same `.bin` Toolzy fetches.
 const VAD_FILENAME: &str = "ggml-silero-v6.2.0.bin";
 const VAD_URL: &str =
     "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin";
@@ -250,6 +252,14 @@ fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
 /// Stream a URL to `dest` via a `.part` file renamed on completion, so an
 /// interrupted download leaves no half file. Blocking — run off the async runtime.
 /// (Lifted from Toolzy's `transcription.rs`, ureq 3.)
+///
+/// SECURITY (deep-review, owner-gated): downloads carry NO content-integrity check.
+/// TLS protects transit, but a compromised HF/GitHub mirror or a CA-trusted MITM could
+/// substitute a tampered file. This is low-risk for the model `.bin` (data) but higher
+/// for the CUDA engine zip (executable DLLs loaded in-process — see `install_gpu_engine`).
+/// HARDENING: pin an expected SHA-256 per artifact (from the upstream whisper.cpp release
+/// notes) and verify the `.part` before the final rename, rejecting on mismatch. Deferred
+/// because it needs the owner to supply/maintain the trusted hashes.
 fn download_file(
     url: &str,
     dest: &Path,
@@ -410,6 +420,9 @@ fn copy_engine_files(extracted: &Path, dest: &Path) -> Result<(), String> {
 fn install_gpu_engine(dir: &Path, on_progress: &Channel<DownloadProgress>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let zip = dir.join("engine.zip");
+    // SECURITY: `zip` ships executable cuBLAS/whisper DLLs loaded in-process below. There
+    // is no integrity check here yet — verify a pinned SHA-256 of `zip` before extract
+    // (see download_file's SECURITY note). Owner must supply the upstream hash.
     download_file(GPU_URL, &zip, Some(on_progress))?;
     let tmp = dir.join("extract");
     extract_zip(&zip, &tmp)?;

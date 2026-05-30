@@ -6,8 +6,8 @@
 //! This file is the **pure, cargo-tested core**: `compile_snippets`,
 //! `normalize_trigger` (case- + accent-fold), `expand_snippets` (whole-phrase,
 //! word-boundary, longest-first, no recursion), `apply_case`, `validate_snippet`.
-//! The CRUD commands + `snippets.json` persistence + managed state are the
-//! follow-up (mirroring the dictionary module).
+//! The CRUD commands + `snippets.json` persistence + managed state are implemented
+//! below (mirroring the dictionary module).
 
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -30,6 +30,9 @@ pub struct DictEntry {
     pub replacement: String,
     pub sounds_like: Vec<String>,
     pub case_sensitive: bool,
+    /// Reserved/inert in v1: the matcher is token-based, so matching is ALWAYS whole-word.
+    /// `wholeWord=false` (sub-word matching) is deferred and not yet honored by the matcher
+    /// (see the module doc). Persisted for forward-compat so older files round-trip.
     pub whole_word: bool,
     pub fuzzy: bool,
     pub bias_prompt: bool,
@@ -545,6 +548,16 @@ mod tests {
         let long = entry("ReactJS", &["react js"]);
         // "react js" should take the 2-word entry, not the 1-word one.
         assert_eq!(apply("use react js here", &[short, long]), "use ReactJS here");
+    }
+
+    #[test]
+    fn pick_better_prefers_exact_over_fuzzy_at_equal_span() {
+        // Same word-count (1) and same order → the exact candidate (all_exact=true) wins
+        // the tie (Rule 9), independent of which argument carries it.
+        let exact: Candidate = (1, "Exact".to_string(), true, 7);
+        let fuzzy: Candidate = (1, "Fuzzy".to_string(), false, 2);
+        assert_eq!(pick_better(exact.clone(), fuzzy.clone()).1, "Exact");
+        assert_eq!(pick_better(fuzzy, exact).1, "Exact");
     }
 
     #[test]

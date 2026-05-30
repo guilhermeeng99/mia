@@ -68,7 +68,6 @@ app/
       text_match.rs    #   shared whole-word tokenize/reconstruct (dictionary + snippets)
       win32.rs         #   Windows foreground-window + token-elevation probes (UIPI)
       persist.rs       #   atomic JSON load/save helpers + id generation
-      ai_commands.rs   #   dormant Phase-2 (AI) helpers — descoped, wired to nothing
     capabilities/      #   Tauri permissions (scoped)
     tauri.conf.json    #   bundle resources (whisper-server binary + DLLs), window config
   scripts/fetch-binaries.mjs  # auto-fetch whisper binaries + sibling DLLs on Windows

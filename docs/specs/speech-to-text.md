@@ -1,7 +1,7 @@
 # Speech-to-Text Feature Spec
 
-> **Status**: Phase 1 — engine implemented (whisper-server sidecar, ADR-004 revised default): model registry + on-demand download (progress `Channel`, `.part` rename), optional CUDA engine fetch, warm server lifecycle (spawn/wait/Drop), in-memory `transcribe_chunk`, and the `warm_status` command — all complete; pure helpers cargo-tested. Remaining: wire `transcribe_chunk` into the live dictation orchestrator (capture → VAD → STT → cleanup → inject) + cancellation; whisper-rs in-process as a later optimization.
-> **Last updated**: 2026-05-29
+> **Status**: Phase 1 — engine implemented (whisper-server sidecar, ADR-004 revised default): model registry + on-demand download (progress `Channel`, `.part` rename), optional CUDA engine fetch, warm server lifecycle (spawn/wait/Drop), in-memory `transcribe_chunk`, and the `warm_status` command — all complete; pure helpers cargo-tested. whisper-rs in-process as a later optimization.
+> **Last updated**: 2026-05-30
 > **Coverage**: all sections drafted
 > **Environment**: desktop (Windows, native)
 
@@ -191,7 +191,7 @@ Live dictation is latency-critical — the warm-model contract is the whole poin
 
 ## 6. UI States
 
-The STT engine has **two** surfaces. On the hot path it drives the **floating mic HUD** (dark, translucent, always-on-top) only for its **transcribing** phase; the surrounding listening/inserting states belong to the wider pipeline ([dictation.md](dictation.md), [tray-and-hud.md](tray-and-hud.md)). Its **lifecycle/management** (warm-up status, model picker, download/GPU gates) lives in the **Settings/Hub window** (light theme) and **onboarding** ([settings.md](settings.md), [onboarding.md](onboarding.md), [design-system.md](design-system.md)).
+The STT engine has **two** surfaces. On the hot path it drives the **floating mic HUD** (white Blush pill, always-on-top) only for its **transcribing** phase; the surrounding listening/inserting states belong to the wider pipeline ([dictation.md](dictation.md), [tray-and-hud.md](tray-and-hud.md)). Its **lifecycle/management** (warm-up status, model picker, download/GPU gates) lives in the **Settings/Hub window** (Blush Playground) and **onboarding** ([settings.md](settings.md), [onboarding.md](onboarding.md), [design-system.md](design-system.md)).
 
 ```
 HUD (live, this feature's slice):
@@ -204,7 +204,7 @@ Hub/onboarding (model lifecycle):
   (+ optional) GPU: Not installed → Downloading → Installed
 ```
 
-- **HUD** (while dictating): the **Transcribing** state shows the single action-blue spinner over the dark translucent pill while `transcribe_chunk` runs; an engine error surfaces as the HUD **Error** state (not just a log). Keep the one-action-color discipline; click-through where possible.
+- **HUD** (while dictating): the **Transcribing** state shows the single pumpkin spinner over the white Blush pill (white, 2px charcoal outline) while `transcribe_chunk` runs; an engine error surfaces as the HUD **Error** state (not just a log). Keep the one-action-color discipline; click-through where possible.
 - **Hub/onboarding**: model picker with each model's **size**; a clear **download gate** when missing (one-time "download once" prompt + streamed MB progress bar); a **warm-up** indicator (Warming → Warm/ready); and the optional **GPU engine** toggle gated on `gpu_engine_status` (NVIDIA present + installed). Empty/loading/error states per the design system.
 - ≥40px hit targets; never rely on color alone (pair the listening accent with the waveform motion and the spinner with text).
 

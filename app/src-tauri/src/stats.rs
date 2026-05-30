@@ -5,8 +5,8 @@
 //!
 //! The WPM + streak arithmetic and word counting are **pure and cargo-tested**;
 //! the commands wrap them with the same atomic-write persistence as settings.rs.
-//! `record_dictation` is called by the orchestrator after each successful insert
-//! (runtime-pending until the dictation loop lands).
+//! `record_dictation` is called by the orchestrator (`dictation::stop_dictation`)
+//! after each successful insert.
 
 use std::path::PathBuf;
 use std::sync::Mutex;

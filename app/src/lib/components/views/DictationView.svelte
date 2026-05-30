@@ -16,6 +16,8 @@
   import PageHeader from "../ui/PageHeader.svelte";
   import Pill from "../ui/Pill.svelte";
   import Toggle from "../ui/Toggle.svelte";
+  import ErrorBanner from "../ui/ErrorBanner.svelte";
+  import LevelMeter from "../ui/LevelMeter.svelte";
   import { inputClass, selectClass } from "../ui/inputClass";
 
   // The core dictation settings view — mic input, push-to-talk binding, language,
@@ -137,6 +139,10 @@
     listInputDevices().then((d) => (devices = d)).catch(fail);
     getSettings().then((s) => (general = s.general)).catch(fail);
     getHotkey().then((h) => (hotkey = h)).catch(fail);
+    // Always drop the global capture-phase keydown listener if the view unmounts while
+    // still recording a chord (switching sidebar views destroys this component) — else
+    // it leaks and keeps capturing keys against a dead component.
+    return () => stopRecording();
   });
 
   async function runMicTest() {
@@ -178,11 +184,7 @@
 
 <PageHeader title="Ditado" subtitle="Como o MIA escuta e onde o texto aparece." />
 
-{#if error}
-  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
-    <p class="text-body-lg text-danger">⚠ {error}</p>
-  </div>
-{/if}
+<ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card>
@@ -203,12 +205,7 @@
         {micTesting ? "Ouvindo…" : "Testar microfone"}
       </Button>
       {#if micTesting}
-        <div class="h-3 w-40 overflow-hidden rounded-pill border-2 border-charcoal bg-surface" aria-hidden="true">
-          <div
-            class="h-full bg-spring transition-[width] duration-75"
-            style="width: {Math.min(100, micLevel * 600)}%"
-          ></div>
-        </div>
+        <LevelMeter level={micLevel} />
       {:else if micMsg}
         <span class="text-body text-ink-soft">{micMsg}</span>
       {/if}

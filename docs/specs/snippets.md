@@ -1,7 +1,7 @@
 # Snippets Feature Spec
 
 > **Status**: Phase 3 — pure core implemented & cargo-tested in `snippets.rs`: `expand_snippets` (whole-phrase, word-boundary, longest-first, no recursion, verbatim expansion), `compile_snippets`, `normalize_trigger` (case + accent fold via NFD), `apply_case`, `validate_snippet` (Rules 1-11). CRUD commands (`list_snippets`/`upsert_snippet`/`delete_snippet`/`preview_expansion`) + atomic `snippets.json` persistence + managed state + cross-trigger duplicate rejection (`duplicate_trigger`) + `snippets.ts` wrapper are implemented (build-verified). The Hub snippets section (add / remove / live preview) is built + build-verified. The master `snippets_enabled` toggle is wired into the dictation pipeline: `settings.rs` defines `snippets_enabled` (default `true`) and `dictation.rs` gates snippet expansion on `settings.general.snippets_enabled`.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
 
@@ -257,7 +257,7 @@ List(empty | populated) → Editor(add/edit: trigger, expansion, anchor, case, e
 ```
 
 - **HUD** (while dictating): no new state — expansion is silent; the result simply appears during
-  `Inserting`. Keep the single action-blue accent discipline.
+  `Inserting`. Keep the pumpkin accent.
 - **Settings/Hub** (light theme): a **Snippets** section with a searchable list (trigger →
   truncated expansion preview, enabled toggle), an add/edit editor (trigger field, multiline
   expansion field, anchor + case selectors, enabled toggle), and a **live Preview** box backed by

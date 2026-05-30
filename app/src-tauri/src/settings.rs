@@ -5,9 +5,9 @@
 //! (`Settings::default`, `apply_patch`, `validate`, `migrate`, `parse_settings`);
 //! the load/save commands wrap it with atomic file I/O. Load is **failure-safe**: a
 //! missing file → defaults, a corrupt file → defaults + sidelined backup, never a
-//! startup failure (Rule 5). The side effects `update_settings` should apply
-//! (re-register hotkey, swap warm model, launch-at-login) are wired as those
-//! runtime subsystems land; for now it validates + persists.
+//! startup failure (Rule 5). `update_settings` applies the runtime side effects of the
+//! changed groups: it re-registers the PTT hotkey, invalidates the warm model on a
+//! model change, and keeps the OS launch-at-login entry in sync (all best-effort).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -54,15 +54,6 @@ pub enum HudPosition {
     Caret,
     BottomCenter,
     BottomRight,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum AiModel {
-    #[default]
-    #[serde(rename = "qwen2.5-3b")]
-    Qwen25_3b,
-    #[serde(rename = "llama-3.2-3b")]
-    Llama32_3b,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -146,14 +137,6 @@ pub struct HudSettings {
     pub position: HudPosition,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct AiSettings {
-    pub enabled: bool,
-    pub model: AiModel,
-    pub polish_on_insert: bool,
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct UpdatesSettings {
@@ -195,8 +178,6 @@ pub struct Settings {
     #[serde(default)]
     pub hud: HudSettings,
     #[serde(default)]
-    pub ai: AiSettings,
-    #[serde(default)]
     pub updates: UpdatesSettings,
     #[serde(default)]
     pub per_app: PerAppSettings,
@@ -212,7 +193,6 @@ impl Default for Settings {
             audio: AudioSettings::default(),
             cleanup: CleanupSettings::default(),
             hud: HudSettings::default(),
-            ai: AiSettings::default(),
             updates: UpdatesSettings::default(),
             per_app: PerAppSettings::default(),
         }
@@ -231,7 +211,6 @@ pub struct SettingsPatch {
     pub audio: Option<AudioSettings>,
     pub cleanup: Option<CleanupSettings>,
     pub hud: Option<HudSettings>,
-    pub ai: Option<AiSettings>,
     pub updates: Option<UpdatesSettings>,
     pub per_app: Option<PerAppSettings>,
 }
@@ -260,9 +239,6 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
     }
     if let Some(h) = &patch.hud {
         s.hud = *h;
-    }
-    if let Some(a) = &patch.ai {
-        s.ai = *a;
     }
     if let Some(u) = &patch.updates {
         s.updates = *u;
@@ -371,10 +347,7 @@ fn map_write_err(raw: String) -> String {
 
 /// Move an unparseable file aside so the app starts clean on defaults (Rule 5).
 fn sideline_corrupt(path: &Path) {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let ts = crate::persist::now_secs();
     let backup = path.with_file_name(format!("settings.corrupt-{ts}.json"));
     let _ = std::fs::rename(path, backup);
 }
@@ -477,7 +450,6 @@ mod tests {
         assert_eq!(s.audio.input_device, "default");
         assert!(s.cleanup.filler_removal && s.cleanup.capitalization);
         assert_eq!(s.hud.position, HudPosition::Caret);
-        assert!(!s.ai.enabled);
         assert!(s.updates.auto_check_updates);
         assert!(!s.per_app.enabled);
         assert!(s.per_app.styles.is_empty());
@@ -555,10 +527,11 @@ mod tests {
     }
 
     #[test]
-    fn ai_model_serializes_with_dotted_names() {
-        let json = serde_json::to_string(&AiModel::Qwen25_3b).unwrap();
-        assert_eq!(json, "\"qwen2.5-3b\"");
-        let back: AiModel = serde_json::from_str("\"llama-3.2-3b\"").unwrap();
-        assert_eq!(back, AiModel::Llama32_3b);
+    fn map_write_err_flags_permission_and_wraps_the_rest() {
+        // The spec locks this exact wording for a denied/locked file (settings.md error map).
+        assert_eq!(map_write_err("Access is denied. (os error 5)".into()), "settings file is read-only or locked");
+        assert_eq!(map_write_err("permission denied".into()), "settings file is read-only or locked");
+        // Anything else is wrapped verbatim so the cause survives to the UI.
+        assert_eq!(map_write_err("No space left on device".into()), "could not write settings: No space left on device");
     }
 }

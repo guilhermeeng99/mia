@@ -1,7 +1,7 @@
 # Text Cleanup Feature Spec
 
-> **Status**: Phase 1 — implemented: pure `cleanup.rs` with per-language (pt-BR / En / Other) rule sets — spoken-punctuation substitution, filler removal, repeat collapse, whitespace normalization, capitalization fix, light number spacing, optional trailing period — all cargo-tested. The pure `clean()` entry point is complete; pending only: wire it into the live dictation orchestrator + expose the cleanup toggles in Hub settings.
-> **Last updated**: 2026-05-29
+> **Status**: Phase 1 — implemented: pure `cleanup.rs` with per-language (pt-BR / En / Other) rule sets — spoken-punctuation substitution, filler removal, repeat collapse, whitespace normalization, capitalization fix, light number spacing, optional trailing period — all cargo-tested. The pure `clean()` entry point is complete and wired into the live dictation orchestrator (dictation.rs); the per-rule cleanup toggles are not yet surfaced in the Hub.
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 

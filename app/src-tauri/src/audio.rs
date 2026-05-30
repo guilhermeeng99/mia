@@ -3,10 +3,11 @@
 //! the HUD level meter. See `docs/specs/audio-capture.md`.
 //!
 //! The DSP core here is **pure and cargo-tested** (downmix, resample, quantize,
-//! RMS/peak, frame chunking, device-name normalization). The real-time cpal stream,
-//! the lock-free ring buffer, and the processing/VAD thread (§5) are the runtime
-//! seam wired during the orchestrator stage; this file currently also exposes the
-//! device-enumeration command the Settings picker needs.
+//! RMS/peak, frame chunking, device-name normalization). The real-time cpal stream
+//! (`begin_capture`/`end_capture`) is implemented and validated on Windows: it runs on
+//! its own thread (a cpal `Stream` is `!Send`), accumulates mono PCM, and streams the
+//! live RMS level to the HUD waveform. This file also exposes the device-enumeration
+//! command the Settings picker needs.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -172,7 +173,7 @@ pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Live capture (cpal stream on its own thread; runtime-pending verification)
+// Live capture (cpal stream on its own thread; validated on Windows)
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // WHY a dedicated thread: a cpal `Stream` is `!Send` (WASAPI COM handles), so it

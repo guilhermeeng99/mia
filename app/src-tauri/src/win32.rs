@@ -7,6 +7,15 @@
 //! pipeline degrades gracefully and **never panics across the IPC boundary** (ADR-006).
 //! Windows-only (ADR-011); non-Windows builds get inert stubs so the crate still compiles.
 
+/// Lowercased executable stem from a full process-image path: take the last path segment
+/// (split on `\` or `/`), lowercase it, and drop a trailing `.exe`. Pure so the per-app
+/// style key derivation is unit-tested without the unsafe Win32 FFI wrapped around it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn exe_stem(path: &str) -> String {
+    let file = path.rsplit(['\\', '/']).next().unwrap_or(path).to_lowercase();
+    file.strip_suffix(".exe").unwrap_or(&file).to_string()
+}
+
 #[cfg(windows)]
 mod imp {
     use std::ffi::c_void;
@@ -80,8 +89,7 @@ mod imp {
                 return None;
             }
             let path = String::from_utf16_lossy(&buf[..len as usize]);
-            let file = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_lowercase();
-            Some(file.strip_suffix(".exe").unwrap_or(&file).to_string())
+            Some(super::exe_stem(&path))
         }
     }
 
@@ -123,3 +131,16 @@ mod imp {
 }
 
 pub use imp::{foreground_process_name, has_foreground_window, is_foreground_elevated};
+
+#[cfg(test)]
+mod tests {
+    use super::exe_stem;
+
+    #[test]
+    fn exe_stem_takes_lowercased_last_segment_without_exe() {
+        assert_eq!(exe_stem("C:\\Program Files\\Microsoft VS Code\\Code.exe"), "code");
+        assert_eq!(exe_stem("WINWORD.EXE"), "winword");
+        assert_eq!(exe_stem("/usr/bin/Foo"), "foo"); // forward slashes too
+        assert_eq!(exe_stem("C:\\app\\noext"), "noext"); // no extension to strip
+    }
+}

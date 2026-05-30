@@ -1,7 +1,7 @@
 # Reuse from Toolzy
 
 > **Status**: Applied (Phase 1 in progress) — the transcription registry / on-demand download / GPU-engine machinery described here has **landed** in [`app/src-tauri/src/stt.rs`](../app/src-tauri/src/stt.rs), and the `fetchExeWithDlls` pattern is realized in [`app/scripts/fetch-binaries.mjs`](../app/scripts/fetch-binaries.mjs) (whisper-server.exe + sibling DLLs). The one deviation from the original plan: the **MVP warm engine is the `whisper-server` sidecar** (cmake-free), not whisper-rs in-process — whisper-rs is the later optimization (ADR-004 revised). The "skip (live)" file-mode items remain deferred to the Phase 5 file feature.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Environment**: desktop (Windows, native)
 
 MIA and **Toolzy** (`C:/Users/guiga/Documents/Projetos/Toolzy`) are sibling Tauri 2 + Rust + privacy-first desktop apps by the same owner. Toolzy already ships **local Whisper transcription in FILE mode** — pick a media file, preprocess with ffmpeg, run `whisper-cli`, write a transcript beside the input. MIA is the **live dictation** product: a global hotkey, a microphone, a warm model, and text typed at the cursor. The STT plumbing overlaps heavily, so MIA lifts Toolzy's transcription engine wholesale and adapts only the front of the pipe (file + ffmpeg → mic + VAD endpointing) and the model lifecycle (cold per-run spawn → **warm/resident** model).
@@ -110,7 +110,7 @@ These are project-wide habits MIA inherits from Toolzy (and which keep the owner
 - **On-demand "download gate" UX** — large models are not bundled; the app fetches the chosen model once (HF) and reuses it, with a clear one-time download prompt and a streamed progress bar. MIA's first-run flow ([`docs/specs/onboarding.md`](specs/onboarding.md)) and Hub settings ([`docs/specs/settings.md`](specs/settings.md)) reuse this gate, including the optional CUDA-engine gate.
 - **`tauri-plugin-updater` signed auto-update** (ADR-009) — GitHub Releases + minisign-verified `latest.json` in-app update, lifted from Toolzy's distribution setup.
 - **Documentation structure** — the whole `CLAUDE.md` + `docs/specs/` + `docs/specs/_template.md` + `docs/ROADMAP.md` layout, the status-block header convention, and the spec sections (Scope decisions locked / Business Rules / Engine Contract / Options & Defaults / Threading & Performance / UI States / Edge Cases / Testing Checklist / Out of Scope) are adopted directly from Toolzy.
-- **Design-system token discipline** — Tailwind v4 utilities over raw hex, the proven Toolzy light-theme token set for the Settings/Hub surface, shared `components/ui/*`. See [`docs/specs/design-system.md`](specs/design-system.md). (MIA **adds** a new dark translucent HUD surface that Toolzy does not have.)
+- **Design-system token discipline** — Tailwind v4 utilities over raw hex, the Blush Playground (Lpalo) token set for the Settings/Hub surface, shared `components/ui/*`. See [`docs/specs/design-system.md`](specs/design-system.md). (MIA **adds** a white outlined Blush HUD pill that Toolzy does not have.)
 
 ---
 

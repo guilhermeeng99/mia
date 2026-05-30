@@ -8,7 +8,7 @@
 > the Hub hides it to the tray (`lib.rs` `on_window_event` → `prevent_close` + `hide`) instead of
 > quitting; only the tray "Sair" exits. The richer tray menu (checkable "Dictation enabled" + a
 > "pick model" submenu) and the stuck-HUD watchdog remain the documented Phase-1 backlog.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-05-30
 > **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces). Tray + HUD window are
 > live; §2's exact command set is partially superseded by the event-driven `hud.rs` + `dictation.rs`
 > implementation (state pushed via `hud://state`/`hud://level`, no `show_hud`/`hide_hud` commands).
@@ -46,8 +46,8 @@ break SendInput injection by stealing focus), and **ADR-006** (`Result<T, String
 - **The HUD is display-only — pushed state, no input.** It renders a single state value streamed
   from Rust and exposes **no clickable controls** in V1 (clicking would risk activation). All
   controls live in the tray menu and the Hub (Phase 1).
-- **Dark, translucent HUD; light Hub.** The HUD is the only dark surface in V1 and uses the
-  isolated `hud-*` tokens; the Hub uses the light Calendly palette (see
+- **One Blush language, two surfaces.** The HUD is a white outlined pill (solid white, 2px charcoal
+  outline, pumpkin waveform) — no dark theme and no `hud-*` tokens; the Hub is the blush canvas (see
   [design-system.md](design-system.md) §2 / Phase 1).
 - **Caret-anchored when discoverable, screen-anchored otherwise.** Position priority is
   near-caret → fixed screen anchor (default bottom-center); the user can force a fixed anchor in
@@ -213,7 +213,7 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
     bounded window (e.g. dictation crashed/cancelled), the HUD auto-hides and the tray returns to
     idle. The HUD must never be left orphaned over the user's screen.
 13. **Reduced-motion honored.** When `prefers-reduced-motion` is set, the waveform/pulse becomes a
-    static `hud-accent` "listening" dot and the spinner becomes a non-spinning indicator
+    static pumpkin "listening" dot and the spinner becomes a non-spinning indicator
     (design-system §9c). State labels still change so the state is never conveyed by motion alone.
 14. **Multi-monitor & DPI correct.** Positioning uses the monitor under the **foreground window**
     (or the cursor as fallback) and that monitor's scale factor; the HUD appears on the screen the
@@ -237,7 +237,7 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
 | `hudEnabled` | bool | on / off | `true` | If off, dictation still works but no HUD is shown (tray icon still reflects state). |
 | `hudAnchor` | enum | `caret` · `bottomCenter` · `bottomRight` · `topCenter` | `caret` | Position strategy; `caret` falls back to `bottomCenter` when the caret point is unknown (Rule 11). |
 | `hudClickThrough` | bool | on / off | `true` | Make the pill mouse-transparent where the OS allows (Rule 2). Off keeps no-activate but lets the pill be hovered. |
-| `hudShowLanguageTag` | bool | on / off | `false` | Show the detected language tag (`hud-text-dim`) on the pill. |
+| `hudShowLanguageTag` | bool | on / off | `false` | Show the detected language tag (dimmed charcoal) on the pill. |
 | `startMinimizedToTray` | bool | on / off | `true` | Launch to tray with no window (the V1 default presence). |
 | `playSoundOnStart` | bool | on / off | `false` | Optional cue on listening-start (unobtrusive-by-default — design-system §9a). |
 | `activeModel` | enum | downloaded model ids | smallest downloaded | The warm STT model; also settable from the tray submenu (Rule 7 / [speech-to-text.md](speech-to-text.md)). |
@@ -278,8 +278,9 @@ This is the **feedback** surface, so it must be cheap and never on the hot path 
 
 ## 6. UI States
 
-Two surfaces. The **HUD** owns the dictation feedback state machine (dark, translucent); the
-**tray icon** is a 3-value reflection of it; the **Hub** (light) is shown/hidden by the tray.
+Two surfaces. The **HUD** owns the dictation feedback state machine (a white Blush pill — solid
+white, 2px charcoal outline); the **tray icon** is a 3-value reflection of it; the **Hub** (the
+blush canvas) is shown/hidden by the tray.
 
 ```
 HUD state machine (mirrors dictation orchestrator — see dictation.md):
@@ -287,29 +288,28 @@ HUD state machine (mirrors dictation orchestrator — see dictation.md):
   Idle(window hidden)
      │  hotkey down  &&  dictationEnabled  &&  hudEnabled   → show_hud (no-activate, positioned)
      ▼
-  Listening(pulsing action-blue ring + live waveform from level meter)
+  Listening(pumpkin waveform reacting to the level meter, on the white pill)
      │  endpoint / hotkey release
      ▼
-  Transcribing(spinner; waveform frozen/dimmed; "Transcribing…")
+  Transcribing(pumpkin spinner; waveform frozen/dimmed; "Transcribing…")
      │  text injected (handled by text-injection.md)
      ▼
-  Inserting(brief hud-success check ~400 ms; "Inserted")
+  Inserting(brief success-token ✓ tick ~400 ms; "Inserted")
      │  fade out
      ▼
   Idle(window hidden)
 
-  Any state ──(mic lost / no speech / STT fail / injection blocked)──► Error(hud-danger + label)
+  Any state ──(mic lost / no speech / STT fail / injection blocked)──► Error(danger-token ⚠ + label)
                                                                         → auto-dismiss → Idle
 ```
 
-- **HUD** (`MicHud.svelte`, dark `hud-*` tokens — design-system §7 "Mic HUD pill"):
-  - `listening`: `hud-accent` pulse ring + live waveform bars (`hud-wave`) reacting to the level
-    meter; label "Listening…".
-  - `transcribing`: small `hud-accent` spinner, waveform dimmed; label "Transcribing…".
-  - `inserting`: `hud-success` check tick; label "Inserted"; ~400 ms then fade.
-  - `error`: `hud-danger` glyph + short label ("Mic blocked", "No speech", "Couldn't type here");
+- **HUD** (`MicHud.svelte`, a white pill with a 2px charcoal outline — design-system §7 "Mic HUD pill"):
+  - `listening`: pumpkin waveform bars reacting to the level meter; charcoal label "Listening…".
+  - `transcribing`: small pumpkin spinner, waveform dimmed; charcoal label "Transcribing…".
+  - `inserting`: success-token ✓ tick; charcoal label "Inserted"; ~400 ms then fade.
+  - `error`: danger-token ⚠ glyph + short charcoal label ("Mic blocked", "No speech", "Couldn't type here");
     auto-dismiss; full detail in the Hub.
-  - One action color only (`action-blue`/`hud-accent`); every state carries a **text label**, not
+  - Pumpkin is the single accent (waveform/spinner); every state carries a **text label**, not
     color alone (≥ design-system §9c). Reduced-motion swaps animation for static indicators
     (Rule 13).
 - **Tray icon**: `idle` (enabled, not dictating) · `listening` (utterance active) · `disabled`
@@ -329,14 +329,14 @@ HUD state machine (mirrors dictation orchestrator — see dictation.md):
 | Caret position unknown / not exposed by target app | Fall back to the configured screen anchor (default bottom-center of the active monitor) — Rule 11. |
 | Multi-monitor, mixed DPI | HUD shows on the monitor under the foreground window, in logical px (same physical size everywhere) — Rule 14. |
 | True exclusive-fullscreen app (e.g. a game) | OS may suppress the overlay; MIA doesn't fight it. **Dictation still injects**; HUD feedback may be hidden (Rule 15). |
-| Foreground window is elevated (UAC) | HUD shows fine, but injection may fail (UIPI, ADR-005) → surface a `hud-danger` "Couldn't type here (elevated app)" and detail in the Hub. |
+| Foreground window is elevated (UAC) | HUD shows fine, but injection may fail (UIPI, ADR-005) → surface a danger-token ⚠ "Couldn't type here (elevated app)" and detail in the Hub. |
 | Dictation disabled, hotkey pressed | No HUD, no capture; tray icon stays `disabled` (Rule 6). |
 | State event dropped / dictation crashes mid-utterance | Watchdog auto-hides the HUD, tray → idle (Rule 12); HUD never orphaned. |
 | "Pick model" → model not downloaded | `Err("model not downloaded")`; open the Hub download gate ([speech-to-text.md](speech-to-text.md)) — Rule 7. |
 | Hub window closed | Hidden to tray, process keeps running (Rule 8); only Quit exits (Rule 9). |
 | Second instance launched | Single-instance: focus existing Hub / no-op; no duplicate tray or HUD (Rule 10). |
 | `prefers-reduced-motion` set | Static listening dot + non-spinning indicator; labels still change (Rule 13). |
-| WebView2 can't composite translucency | Fall back to opaque `hud-bg-solid` (design-system §2b) — still no-activate, still positioned. |
+| WebView2 compositing quirk on the pill | The pill is already a solid white surface (bg-surface) with a 2px charcoal outline — no translucency to lose; still no-activate, still positioned. |
 | No tray / notification area unavailable | Log + (rare) fall back to showing the Hub; MIA must remain controllable. |
 
 ---
@@ -386,7 +386,7 @@ HUD state machine (mirrors dictation orchestrator — see dictation.md):
 
 ### Cross-references
 
-- [design-system.md](design-system.md) — HUD `hud-*` tokens, the `MicHud` pill, layout §8b, UX §9.
+- [design-system.md](design-system.md) — the Blush tokens, the white `MicHud` pill, layout §8b, UX §9.
 - [dictation.md](dictation.md) — the orchestrator state machine this feature mirrors.
 - [audio-capture.md](audio-capture.md) — the derived mic level meter that feeds the waveform.
 - [hotkeys.md](hotkeys.md) — the PTT trigger; "dictation enabled" gates it.

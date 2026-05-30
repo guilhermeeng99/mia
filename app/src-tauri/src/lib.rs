@@ -6,7 +6,6 @@
 //! pipeline (audio, dictation, hotkey, stt, settings, dictionary, snippets, stats,
 //! inject) plus the tray and the floating HUD window.
 
-pub mod ai_commands;
 pub mod app_styles;
 pub mod audio;
 pub mod cleanup;

@@ -12,6 +12,7 @@
   import Field from "./ui/Field.svelte";
   import PageHeader from "./ui/PageHeader.svelte";
   import Pill from "./ui/Pill.svelte";
+  import ErrorBanner from "./ui/ErrorBanner.svelte";
   import { inputClass } from "./ui/inputClass";
 
   // Custom-dictionary CRUD section. Presentation only — all logic via dictionary.ts.
@@ -80,11 +81,7 @@
 
 <PageHeader title="Dicionário pessoal" subtitle="Nomes, jargões e siglas escritos do seu jeito (ex.: mia → MIA)." />
 
-{#if error}
-  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
-    <p class="text-body-lg text-danger">⚠ {error}</p>
-  </div>
-{/if}
+<ErrorBanner message={error} />
 
 <Card>
   <ul class="flex flex-col gap-2">

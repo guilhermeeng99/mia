@@ -2,7 +2,8 @@
 
 > **Status**: Live. Tokens are in `app/src/styles.css` (single `@theme`, light Hub + the
 > floating HUD). Shared primitives (`Button`, `Card`, `Field`, `Toggle`, `Pill`, `NavItem`,
-> `PageHeader`, `StatTile`, `MicHud`) live in `app/src/lib/components/ui/`. The Settings/Hub
+> `PageHeader`, `StatTile`) live in `app/src/lib/components/ui/`. `MicHud`, `HudWindow`, and
+> `Hub` itself live in `app/src/lib/components/` (not `ui/`). The Settings/Hub
 > window is a **sidebar + content** shell (`Hub.svelte`) that routes between self-contained
 > views (`lib/components/views/` + the CRUD sections). Onboarding and the mic HUD consume the
 > same tokens.
@@ -91,6 +92,7 @@ Use the Tailwind utility, never the raw hex.
 |---|---|---|
 | `canvas` | `#F6E0DB` | Page background (surface 0); inset list rows; hover wash on white. |
 | `canvas-deep` | `#EFD2CA` | Sidebar background, scrollbar thumb, ghost-button hover. |
+| `canvas-deeper` | `#E0BDB3` | Scrollbar-thumb hover (deeper canvas step). |
 | `surface` | `#FFFFFF` | Cards, fields (surface 1). |
 | `charcoal` | `#000000` | Primary text, **all outlines/borders**, active nav fill text. |
 | `ink-soft` | `#5B4F4A` | Secondary / helper / hint text on light surfaces. |
@@ -107,7 +109,6 @@ Use the Tailwind utility, never the raw hex.
 | `lavender` | `#E69DFF` | Soft accent fill / stat tile. |
 | `lemon` | `#E7DB4C` | Highlight splash / stat tile. |
 | `spring` | `#6ED311` | Positive / "on" — Toggle on-state, success pill, level meter. |
-| `deep-blue` | `#5196FF` | Precise accent (reserved). |
 
 ### 2c. Semantic status
 
