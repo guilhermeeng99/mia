@@ -117,8 +117,8 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf>; // locate exe/DLL in ex
 /// assert every anti-hallucination setting is present regardless of language/model. The later
 /// in-process whisper-rs path maps the same policy to `FullParams` (greedy, temperature 0,
 /// `no_context = true`, VAD with the Silero model).
-fn inference_fields(language: Option<&str>) -> Vec<(String, String)>; // per-request anti-hallucination (whisper-server)
-fn server_args(model: &Path, port: u16, threads: usize) -> Vec<String>; // warm-server startup args
+fn inference_fields(language: Option<&str>, prompt: Option<&str>) -> Vec<(String, String)>; // anti-hallucination + dictionary bias prompt (whisper-server)
+fn server_args(model: &Path, vad_model: &Path, port: u16, threads: usize) -> Vec<String>; // warm-server startup args (incl. Silero --vad-model)
 ```
 
 - **Backend selection**: the warm **whisper-server** sidecar is the **MVP default** (cmake-free); MIA spawns it once and POSTs PCM to `127.0.0.1` per utterance. **whisper-rs in-process** is the **later optimization** (no IPC/localhost hop, no shell capability), deferred because it builds whisper.cpp via cmake; the same anti-hallucination params map to either backend. The CUDA engine is selected at warm time when `gpu_engine_status` reports it installed (the warm server/engine loads the CUDA build instead of the CPU build) — the dispatch *idea* is Toolzy's `recognize`, but the model is loaded **once** and kept warm, not cold-spawned per run.

@@ -323,6 +323,15 @@ mod tests {
     }
 
     #[test]
+    fn apply_case_capitalizes_only_at_sentence_start() {
+        assert_eq!(apply_case("hello", SnippetCase::MatchSentence, true), "Hello");
+        assert_eq!(apply_case("hello", SnippetCase::MatchSentence, false), "hello");
+        assert_eq!(apply_case("hello", SnippetCase::Verbatim, true), "hello");
+        // Empty expansion must not panic at sentence start (chars.next() == None branch).
+        assert_eq!(apply_case("", SnippetCase::MatchSentence, true), "");
+    }
+
+    #[test]
     fn expands_a_phrase_trigger() {
         let s = vec![snip("minha assinatura", "João Silva\nCEO")];
         let r = expand("segue minha assinatura obrigado", &s);

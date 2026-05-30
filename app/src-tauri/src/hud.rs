@@ -32,6 +32,18 @@ pub fn setup_hud(app: &AppHandle) {
     dock_bottom_center(&hud);
 }
 
+/// Centered bottom-edge placement, clamped to the monitor's origin so the window never
+/// lands off the top/left of the screen. Pure arithmetic, unit-tested in isolation —
+/// `origin`/`screen`/`win` are physical px, `margin` is the gap above the bottom edge.
+fn bottom_center_pos(origin: (i32, i32), screen: (i32, i32), win: (i32, i32), margin: i32) -> (i32, i32) {
+    let (ox, oy) = origin;
+    let (sw, sh) = screen;
+    let (ww, wh) = win;
+    let x = ox + (sw - ww) / 2;
+    let y = oy + sh - wh - margin;
+    (x.max(ox), y.max(oy))
+}
+
 /// Position the (physically sized) window centered along its monitor's bottom edge,
 /// accounting for the monitor's own origin so it lands on the right screen.
 fn dock_bottom_center(hud: &WebviewWindow) {
@@ -43,7 +55,40 @@ fn dock_bottom_center(hud: &WebviewWindow) {
     };
     let screen = monitor.size();
     let origin = monitor.position();
-    let x = origin.x + (screen.width as i32 - win.width as i32) / 2;
-    let y = origin.y + screen.height as i32 - win.height as i32 - BOTTOM_MARGIN;
-    let _ = hud.set_position(PhysicalPosition::new(x.max(origin.x), y.max(origin.y)));
+    let (x, y) = bottom_center_pos(
+        (origin.x, origin.y),
+        (screen.width as i32, screen.height as i32),
+        (win.width as i32, win.height as i32),
+        BOTTOM_MARGIN,
+    );
+    let _ = hud.set_position(PhysicalPosition::new(x, y));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn centers_and_offsets_above_the_bottom_edge() {
+        // 1920x1080 monitor at origin, 200x48 pill, 64px margin.
+        let (x, y) = bottom_center_pos((0, 0), (1920, 1080), (200, 48), 64);
+        assert_eq!(x, (1920 - 200) / 2); // 860
+        assert_eq!(y, 1080 - 48 - 64); // 968
+    }
+
+    #[test]
+    fn honors_a_nonzero_monitor_origin() {
+        // A second monitor to the right keeps the pill on that screen.
+        let (x, y) = bottom_center_pos((1920, 0), (1280, 720), (200, 48), 64);
+        assert_eq!(x, 1920 + (1280 - 200) / 2);
+        assert_eq!(y, 720 - 48 - 64);
+    }
+
+    #[test]
+    fn clamps_to_origin_when_window_exceeds_screen() {
+        // A window taller/wider than the monitor must never land above/left of origin.
+        let (x, y) = bottom_center_pos((100, 100), (300, 200), (400, 400), 64);
+        assert_eq!(x, 100);
+        assert_eq!(y, 100);
+    }
 }

@@ -12,6 +12,7 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import Toggle from "./ui/Toggle.svelte";
+  import { inputClass } from "./ui/inputClass";
 
   // Snippets CRUD + preview section. Presentation only — all logic via snippets.ts.
   let snippets = $state<Snippet[]>([]);
@@ -121,8 +122,7 @@
       <input
         bind:value={trigger}
         placeholder="minha assinatura"
-        class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-               text-midnight-indigo min-h-[40px]"
+        class={inputClass}
       />
     </Field>
     <Field label="Expansão">
@@ -146,8 +146,7 @@
       <input
         bind:value={sample}
         placeholder="segue minha assinatura"
-        class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-               text-midnight-indigo min-h-[40px]"
+        class={inputClass}
       />
     </Field>
     <div class="flex items-center gap-3">

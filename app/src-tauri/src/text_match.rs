@@ -151,4 +151,14 @@ mod tests {
         let toks = tokenize("hello,  world!");
         assert_eq!(reconstruct(&toks, &Plan::new()), "hello,  world!");
     }
+
+    #[test]
+    fn consume_words_clamps_past_end_without_panic() {
+        let toks = tokenize("react js");
+        // A plan span claiming more words than remain must stop at the end, not overrun.
+        assert_eq!(consume_words(&toks, 0, 5), toks.len());
+        let mut plan = Plan::new();
+        plan.insert(0, (5, "X".to_string())); // span 5 words; only 2 exist
+        assert_eq!(reconstruct(&toks, &plan), "X");
+    }
 }

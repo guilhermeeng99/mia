@@ -1,13 +1,14 @@
-//! AI Command Mode + Polish — optional, opt-in local-LLM text intelligence
-//! (ADR-008, Phase 2). The LLM never touches the faithful default path; it runs
-//! only when the user explicitly asks (a command/polish). See
-//! `docs/specs/ai-commands.md`.
+//! AI Command Mode + Polish — **descoped** (Phase 2 dropped by product decision,
+//! 2026-05-29; ADR-008). MIA stays a faithful, deterministic dictation tool — see
+//! `docs/specs/ai-commands.md` and the roadmap. This module is **dormant**: it is
+//! wired to nothing (no `#[tauri::command]`, no caller), and the `llama-server`
+//! runtime that once drove it was built and then reverted.
 //!
-//! This file is the **pure, cargo-tested core**: the cheap pre-LLM `route_intent`
-//! classifier (no model, sub-ms), the GBNF `command_grammar` that constrains
-//! Command-Mode decoding to a valid `ParsedCommand`, the per-action/per-language
-//! `build_prompt`, and `validate_parsed`. The llama.cpp runtime, model download,
-//! and the `run_command`/`polish` commands are the runtime-pending follow-up.
+//! What remains is the **pure, cargo-tested core** kept only as a starting point
+//! should AI ever be reconsidered: the cheap pre-LLM `route_intent` classifier (no
+//! model, sub-ms), the GBNF `command_grammar` that would constrain Command-Mode
+//! decoding to a valid `ParsedCommand`, the per-action/per-language `build_prompt`,
+//! and `validate_parsed`. Nothing here runs in the shipped dictation path.
 
 use serde::{Deserialize, Serialize};
 

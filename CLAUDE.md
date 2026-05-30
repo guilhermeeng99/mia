@@ -56,6 +56,7 @@ app/
       cleanup.rs       #   deterministic rule-based cleanup (fillers, spoken punctuation, …)
       inject.rs        #   Windows text injection (enigo SendInput + arboard clipboard fallback)
       hotkey.rs        #   global push-to-talk (tauri-plugin-global-shortcut)
+      power_resume.rs  #   re-claim the PTT hotkey after sleep-resume / session-unlock + idle self-heal (hotkeys.md Rule 15)
       tray.rs          #   system tray (Tauri's built-in tray-icon feature)
       hud.rs           #   floating mic HUD overlay window plumbing
       dictation.rs     #   end-to-end orchestrator (capture → STT → cleanup → dict/snippets → inject)

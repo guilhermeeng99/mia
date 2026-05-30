@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// Typed mirror of Rust `dictionary::{DictEntry, DictSettings}` (serde camelCase).
-// The Hub holds no matching logic — it only CRUDs entries via these wrappers.
+// Typed mirror of Rust `dictionary::DictEntry` (serde camelCase). The Hub holds no
+// matching logic — it only CRUDs entries via these wrappers.
 
 export interface DictEntry {
   id: string;
@@ -12,13 +12,6 @@ export interface DictEntry {
   fuzzy: boolean;
   biasPrompt: boolean;
   enabled: boolean;
-}
-
-export interface DictSettings {
-  fuzzyEnabledGlobally: boolean;
-  fuzzyMaxDistance: number;
-  biasEnabled: boolean;
-  biasMaxTerms: number;
 }
 
 /** List all dictionary entries. */
@@ -39,14 +32,4 @@ export function dictUpdate(entry: DictEntry): Promise<DictEntry> {
 /** Remove an entry by id. */
 export function dictRemove(id: string): Promise<void> {
   return invoke<void>("dict_remove", { id });
-}
-
-/** Read the global dictionary settings (fuzzy / bias). */
-export function dictSettingsGet(): Promise<DictSettings> {
-  return invoke<DictSettings>("dict_settings_get");
-}
-
-/** Replace the global dictionary settings. */
-export function dictSettingsSet(settings: DictSettings): Promise<DictSettings> {
-  return invoke<DictSettings>("dict_settings_set", { settings });
 }

@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+// HotkeyConfig/ActivationMode are owned by ./hotkey (a single mirror of the Rust
+// `hotkey` struct); re-export so settings.ts consumers keep one import site.
+import type { ActivationMode, HotkeyConfig } from "./hotkey";
 import type { InjectMode } from "./inject";
+export type { ActivationMode, HotkeyConfig };
 
 // Typed mirror of the Rust `settings::Settings` tree (serde camelCase). The Hub
 // reads via getSettings and PATCHes whole groups via updateSettings.
@@ -8,7 +12,6 @@ export type DefaultLanguage = "auto" | "pt" | "en";
 export type Engine = "cpu" | "cuda";
 export type HudPosition = "caret" | "bottomCenter" | "bottomRight";
 export type AiModel = "qwen2.5-3b" | "llama-3.2-3b";
-export type ActivationMode = "pushToHold" | "pressToToggle";
 
 export interface GeneralSettings {
   launchAtLogin: boolean;
@@ -18,11 +21,6 @@ export interface GeneralSettings {
   collectStats: boolean;
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;
-}
-
-export interface HotkeyConfig {
-  accelerator: string;
-  mode: ActivationMode;
 }
 
 export interface ModelSettings {
@@ -105,9 +103,4 @@ export function getSettings(): Promise<Settings> {
 /** Merge a patch, validate, persist atomically; resolves to the full new settings. */
 export function updateSettings(patch: SettingsPatch): Promise<Settings> {
   return invoke<Settings>("update_settings", { patch });
-}
-
-/** Overwrite with defaults and persist; resolves to the defaults. */
-export function resetSettings(): Promise<Settings> {
-  return invoke<Settings>("reset_settings");
 }

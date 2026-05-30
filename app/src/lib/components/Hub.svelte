@@ -10,6 +10,7 @@
   } from "../audio";
   import { injectText } from "../inject";
   import { checkForUpdate, installUpdate, type Update } from "../update";
+  import { getStats, resetStats, type UsageStats } from "../stats";
   import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../hotkey";
   import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import {
@@ -28,6 +29,7 @@
   import Field from "./ui/Field.svelte";
   import Pill from "./ui/Pill.svelte";
   import Toggle from "./ui/Toggle.svelte";
+  import { inputClass } from "./ui/inputClass";
   import DictionarySection from "./DictionarySection.svelte";
   import SnippetsSection from "./SnippetsSection.svelte";
   import PerAppSection from "./PerAppSection.svelte";
@@ -60,6 +62,7 @@
   let hotkeyError = $state<string | null>(null);
   let update = $state<Update | null>(null);
   let updateBusy = $state(false);
+  let stats = $state<UsageStats | null>(null);
   let error = $state<string | null>(null);
 
   function fail(e: unknown) {
@@ -181,9 +184,20 @@
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
     getSettings().then((s) => (general = s.general)).catch(fail);
     getHotkey().then((h) => (hotkey = h)).catch(fail);
+    getStats().then((s) => (stats = s)).catch(fail);
     // Auto-check for a newer signed release on launch; never throws (offline-safe).
     checkForUpdate().then((u) => (update = u)).catch(() => {});
   });
+
+  // Local-only usage stats — never uploaded (ADR-001). Clear + refetch.
+  async function resetUsageStats() {
+    try {
+      await resetStats();
+      stats = await getStats();
+    } catch (e) {
+      fail(e);
+    }
+  }
 
   async function download(id: string) {
     downloading = id;
@@ -285,8 +299,7 @@
         <Field label="Dispositivo de entrada" hint="Persistência da escolha chega com a captura ao vivo.">
           <select
             bind:value={selectedDevice}
-            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-                   text-midnight-indigo min-h-[40px]"
+            class={inputClass}
           >
             <option value="">Padrão do sistema</option>
             {#each devices as device (device.id)}
@@ -345,8 +358,7 @@
             value={hotkey?.mode ?? "pushToHold"}
             disabled={!hotkey}
             onchange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as ActivationMode)}
-            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-                   text-midnight-indigo min-h-[40px]"
+            class={inputClass}
           >
             <option value="pushToHold">Segurar para falar</option>
             <option value="pressToToggle">Pressionar para ligar/desligar</option>
@@ -379,8 +391,7 @@
             value={general?.defaultLanguage ?? "auto"}
             disabled={!general}
             onchange={(e) => setLanguage((e.currentTarget as HTMLSelectElement).value)}
-            class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-                   text-midnight-indigo min-h-[40px]"
+            class={inputClass}
           >
             <option value="auto">Automático</option>
             <option value="pt">Português (pt-BR)</option>
@@ -454,8 +465,7 @@
       <div class="mt-4 flex flex-col gap-3">
         <input
           bind:value={testText}
-          class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-                 text-midnight-indigo min-h-[40px]"
+          class={inputClass}
         />
         <div class="flex items-center gap-3">
           <Button onclick={runInjectTest}>Testar injeção</Button>
@@ -464,6 +474,34 @@
           {/if}
         </div>
       </div>
+    </Card>
+
+    <Card>
+      <h2 class="text-heading font-semibold">Estatísticas</h2>
+      <p class="mt-1 text-body text-slate-blue">Locais — nunca enviadas (ADR-001).</p>
+      {#if stats}
+        <div class="mt-4 flex flex-wrap gap-8">
+          <div>
+            <div class="text-heading font-bold">{stats.totalWords}</div>
+            <div class="text-body text-slate-blue">palavras ditadas</div>
+          </div>
+          <div>
+            <div class="text-heading font-bold">{stats.avgWpm}</div>
+            <div class="text-body text-slate-blue">WPM médio</div>
+          </div>
+          <div>
+            <div class="text-heading font-bold">{stats.dayStreak}</div>
+            <div class="text-body text-slate-blue">dias seguidos</div>
+          </div>
+          <div>
+            <div class="text-heading font-bold">{stats.bestStreak}</div>
+            <div class="text-body text-slate-blue">melhor sequência</div>
+          </div>
+        </div>
+        <div class="mt-4">
+          <Button variant="ghost" onclick={resetUsageStats}>Zerar estatísticas</Button>
+        </div>
+      {/if}
     </Card>
 
     <DictionarySection />

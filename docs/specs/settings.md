@@ -96,19 +96,17 @@ fn reset_settings(state: State<'_, AppState>) -> Result<Settings, String>;
 #[tauri::command]
 fn list_input_devices() -> Result<Vec<AudioDevice>, String>;             // Audio tab picker — IMPLEMENTED (audio.rs)
 
-// --- Phase-pending (NOT yet registered) — drawn here as the planned contract: ---
+// --- mic test (IMPLEMENTED, audio.rs) — streams a live RMS meter to the Hub + onboarding ---
 #[tauri::command]
-fn start_mic_test(channel: tauri::ipc::Channel<f32>) -> Result<(), String>; // streams RMS level — Phase-pending
-#[tauri::command]
-fn stop_mic_test(state: State<'_, AppState>) -> Result<(), String>;          // Phase-pending
+fn test_microphone(state: State<'_, CaptureState>, ms: Option<u32>, level: tauri::ipc::Channel<CaptureEvent>) -> Result<MicTest, String>;
 
-#[tauri::command]
-fn set_launch_at_login(enabled: bool) -> Result<(), String>;             // General tab — Phase-pending
+// Launch-at-login is NOT a standalone command: toggling `general.launchAtLogin` via
+// `update_settings` syncs tauri-plugin-autostart as a side effect (re-applied at startup).
 
 // ---- stats.rs (IMPLEMENTED) ----
 
 #[tauri::command]
-fn get_stats(state: State<'_, AppState>) -> Result<UsageStats, String>;  // Hub dashboard
+fn get_stats(state: State<'_, AppState>) -> Result<UsageStatsView, String>;  // Hub dashboard (derived totals + WPM + streak)
 #[tauri::command]
 fn reset_stats(state: State<'_, AppState>) -> Result<(), String>;        // clear local stats
 
@@ -120,13 +118,13 @@ async fn check_for_update() -> Result<UpdateInfo, String>;               // {ava
 async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), String>; // Phase-pending
 ```
 
-> **Implementation status.** Of the commands above, only `list_input_devices` (in `audio.rs`)
-> plus the `settings.rs` group (`get_settings` / `update_settings` / `reset_settings`) and the
-> `stats.rs` group (`get_stats` / `reset_stats`) are registered today. The mic-test
-> (`start_mic_test` / `stop_mic_test`), launch-at-login (`set_launch_at_login`), and updater
-> (`check_for_update` / `install_update`) commands are **Phase-pending** — the contract is locked
-> here, the engine side lands in a later phase (mic test in the Audio tab work; updater in
-> Phase 4, ADR-009).
+> **Implementation status.** Registered today: `list_input_devices` (in `audio.rs`), the
+> `settings.rs` group (`get_settings` / `update_settings` / `reset_settings`), the `stats.rs`
+> group (`get_stats` / `reset_stats`), and the mic test `test_microphone` (audio.rs). Launch-at-login
+> is **not** a command — it is an `update_settings` side effect (toggling `general.launchAtLogin`
+> syncs `tauri-plugin-autostart`). The in-app updater is wired (Phase 4, ADR-009) via the
+> `tauri-plugin-updater` JS API (`check`/`downloadAndInstall`/`relaunch`, see `update.ts`), not via
+> the `check_for_update` / `install_update` custom commands sketched above.
 
 - **`Settings`** (serde `rename_all = "camelCase"`) — the full preferences tree, see §4. Carries a
   `schemaVersion: u32` for forward migration.

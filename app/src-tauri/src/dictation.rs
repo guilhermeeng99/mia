@@ -484,4 +484,38 @@ mod tests {
         let r = build_result(0, None, 2_000, 0, 0, 1_000, "clipboard");
         assert_eq!(r.total_ms, 0); // done < start → saturating 0, never underflow
     }
+
+    #[test]
+    fn stt_lang_maps_each_language() {
+        // A swapped arm here silently mis-routes the STT language of every dictation.
+        assert_eq!(stt_lang(DefaultLanguage::Auto), None);
+        assert_eq!(stt_lang(DefaultLanguage::Pt), Some("pt".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::En), Some("en".to_string()));
+    }
+
+    #[test]
+    fn cleanup_lang_maps_each_language() {
+        assert_eq!(cleanup_lang(DefaultLanguage::Auto), crate::cleanup::Lang::Other);
+        assert_eq!(cleanup_lang(DefaultLanguage::Pt), crate::cleanup::Lang::PtBr);
+        assert_eq!(cleanup_lang(DefaultLanguage::En), crate::cleanup::Lang::En);
+    }
+
+    #[test]
+    fn cleanup_options_wires_each_toggle() {
+        // Pin every settings toggle to its CleanupOptions field so the wiring can't drift.
+        let c = CleanupSettings {
+            filler_removal: true,
+            spoken_punctuation: false,
+            stutter_collapse: true,
+            capitalization: false,
+        };
+        let o = cleanup_options(&c);
+        assert_eq!(o.remove_fillers, c.filler_removal);
+        assert_eq!(o.spoken_punctuation, c.spoken_punctuation);
+        assert_eq!(o.collapse_repeats, c.stutter_collapse);
+        assert_eq!(o.fix_capitalization, c.capitalization);
+        // Static policy at this layer: numbers normalized, trailing period left to per-app.
+        assert!(o.normalize_numbers);
+        assert!(!o.ensure_trailing_period);
+    }
 }

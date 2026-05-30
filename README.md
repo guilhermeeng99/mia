@@ -36,7 +36,7 @@ Honest status legend: ✅ Done · 🚧 In progress · ⬜ Planned · 💡 Backlo
 - **Anti-hallucination, always on**: Silero VAD + greedy decoding (whisper-server `/inference` at temperature 0 with the temperature-fallback ladder disabled) + stateless, independent per-utterance requests (no previous-text conditioning across utterances).
 - ✅ **Deterministic text cleanup**: filler-word removal (um/uh/é/tipo/né…), spoken-punctuation substitution ("nova linha", "ponto", "vírgula"), stutter/repeat collapse, whitespace normalization, sentence casing.
 - ✅ **System-wide text injection** at the cursor via Windows `SendInput` (Unicode keystrokes), with a clipboard + Ctrl+V fallback for long text.
-- ✅ System **tray** icon (Open / Quit) and a floating **mic HUD** overlay in its own transparent, always-on-top, click-through window (listening → transcribing → inserting, with a live waveform).
+- ✅ System **tray** icon (Open / Reativar atalho / Quit) and a floating **mic HUD** overlay in its own transparent, always-on-top, click-through window (listening → transcribing → inserting, with a live waveform).
 - ✅ **On-demand model download** gate with streamed progress (models fetched from Hugging Face).
 - ✅ **pt-BR + English** first-class language selection (Automático / Português (pt-BR) / English), forwarded per utterance to the warm Whisper path.
 - ✅ Focused-target + elevated-window (UIPI) injection detection is wired; on-device UAC validation is owner-gated. A dictation session ends only on an explicit user action (hotkey release / 2nd toggle press) — never on silence.

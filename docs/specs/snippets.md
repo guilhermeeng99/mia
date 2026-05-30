@@ -102,16 +102,16 @@ pub struct Snippet {
 pub struct SnippetSet { /* Vec<CompiledSnippet> sorted by trigger word-len desc */ }
 
 #[tauri::command]
-async fn list_snippets(state: State<'_, AppState>) -> Result<Vec<Snippet>, String>;
+fn list_snippets(state: State<'_, AppState>) -> Result<Vec<Snippet>, String>;
 
 #[tauri::command]
-async fn upsert_snippet(state: State<'_, AppState>, snippet: Snippet) -> Result<Snippet, String>;
+fn upsert_snippet(state: State<'_, AppState>, snippet: Snippet) -> Result<Snippet, String>;
 
 #[tauri::command]
-async fn delete_snippet(state: State<'_, AppState>, id: String) -> Result<(), String>;
+fn delete_snippet(state: State<'_, AppState>, id: String) -> Result<(), String>;
 
 #[tauri::command]
-async fn preview_expansion(
+fn preview_expansion(
     state: State<'_, AppState>,
     text: String,                 // sample utterance
 ) -> Result<ExpansionResult, String>;   // { output, appliedTriggers: Vec<String> }

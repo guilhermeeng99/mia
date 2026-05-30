@@ -1,7 +1,7 @@
 # Tray & Floating Mic HUD Feature Spec
 
 > **Status**: Phase 1 — **tray + HUD window both implemented and validated on Windows**. The tray
-> (`app/src-tauri/src/tray.rs`: Open Settings/Hub + Quit) is live, and the floating mic HUD now
+> (`app/src-tauri/src/tray.rs`: Open Settings/Hub + Reativar atalho + Quit) is live, and the floating mic HUD now
 > lives in a **dedicated transparent, always-on-top, click-through window** (`app/src-tauri/src/hud.rs`
 > docks it + makes it click-through; `HudWindow.svelte` mounts `MicHud.svelte` on `?win=hud`), driven
 > directly by the engine's `hud://state` + `hud://level` events. **Close-to-tray is wired**: closing
@@ -88,7 +88,7 @@ scalar level.
 > (`show_hud` / `hide_hud` / `set_dictation_enabled` / `set_active_model` / `open_hub`) are the
 > **planned target** and are **not yet implemented** — none are registered in `lib.rs`'s
 > `invoke_handler`. **What exists today:** `app/src-tauri/src/tray.rs` implements the system tray
-> via Tauri's built-in tray-icon feature, with **Open Settings/Hub** and **Quit** menu items; and
+> via Tauri's built-in tray-icon feature, with **Open Settings/Hub**, **Reativar atalho**, and **Quit** menu items; and
 > `app/src-tauri/src/hud.rs` exists and is wired at startup (`hud::setup_hud` in `lib.rs`) doing the
 > native window plumbing — click-through (`set_ignore_cursor_events`) + bottom-center docking
 > (`dock_bottom_center`). The mic HUD is a **dedicated Tauri window** labeled `"hud"` rendering
@@ -123,8 +123,9 @@ enum HudState {
 async fn show_hud(app: AppHandle, near_caret: bool) -> Result<(), String>;
 #[tauri::command]
 async fn hide_hud(app: AppHandle) -> Result<(), String>;
-// State is streamed by emitting `hud://state` (HudState) and `hud://level` (f32) to the HUD
-// window via app.emit_to("mic-hud", …). The level meter uses a throttled event, NOT a command.
+// State is streamed by emitting the GLOBAL events `hud://state` (HudState) and `hud://level`
+// (f32) via app.emit(…); the HUD window (label "hud", HUD_LABEL in hud.rs; rendered by
+// HudWindow.svelte) listens for them. The level meter uses a throttled event, NOT a command.
 
 // ---- Tray-driven intents (also reachable from the Hub) ----
 #[tauri::command]

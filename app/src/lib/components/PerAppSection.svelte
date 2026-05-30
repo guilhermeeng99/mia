@@ -12,6 +12,7 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import Toggle from "./ui/Toggle.svelte";
+  import { inputClass } from "./ui/inputClass";
 
   // Per-app writing styles / context (per-app-context.md). Presentation only — the whole
   // `perApp` group is PATCHed via updateSettings (group-granular, like cleanup/snippets).
@@ -72,9 +73,6 @@
     if (s.ensureTrailingPeriod != null) parts.push(s.ensureTrailingPeriod ? "ponto final" : "sem ponto");
     return parts.length ? parts.join(" · ") : "sem alterações";
   }
-
-  const inputClass =
-    "rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg text-midnight-indigo min-h-[40px]";
 </script>
 
 <Card>

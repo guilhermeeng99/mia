@@ -101,17 +101,17 @@ pub struct DictSettings {
 
 // ---- Commands (CRUD; the UI holds no rewrite logic) — IMPLEMENTED & registered ----
 #[tauri::command]
-async fn dict_list() -> Result<Vec<DictEntry>, String>;
+fn dict_list() -> Result<Vec<DictEntry>, String>;
 #[tauri::command]
-async fn dict_add(entry: DictEntry) -> Result<DictEntry, String>;     // validates, assigns id, persists
+fn dict_add(entry: DictEntry) -> Result<DictEntry, String>;     // validates, assigns id, persists
 #[tauri::command]
-async fn dict_update(entry: DictEntry) -> Result<DictEntry, String>;  // by id
+fn dict_update(entry: DictEntry) -> Result<DictEntry, String>;  // by id
 #[tauri::command]
-async fn dict_remove(id: String) -> Result<(), String>;
+fn dict_remove(id: String) -> Result<(), String>;
 #[tauri::command]
-async fn dict_settings_get() -> Result<DictSettings, String>;
+fn dict_settings_get() -> Result<DictSettings, String>;
 #[tauri::command]
-async fn dict_settings_set(settings: DictSettings) -> Result<DictSettings, String>;
+fn dict_settings_set(settings: DictSettings) -> Result<DictSettings, String>;
 
 // ---- Phase-pending (specified, NOT yet implemented or registered) ----
 // Bulk import/export (backup / sharing of the dictionary JSON) is designed here

@@ -11,6 +11,7 @@
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
   import Pill from "./ui/Pill.svelte";
+  import { inputClass } from "./ui/inputClass";
 
   // Custom-dictionary CRUD section. Presentation only — all logic via dictionary.ts.
   let entries = $state<DictEntry[]>([]);
@@ -112,16 +113,14 @@
       <input
         bind:value={replacement}
         placeholder="MIA"
-        class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-               text-midnight-indigo min-h-[40px]"
+        class={inputClass}
       />
     </Field>
     <Field label="Variantes faladas (vírgula)" hint="opcional">
       <input
         bind:value={sounds}
         placeholder="mia, m i a"
-        class="rounded-xl border border-platinum-tint bg-snow-white px-3 py-2 text-body-lg
-               text-midnight-indigo min-h-[40px]"
+        class={inputClass}
       />
     </Field>
     <Button onclick={add} disabled={replacement.trim() === ""}>Adicionar</Button>
