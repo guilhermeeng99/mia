@@ -30,6 +30,15 @@ pub const DEBOUNCE_MS: u64 = 40;
 pub const MAX_HOLD_MS: u64 = 30_000;
 /// Recorder auto-cancel timeout (Rule 12, §4).
 pub const CAPTURE_TIMEOUT_MS: u64 = 15_000;
+/// Idle self-heal cadence (Rule 15, §10): how often, while no session is active, MIA
+/// re-claims the PTT chord. Windows can silently drop a `RegisterHotKey` routing (an
+/// IME/TSF arming `Ctrl+Space`, a sleep/lock transition, another app briefly grabbing
+/// the chord); MIA registers once at startup with no recovery, so without this the
+/// hotkey stays dead until the app is restarted. Re-registering self-heals it.
+pub const SELF_HEAL_INTERVAL_MS: u64 = 30_000;
+/// Poll cadence of the self-heal loop — short so a cycle skipped because a hold was in
+/// progress retries soon after the user lets go (Rule 15).
+const SELF_HEAL_POLL_MS: u64 = 5_000;
 
 /// How the chord activates dictation (§2). Persisted in settings.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -217,6 +226,12 @@ pub fn is_reserved(accel: &Accel) -> bool {
             | (false, false, false, true, Some("D"))     // Win+D (show desktop)
             | (true, true, false, false, Some("Delete")) // Ctrl+Alt+Del
     )
+}
+
+/// Pure self-heal tick decision (Rule 15): re-claim the chord only when **idle** (never
+/// yank it out from under an active push-to-hold) and at most once per interval.
+pub fn should_self_heal(session_active: bool, ms_since_last: u64, interval_ms: u64) -> bool {
+    !session_active && ms_since_last >= interval_ms
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -571,6 +586,76 @@ pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Self-healing re-registration (Rule 15) — the recovery the single startup
+// registration above lacks. A silently-dropped OS routing is otherwise permanent
+// until restart; these re-claim the chord automatically (idle tick + resume/unlock)
+// and on demand (tray "Re-register").
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Re-claim the active PTT chord on the OS (Rule 15). Idempotent: unregister-then-
+/// register, so a still-valid binding is a harmless no-op and a silently-dropped one is
+/// restored. Resets the edge tracker — a fresh OS registration invalidates any in-flight
+/// hold. **MUST run off the plugin's shortcut-handler thread AND off the main loop**:
+/// `register`/`unregister` post to the main loop and block, so calling them there would
+/// deadlock (see `on_shortcut_event`). Callers reach it via `request_reregister` (its own
+/// worker) or the `start_self_heal` tick (its own thread).
+fn do_reregister(app: &AppHandle) {
+    let Some(rt) = app.try_state::<HotkeyRuntime>() else {
+        return;
+    };
+    let Ok(cfg) = rt.cfg.lock().map(|c| c.clone()) else {
+        return;
+    };
+    let Ok(sc) = parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) else {
+        return;
+    };
+    let gs = app.global_shortcut();
+    let _ = gs.unregister(sc); // ignore: may not currently be registered (Copy, no move)
+    match gs.register(sc) {
+        Ok(()) => {
+            if let Ok(mut e) = rt.edge.lock() {
+                *e = EdgeState::default();
+            }
+            crate::dlog!("[hotkey] self-heal: re-registered PTT '{}'", cfg.accelerator);
+        }
+        // Chord momentarily owned by the OS/another app (e.g. an IME armed Ctrl+Space):
+        // leave it; the next tick retries and re-claims it once they release it.
+        Err(e) => {
+            crate::dlog!("[hotkey] self-heal: re-register deferred ('{}'): {e}", cfg.accelerator)
+        }
+    }
+}
+
+/// Request a PTT re-registration from anywhere (tray menu, window focus, resume/unlock).
+/// Spawns a worker so it is safe to call from the main loop / event callbacks — calling
+/// the plugin's register/unregister directly there would deadlock (see `do_reregister`).
+pub fn request_reregister(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || do_reregister(&app));
+}
+
+/// Start the idle self-heal loop (Rule 15): every `SELF_HEAL_INTERVAL_MS`, while no
+/// session is active, re-claim the PTT chord so a silently-dropped registration recovers
+/// without a restart. Spawned once from `setup`; runs for the app's lifetime.
+pub fn start_self_heal(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last = now_ms();
+        loop {
+            std::thread::sleep(Duration::from_millis(SELF_HEAL_POLL_MS));
+            let active = app
+                .try_state::<HotkeyRuntime>()
+                .and_then(|rt| rt.edge.lock().ok().map(|e| e.active))
+                .unwrap_or(false);
+            if should_self_heal(active, now_ms().saturating_sub(last), SELF_HEAL_INTERVAL_MS) {
+                do_reregister(&app);
+                last = now_ms();
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,6 +780,17 @@ mod tests {
         // A modifier-only chord has no key → not registrable.
         let mods_only = Accel { mods: Mods { ctrl: true, sup: true, ..Default::default() }, key: None };
         assert!(to_shortcut(&mods_only).is_err());
+    }
+
+    #[test]
+    fn self_heal_only_when_idle_and_interval_elapsed() {
+        // Idle and a full interval since the last re-claim → re-register (Rule 15).
+        assert!(should_self_heal(false, 30_000, 30_000));
+        assert!(should_self_heal(false, 45_000, 30_000));
+        // Active hold → never (don't yank the chord out from under an in-flight session).
+        assert!(!should_self_heal(true, 60_000, 30_000));
+        // Idle but the interval hasn't elapsed yet → wait.
+        assert!(!should_self_heal(false, 10_000, 30_000));
     }
 
     #[test]

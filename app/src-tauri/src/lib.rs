@@ -16,6 +16,7 @@ pub mod hotkey;
 pub mod hud;
 pub mod inject;
 pub mod persist;
+pub mod power_resume;
 pub mod settings;
 pub mod snippets;
 pub mod stats;
@@ -107,6 +108,13 @@ pub fn run() {
             // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
             app.state::<hotkey::HotkeyRuntime>().hydrate(hk_cfg.clone());
             hotkey::register_initial(app.handle(), &hk_cfg);
+            // Self-healing PTT registration (hotkeys.md Rule 15). Windows can silently
+            // drop the RegisterHotKey routing (an IME/TSF arming Ctrl+Space, a sleep/lock
+            // transition, a brief grab by another app); MIA registers only once above, so
+            // without recovery the hotkey stays dead until restart. An idle tick re-claims
+            // the chord periodically, and a resume/unlock watcher re-claims it immediately.
+            hotkey::start_self_heal(app.handle());
+            power_resume::start(app.handle());
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
             app.state::<stats::StatsState>().hydrate(stats);
@@ -127,11 +135,18 @@ pub fn run() {
         // running in the tray so the global PTT hotkey stays live (tray-and-hud.md).
         // Only the "main" window is intercepted; the click-through HUD is untouched.
         .on_window_event(|window, event| {
-            if window.label() == "main" {
-                if let WindowEvent::CloseRequested { api, .. } = event {
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // Returning to the Hub is a cheap, natural moment to re-claim the PTT
+                // chord if its OS routing was silently dropped (hotkeys.md Rule 15).
+                WindowEvent::Focused(true) => hotkey::request_reregister(window.app_handle()),
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

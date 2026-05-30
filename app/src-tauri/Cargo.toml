@@ -41,6 +41,10 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Threading",
     "Win32_Security",
+    # Resume/unlock watcher (power_resume.rs, hotkeys.md Rule 15): a hidden window that
+    # re-claims the PTT hotkey on sleep-resume + session-unlock.
+    "Win32_System_LibraryLoader",
+    "Win32_System_RemoteDesktop",
 ] }
 
 # Release profile: small, optimized installer binary.

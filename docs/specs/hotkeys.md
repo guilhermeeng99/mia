@@ -1,6 +1,6 @@
 # Hotkeys Feature Spec
 
-> **Status**: Phase 1 — pure core + runtime both implemented. Pure (cargo-tested): `parse_accelerator`/`to_canonical`, `is_bare_key`/`is_reserved`, `reduce` (Rules 3/4/9/10), and `key_to_code`/`to_shortcut`. Runtime (compile/build-verified, validated on Windows): registration via `tauri-plugin-global-shortcut`, the handler that runs `reduce` and emits `dictation://intent`, startup registration (Rule 14), and the `register/unregister/update/get_hotkey` commands. The frontend (`ptt.ts`) drives the orchestrator off the intent. The `Esc`-cancel transient binding (Rule 13 — `Escape` registered only while a session is active, routed by the plugin handler) and the missing-release watchdog (Rule 11 — push-to-hold force-Stop after `MAX_HOLD_MS`, disarmed by a session generation) are now implemented in the runtime. The Hub hotkey-recorder (capture a modifier+key chord) + activation-mode picker are wired to `update_hotkey`, whose registration step is the conflict-probe (rejects an already-claimed chord, keeps the prior binding). Pending: broad on-device chord testing only.
+> **Status**: Phase 1 — pure core + runtime both implemented. Pure (cargo-tested): `parse_accelerator`/`to_canonical`, `is_bare_key`/`is_reserved`, `reduce` (Rules 3/4/9/10), and `key_to_code`/`to_shortcut`. Runtime (compile/build-verified, validated on Windows): registration via `tauri-plugin-global-shortcut`, the handler that runs `reduce` and emits `dictation://intent`, startup registration (Rule 14), and the `register/unregister/update/get_hotkey` commands. The frontend (`ptt.ts`) drives the orchestrator off the intent. The `Esc`-cancel transient binding (Rule 13 — `Escape` registered only while a session is active, routed by the plugin handler) and the missing-release watchdog (Rule 11 — push-to-hold force-Stop after `MAX_HOLD_MS`, disarmed by a session generation) are now implemented in the runtime. The Hub hotkey-recorder (capture a modifier+key chord) + activation-mode picker are wired to `update_hotkey`, whose registration step is the conflict-probe (rejects an already-claimed chord, keeps the prior binding). **Self-healing registration (Rule 15)** is now implemented — `start_self_heal` (idle re-register tick, cargo-tested `should_self_heal` predicate), `request_reregister` (tray "Reativar atalho" + Hub-focus), and `power_resume.rs` (resume/unlock watcher) re-claim a silently-dropped `RegisterHotKey` routing so `Ctrl+Space` no longer goes dead until the app is restarted. Pending: broad on-device chord testing only.
 > **Last updated**: 2026-05-29
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
@@ -204,6 +204,21 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
     On app start, the saved chord is re-registered; if it now conflicts (another app took it),
     MIA surfaces a non-blocking warning and leaves the hotkey *unregistered* until resolved (it does
     **not** silently fall back to the default and steal a key the user didn't choose).
+15. **Self-healing registration (no dead hotkey until restart).** Windows can silently drop a
+    `RegisterHotKey` routing while MIA keeps running — an IME/TSF arming `Ctrl+Space` (the chord is
+    also the East-Asian input-method toggle), a sleep/resume or lock/unlock transition, or another
+    app briefly grabbing the chord. The single startup registration (Rule 14) has no recovery, so
+    such a loss would otherwise persist until the app is restarted. MIA therefore re-claims the chord
+    automatically: (a) an **idle self-heal tick** re-registers it every `self_heal_interval_ms`
+    (default **30 s**) while no session is active — never mid-hold; (b) a **resume/unlock watcher**
+    (Windows power-broadcast + WTS session-unlock) re-registers it **immediately** on return; and
+    (c) regaining focus on the Hub window re-registers it. A tray item (**"Reativar atalho"**) does
+    the same on demand, replacing the close-and-reopen workaround. Re-registration is idempotent
+    (unregister-then-register: a healthy binding is a no-op, a dropped one is restored) and resets the
+    edge tracker. It runs **off** the plugin's shortcut-handler thread and **off** the main loop
+    (calling the plugin's register/unregister on either would deadlock — see §5). It does **not**
+    durably defeat a still-armed IME (that needs a different chord, Rule 7/8); it cures a *dropped*
+    routing, which is the restart-fixes-it case.
 
 ---
 
@@ -217,6 +232,7 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
 | `max_hold_ms` | int (ms) | 5 000–120 000 | `30 000` | Missing-release watchdog timeout (Rule 11). |
 | `capture_timeout_ms` | int (ms) | fixed | `15 000` | Recorder auto-cancel (Rule 12). Not user-facing. |
 | `cancel_key` | (fixed) | `Esc` | `Esc` | Cancel-active-dictation key (Rule 13). Fixed in v1. |
+| `self_heal_interval_ms` | int (ms) | fixed | `30 000` | Idle re-registration cadence (Rule 15). Re-claims a silently-dropped chord; skipped while a session is active. Not user-facing. |
 
 Validation: the Settings recorder disables **Save** for bare keys (Rule 5), `Fn`/non-VK captures
 (Rule 6), and reserved/already-taken chords (Rules 7–8). The engine **re-validates** every value
@@ -243,6 +259,14 @@ defensively in `register_hotkey` (the UI guard is convenience, not the source of
   work is owned here.
 - **Resource use.** Negligible — one OS hotkey registration, one atomic edge-tracker, one timer for
   the watchdog. No model RAM.
+- **Self-heal threading (Rule 15).** Re-registration (`do_reregister`) calls the plugin's
+  `register`/`unregister`, which post to the main loop and **block** until it runs them — so calling
+  them from the plugin's shortcut-handler thread *or* from the main loop (tray/window-event callbacks)
+  would deadlock. The idle tick owns a dedicated thread; the on-demand callers (`request_reregister`)
+  each spawn a short-lived worker. The resume/unlock watcher owns a hidden top-level window on its own
+  thread (top-level so it receives `WM_POWERBROADCAST`; `WTSRegisterSessionNotification` for unlock),
+  failing safe to the idle tick if window creation fails. A skipped/extra tick on a wall-clock jump is
+  harmless (idempotent re-register).
 
 ---
 
@@ -289,6 +313,9 @@ Hotkey-recorder (Settings/Hub, light theme):
 | Recorder open while the live PTT is registered | Live PTT is suspended during capture so recording keys doesn't start dictation; restored on end/cancel/timeout (Rule 12). |
 | MIA not elevated, target window is elevated | Hotkey may still not reach an elevated foreground app, and injection downstream can fail silently ([ADR-005](architecture.md)) — surfaced by the HUD, not this module. |
 | `Esc` pressed mid-dictation | `Cancel` emitted; capture discarded, nothing injected (Rule 13). |
+| PTT chord silently stops firing while the app keeps running (dropped `RegisterHotKey` routing — IME/TSF, sleep/lock, brief grab) | Self-heal re-claims it: idle tick (≤ `self_heal_interval_ms`), or immediately on resume/unlock / Hub focus, or via the tray **"Reativar atalho"** item — no restart needed (Rule 15). |
+| Self-heal tick fires while a push-to-hold session is active | Skipped that cycle (never yank the chord mid-hold); retried once idle (Rule 15). |
+| Chord currently held by another app/IME when self-heal runs | Re-register fails (`AlreadyRegistered`), left as-is; the next tick re-claims it once the other owner releases it (Rule 15). |
 
 ---
 

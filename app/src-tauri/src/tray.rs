@@ -10,9 +10,14 @@ use tauri::{AppHandle, Manager};
 pub fn init(app: &AppHandle) -> Result<(), String> {
     let open = MenuItem::with_id(app, "open", "Abrir MIA", true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    // Instant manual recovery for the global hotkey (hotkeys.md Rule 15): if Ctrl+Space
+    // stops firing because its OS registration was silently dropped, this re-claims it
+    // without the close-and-reopen workaround.
+    let reregister = MenuItem::with_id(app, "reregister", "Reativar atalho", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(app, &[&open, &quit]).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(app, &[&open, &reregister, &quit]).map_err(|e| e.to_string())?;
     let icon = app.default_window_icon().ok_or("no app icon")?.clone();
 
     TrayIconBuilder::with_id("mia-tray")
@@ -22,6 +27,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "open" => show_main(app),
+            "reregister" => crate::hotkey::request_reregister(app),
             _ => {}
         })
         .build(app)
