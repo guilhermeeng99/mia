@@ -1,9 +1,15 @@
 <script lang="ts">
-  // Bindable switch. `checked` is two-way ($bindable); `onchange` fires after a
-  // user toggle. ≥40px hit target; reflects state via aria-checked + motion.
+  // Bindable switch. `checked` is two-way ($bindable) but the control renders
+  // PURELY from the prop — `toggle()` only reports the intended next value via
+  // `onchange`; it does NOT optimistically self-flip. That keeps the visual in
+  // lockstep with the persisted source: if the parent's save fails and the source
+  // value doesn't change, the switch stays put instead of silently desyncing.
+  // ≥40px hit target. Lpalo: pill track + 2px charcoal outline, charcoal knob,
+  // spring-green fill when on. A visible `label` is required so it's never
+  // color-only (accessibility, design-system.md §9c) — it also names the switch.
   interface Props {
     checked?: boolean;
-    label?: string;
+    label: string;
     disabled?: boolean;
     onchange?: (checked: boolean) => void;
   }
@@ -11,8 +17,7 @@
 
   function toggle() {
     if (disabled) return;
-    checked = !checked;
-    onchange?.(checked);
+    onchange?.(!checked);
   }
 </script>
 
@@ -22,20 +27,19 @@
   aria-checked={checked}
   {disabled}
   onclick={toggle}
-  class="inline-flex items-center gap-3 min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
+  class="inline-flex items-center gap-3 min-h-[40px] outline-none
+         focus-visible:ring-4 focus-visible:ring-pumpkin/45 rounded-pill
+         disabled:opacity-50 disabled:cursor-not-allowed"
 >
   <span
-    class="relative h-6 w-11 rounded-full transition-colors {checked
-      ? 'bg-action-blue'
-      : 'bg-steel-gray'}"
+    class="inline-flex h-7 w-12 items-center rounded-pill border-2 border-charcoal px-0.5
+           transition-colors {checked ? 'bg-spring' : 'bg-surface'}"
   >
     <span
-      class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-snow-white transition-transform {checked
+      class="h-5 w-5 rounded-full bg-charcoal transition-transform {checked
         ? 'translate-x-5'
         : ''}"
     ></span>
   </span>
-  {#if label}
-    <span class="text-body-lg text-midnight-indigo">{label}</span>
-  {/if}
+  <span class="text-body-lg text-charcoal">{label}</span>
 </button>

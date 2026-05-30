@@ -11,8 +11,9 @@
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
   import Toggle from "./ui/Toggle.svelte";
-  import { inputClass } from "./ui/inputClass";
+  import { inputClass, selectClass } from "./ui/inputClass";
 
   // Per-app writing styles / context (per-app-context.md). Presentation only — the whole
   // `perApp` group is PATCHed via updateSettings (group-granular, like cleanup/snippets).
@@ -75,58 +76,65 @@
   }
 </script>
 
-<Card>
-  <div class="flex items-center gap-3">
-    <h2 class="text-heading font-semibold">Estilos por app</h2>
-    <span class="ml-auto">
-      <Toggle checked={perApp.enabled} label="Ativado" onchange={setEnabled} />
-    </span>
-  </div>
-  <p class="mt-1 text-body text-slate-blue">
-    Regras por aplicativo em foco (ex.: <code>code</code>, <code>chrome</code>, <code>winword</code>):
-    fixar idioma, forçar área de transferência ou ponto final.
-  </p>
+<PageHeader
+  title="Estilos por app"
+  subtitle="Regras por aplicativo em foco: fixar idioma, forçar área de transferência ou ponto final."
+>
+  {#snippet action()}
+    <Toggle checked={perApp.enabled} label="Ativado" onchange={setEnabled} />
+  {/snippet}
+</PageHeader>
 
-  {#if error}
-    <p class="mt-2 text-body text-danger">⚠ {error}</p>
-  {/if}
+{#if error}
+  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
+    <p class="text-body-lg text-danger">⚠ {error}</p>
+  </div>
+{/if}
+
+<Card>
+  <p class="text-body text-ink-soft">
+    Use parte do nome do executável (ex.:
+    <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">code</code>,
+    <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">chrome</code>,
+    <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">winword</code>).
+  </p>
 
   <ul class="mt-4 flex flex-col gap-2">
     {#each perApp.styles as s (s.matchExe)}
-      <li class="flex items-center gap-3">
-        <span class="text-body-lg font-semibold">{s.matchExe}</span>
-        <span class="text-body text-slate-blue truncate">→ {describe(s)}</span>
-        <Button variant="ghost" onclick={() => remove(s.matchExe)}>Remover</Button>
+      <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-2.5">
+        <span class="text-body-lg font-bold">{s.matchExe}</span>
+        <span class="truncate text-body text-ink-soft">→ {describe(s)}</span>
+        <Button variant="ghost" size="sm" onclick={() => remove(s.matchExe)}>Remover</Button>
       </li>
     {/each}
     {#if perApp.styles.length === 0}
-      <li class="text-body text-slate-blue">Nenhuma regra ainda.</li>
+      <li class="text-body text-ink-soft">Nenhuma regra ainda.</li>
     {/if}
   </ul>
 
-  <div class="mt-5 flex flex-col gap-3">
+  <div class="mt-5 flex flex-col gap-3 border-t-2 border-hairline pt-5">
     <Field label="Executável (parte do nome)">
       <input bind:value={matchExe} placeholder="code" class={inputClass} />
     </Field>
-    <div class="flex flex-wrap gap-3">
-      <Field label="Idioma">
-        <select bind:value={language} class={inputClass}>
+    <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+      <Field class="min-w-[160px] flex-1" label="Idioma">
+        <select bind:value={language} class={selectClass}>
           <option value="inherit">Herdar</option>
           <option value="auto">Automático</option>
           <option value="pt">pt-BR</option>
           <option value="en">English</option>
         </select>
       </Field>
-      <Field label="Inserção">
-        <select bind:value={injectMode} class={inputClass}>
+      <Field class="min-w-[160px] flex-1" label="Inserção">
+        <select bind:value={injectMode} class={selectClass}>
           <option value="inherit">Herdar</option>
           <option value="auto">Automático</option>
           <option value="sendInput">Digitar (SendInput)</option>
           <option value="clipboard">Área de transferência</option>
         </select>
       </Field>
-      <Field label="Ponto final">
-        <select bind:value={trailingPeriod} class={inputClass}>
+      <Field class="min-w-[160px] flex-1" label="Ponto final">
+        <select bind:value={trailingPeriod} class={selectClass}>
           <option value="inherit">Herdar</option>
           <option value="on">Sempre</option>
           <option value="off">Nunca</option>

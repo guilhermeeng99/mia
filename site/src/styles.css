@@ -1,46 +1,57 @@
 @import "tailwindcss";
 
-/* MIA design tokens — "Calm Focus" / Calendly "Sky Blueprint", shared with the app
-   (see ../app/src/styles.css and docs/specs/design-system.md). */
+/* MIA marketing site — "Blush Playground" (Lpalo), shared visual language with the
+   app (see ../app/src/styles.css and docs/specs/design-system.md): blush canvas,
+   bold charcoal type, 2px charcoal outlines for definition (no shadows, no
+   gradients), pill controls, a playful accent palette used for fills/cards. */
 @theme {
-  --color-midnight-indigo: #0b3558;
-  --color-action-blue: #006bff;
-  --color-glacier-blue: #004eba;
-  --color-snow-white: #ffffff;
-  --color-cloud-mist: #f8f9fb;
-  --color-pale-gray: #e7edf6;
-  --color-slate-blue: #476788;
-  --color-platinum-tint: #d4e0ed;
-  --color-outline-gray: #e6e6e6;
-  --color-skybound-blue: #0099ff;
-  --color-lavender-glow: #e55cff;
+  /* Surfaces & ink */
+  --color-canvas: #f6e0db;
+  --color-canvas-deep: #efd2ca;
+  --color-surface: #ffffff;
+  --color-charcoal: #000000;
+  --color-ink-soft: #5b4f4a;
+  --color-hairline: #e3c9c1;
 
-  --font-gilroy: "Montserrat", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+  /* Accent palette */
+  --color-pumpkin: #ef724f;
+  --color-bubblegum: #981082;
+  --color-sky: #84bfff;
+  --color-seafoam: #ace2df;
+  --color-lavender: #e69dff;
+  --color-lemon: #e7db4c;
+  --color-spring: #6ed311;
+  --color-deep-blue: #5196ff;
+
+  /* Fonts — Alfa Slab One (display) + Manrope (body), loaded via the Google
+     Fonts link in index.html (this is a public marketing page, not the app). */
+  --font-display: "Alfa Slab One", ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, sans-serif;
 
+  /* Type scale — Manrope for body, Alfa Slab One for the display sizes. The hero
+     scale runs larger than the app (this is a landing page). */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
   --text-body: 14px;
-  --text-body--line-height: 1.71;
+  --text-body--line-height: 1.6;
   --text-body-lg: 16px;
   --text-body-lg--line-height: 1.6;
-  --text-subheading: 18px;
-  --text-subheading--line-height: 1.6;
-  --text-heading: 24px;
-  --text-heading--line-height: 1.4;
-  --text-heading-lg: 28px;
-  --text-heading-lg--line-height: 1.2;
-  --text-display-sm: 38px;
-  --text-display-sm--line-height: 1.21;
-  --text-display: 50px;
-  --text-display--line-height: 1.1;
-  --text-display-lg: 68px;
-  --text-display-lg--line-height: 1.1;
+  --text-subheading: 19px;
+  --text-subheading--line-height: 1.55;
+  --text-title: 24px;
+  --text-title--line-height: 1.2;
+  --text-display-sm: 34px;
+  --text-display-sm--line-height: 1.1;
+  --text-display: 52px;
+  --text-display--line-height: 1.05;
+  --text-display-lg: 76px;
+  --text-display-lg--line-height: 1.0;
 
-  --shadow-sm:
-    rgba(71, 103, 136, 0.04) 0px 4px 5px 0px, rgba(71, 103, 136, 0.03) 0px 4px 10px 0px,
-    rgba(71, 103, 136, 0.05) 0px 10px 20px 0px;
-  --shadow-sm-2:
-    rgba(71, 103, 136, 0.04) 0px 4px 5px 0px, rgba(71, 103, 136, 0.03) 0px 8px 15px 0px,
-    rgba(71, 103, 136, 0.08) 0px 30px 50px 0px;
+  /* Radius — generous rounding only (Lpalo: no sharp corners) */
+  --radius-card: 10px;
+  --radius-bubble: 28px;
+  --radius-pill: 999px;
 }
 
 @layer base {
@@ -50,9 +61,9 @@
     scroll-behavior: smooth;
   }
   body {
-    background-color: var(--color-snow-white);
-    color: var(--color-midnight-indigo);
-    font-family: var(--font-gilroy);
+    background-color: var(--color-canvas);
+    color: var(--color-charcoal);
+    font-family: var(--font-body);
     font-size: var(--text-body-lg);
     line-height: 1.6;
   }

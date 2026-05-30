@@ -34,7 +34,7 @@ Define the product, architecture, and design system before any code is written. 
 
 - ✅ Documentation set: [`/README.md`](../README.md), [`/CLAUDE.md`](../CLAUDE.md), this roadmap, [docs/FEATURE-MAP.md](FEATURE-MAP.md) (Wispr Flow → MIA parity + phase), [docs/REUSE-FROM-TOOLZY.md](REUSE-FROM-TOOLZY.md), and all feature specs under [docs/specs/](specs/) following [docs/specs/_template.md](specs/_template.md).
 - ✅ [Architecture](specs/architecture.md) — the canonical ADRs (ADR-001 … ADR-011) and the "Rust is the engine, Svelte is a thin webview" principle.
-- ✅ [Design system](specs/design-system.md) — the **"Calm Focus"** identity: the light **Settings/Hub** surface (Toolzy tokens + "Sky Blueprint" palette, Montserrat) and the new dark translucent **floating mic HUD**. Shared UI components in `app/src/lib/components/ui/`.
+- ✅ [Design system](specs/design-system.md) — the **"Blush Playground" (Lpalo)** identity: blush-pink canvas, Alfa Slab One + Manrope, 2px charcoal outlines (no shadows/gradients), pill controls. The **Settings/Hub** is a sidebar + per-view shell; the **floating mic HUD** is a white outlined pill in the same language. Shared UI components in `app/src/lib/components/ui/`. _(Redesigned 2026-05-30 from the original "Calm Focus" blue identity.)_
 
 ### Phase 1 — Core Dictation MVP ✅ (code-complete, validated on Windows)
 

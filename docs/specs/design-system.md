@@ -1,26 +1,36 @@
 # Design System & UX Spec
 
-> **Status**: Phase 1 — tokens live in `app/src/styles.css` (`@theme`, light + HUD); the shared primitives (`Button`, `Card`, `Field`, `Toggle`, `Pill`) exist in `app/src/lib/components/ui/` and a first Settings/Hub surface consumes them. Remaining: the floating mic HUD window styling + onboarding screens.
-> **Last updated**: 2026-05-29
-> **Coverage**: Theme, Fonts, Colors (light + HUD), Typography, Spacing, Radius, Elevation, Components, Layout, UX (principles + flow), Accessibility, Do/Don't
+> **Status**: Live. Tokens are in `app/src/styles.css` (single `@theme`, light Hub + the
+> floating HUD). Shared primitives (`Button`, `Card`, `Field`, `Toggle`, `Pill`, `NavItem`,
+> `PageHeader`, `StatTile`, `MicHud`) live in `app/src/lib/components/ui/`. The Settings/Hub
+> window is a **sidebar + content** shell (`Hub.svelte`) that routes between self-contained
+> views (`lib/components/views/` + the CRUD sections). Onboarding and the mic HUD consume the
+> same tokens.
+> **Last updated**: 2026-05-30
+> **Coverage**: Theme, Fonts, Colors, Typography, Spacing, Radius, Elevation, Components,
+> Layout (sidebar), UX (principles + flow), Accessibility, Do/Don't
 > **Environment**: desktop (Windows, native)
-> **Source of truth (when built)**: `app/src/styles.css` (single `@theme` block); shared
-> components in `app/src/lib/components/ui/`. Derived from the Toolzy token system + the
-> Calendly "Sky Blueprint on Bright Paper" reference the owner provided.
+> **Source of truth**: `app/src/styles.css` (single `@theme` block) + the `ui/` primitives.
+> Derived from the **Lpalo "Blush Playground"** reference
+> (`styles.refero.design/style/8033959a-dffa-4da0-b700-1af46f13c51f`), adapted from a marketing
+> page to a dense desktop utility.
 
-MIA's visual identity is **"Calm Focus"**: a quiet, trustworthy, latency-first dictation tool
-that mostly stays out of the way. There are exactly **two surfaces**, each with its own job:
+MIA's visual identity is **"Blush Playground"** (Lpalo): a soft blush-pink canvas, bold charcoal
+typography, **2px charcoal outlines for definition instead of shadows**, generously rounded /
+pill-shaped controls, and a playful-but-restrained accent palette used for fills and cards —
+never large text blocks. It reads warm, confident, and a little whimsical, while staying calm
+and legible for a tool that mostly gets out of the way.
 
-1. **Settings / "The Hub" window — light theme.** Adopts the proven Toolzy token system and the
-   Calendly "Sky Blueprint on Bright Paper" palette so the owner's portfolio (Toolzy, Financo,
-   MIA) stays visually cohesive: bright paper, deep indigo text, a single confident action-blue,
-   soft slate-tinted shadows, generous spacing, rounded corners. This is where onboarding,
-   settings, the dictionary, snippets, and stats live. See [`settings.md`](./settings.md) and
-   [`onboarding.md`](./onboarding.md).
-2. **Floating mic HUD — dark, translucent.** A small always-on-top pill/overlay that appears
-   only while dictating. Because it floats *over the user's other apps* it must be dark,
-   translucent, low-distraction, and click-through where possible. It is the only place where a
-   dark surface is allowed in V1. See [`tray-and-hud.md`](./tray-and-hud.md).
+There are **two surfaces**:
+
+1. **Settings / "The Hub" window** — the blush canvas with a left **sidebar** for navigation and
+   a scrollable content area. This is where onboarding, dictation settings, models/engine, the
+   dictionary, snippets, per-app styles, and usage stats live. See [`settings.md`](./settings.md)
+   and [`onboarding.md`](./onboarding.md).
+2. **Floating mic HUD** — a small always-on-top pill that appears only while dictating. It is the
+   same blush language (white pill, **2px charcoal outline**, pumpkin waveform) so it stays
+   on-brand, and the heavy outline keeps it legible floating over *any* application behind it. See
+   [`tray-and-hud.md`](./tray-and-hud.md).
 
 This spec is the **source of truth** for tokens, components, and UX. [`CLAUDE.md`](../../CLAUDE.md)
 may summarize it; on any conflict, this file wins.
@@ -29,262 +39,238 @@ may summarize it; on any conflict, this file wins.
 
 ## Scope decisions (locked)
 
-- **Two surfaces, two themes.** Settings/Hub = **light** (Calendly palette). Mic HUD = **dark,
-  translucent**. A full dark theme for the settings window is **out of scope for V1** (see §13).
-- **Tailwind CSS v4** is the implementation. **All tokens live in a single `@theme` block** in
-  `app/src/styles.css`. Components use the generated utilities — **never raw hex**.
-- **Svelte 5 (runes)** for the UI. Shared primitives live in `app/src/lib/components/ui/`. The
-  UI is a **thin webview** — it holds no dictation logic (see [`architecture.md`](./architecture.md));
-  it renders state pushed from Rust and calls typed `invoke()` wrappers.
-- **One type family**: Montserrat (see §1). No decorative typefaces.
-- **8px base unit** for spacing; Tailwind's stock scale (no custom `--spacing-*` tokens).
-- **One action color** discipline carries to *both* surfaces: light uses `action-blue` for the
-  primary path; the HUD uses the same `action-blue` as its "listening" accent. No second CTA color.
+- **One visual language, two surfaces.** Both the Hub and the HUD use the Blush Playground tokens.
+  The HUD is not a separate dark theme — it is a solid white pill with the same charcoal outline.
+- **Tailwind CSS v4.** **All tokens live in a single `@theme` block** in `app/src/styles.css`.
+  Components use the generated utilities — **never raw hex**.
+- **Svelte 5 (runes).** Shared primitives live in `app/src/lib/components/ui/`. The UI is a **thin
+  webview** — no dictation logic (see [`architecture.md`](./architecture.md)); it renders state
+  pushed from Rust and calls typed `invoke()` wrappers.
+- **Two type families, by role**: **Alfa Slab One** for display/headings, **Manrope** for body and
+  UI. No other typefaces. Both bundled offline via `@fontsource` (no CDN — privacy-first).
+- **Definition by outline, not shadow.** Lpalo uses **no shadows and no gradients**. Surfaces are
+  separated by a 2px charcoal border + background color. This is a hard rule (see §6, §10).
+- **Generous rounding only.** No sharp corners: cards `10px`, accent cards `28px`, all
+  interactive controls (buttons, nav, fields, badges, HUD) are **pill** (`rounded-pill`).
+- **Adapted scale.** The Lpalo source is a marketing page (25px body, 120px display). MIA is a
+  dense settings app, so the type scale is **scaled down** (see §3) while keeping the flavor:
+  Alfa Slab One headings, Manrope body, the outline/pill/no-shadow language, the accent palette.
 
 ---
 
-## 1. Font decision
+## 1. Fonts
 
-The Calendly reference uses **Gilroy**, a **commercial/proprietary** font — it cannot be bundled
-in an open-source MIT project. The reference's own documented substitute is **Montserrat** (SIL
-Open Font License, free, geometric, very close match).
-
-**Decision:** ship **Montserrat** as the actually-loaded family (bundled offline via
-`@fontsource/montserrat` — consistent with MIA's no-network, privacy-first stance; no Google
-Fonts CDN call), and keep the token name `--font-gilroy` so component code and the shared
-portfolio vocabulary stay aligned with Toolzy.
+| Token | Family | Role | Weights |
+|---|---|---|---|
+| `font-display` | **Alfa Slab One** | Display headlines, page/section titles, big stat values, inline emphasis (hotkey chord) | 400 (only weight) |
+| `font-body` | **Manrope** | Body, labels, nav, buttons, HUD label | 400 / 500 / 700 / 800 |
 
 ```css
---font-gilroy: "Montserrat", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+--font-display: "Alfa Slab One", ui-serif, Georgia, "Times New Roman", serif;
+--font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
   "Segoe UI", Roboto, sans-serif;
 ```
 
-If a licensed Gilroy is ever purchased, swap the `--font-gilroy` value — no component changes
-needed. Weights used: **400 / 500 / 600 / 700**.
+Bundled offline via `@fontsource/alfa-slab-one` + `@fontsource/manrope` (imported in
+`src/main.ts`); `body` defaults to `font-body`. There is **no `font-semibold` (600)** — Manrope
+600 is not loaded; use `font-bold` (700) for emphasis and titles.
 
-> pt-BR note: Montserrat covers Latin-1 + Latin Extended-A, so all Brazilian Portuguese
-> diacritics (ã, õ, ç, á, é, í, ó, ú, â, ê, ô) render correctly. pt-BR is a first-class
-> language (see [`speech-to-text.md`](./speech-to-text.md)).
+> pt-BR note: both families ship `latin` + `latin-ext` subsets, so all Brazilian Portuguese
+> diacritics (ã, õ, ç, á, é, í, ó, ú, â, ê, ô) render correctly. pt-BR is a first-class language
+> (see [`speech-to-text.md`](./speech-to-text.md)).
 
 ---
 
 ## 2. Color tokens
 
-### 2a. Settings / Hub — light theme (Calendly "Sky Blueprint")
-
 Use the Tailwind utility, never the raw hex.
+
+### 2a. Surfaces & ink
 
 | Token / utility suffix | Hex | Role |
 |---|---|---|
-| `midnight-indigo` | `#0B3558` | Primary text, headings, inactive nav. The branded "almost-black". |
-| `action-blue` | `#006BFF` | Primary CTA, active nav/tab, key interactive accents. **The one action color.** |
-| `slate-blue` | `#476788` | Secondary text, supporting info, icon fills. |
-| `steel-gray` | `#A6BBD1` | Tertiary text, disabled states, fine borders. |
-| `platinum-tint` | `#D4E0ED` | Inactive field borders, subtle dividers. |
-| `cloud-mist` | `#F8F9FB` | Off-white section / window backgrounds. |
-| `snow-white` | `#FFFFFF` | Card surfaces, elevated panels. |
-| `success` | `#1A7F4B` | Success feedback (model downloaded, text inserted). Semantic status token. |
-| `danger` | `#C2362F` | Failure feedback (mic blocked, model error, injection failed). Semantic status token. |
+| `canvas` | `#F6E0DB` | Page background (surface 0); inset list rows; hover wash on white. |
+| `canvas-deep` | `#EFD2CA` | Sidebar background, scrollbar thumb, ghost-button hover. |
+| `surface` | `#FFFFFF` | Cards, fields (surface 1). |
+| `charcoal` | `#000000` | Primary text, **all outlines/borders**, active nav fill text. |
+| `ink-soft` | `#5B4F4A` | Secondary / helper / hint text on light surfaces. |
+| `hairline` | `#E3C9C1` | Subtle inner dividers where a full 2px charcoal rule is too heavy. |
 
-> The wider Calendly palette (glacier-blue, pale-gray, royal-amethyst, etc.) is **not tokenized**
-> in MIA's `@theme` — add a `--color-*` token before using a new shade. Keep the palette tight.
+### 2b. Accent palette (fills / cards / iconography — never large text)
 
-### 2b. Mic HUD — dark, translucent theme
-
-The HUD floats over arbitrary applications, so its background must read as a distinct, dark,
-translucent object regardless of what is behind it. These tokens are **HUD-only** (prefixed
-`hud-` in the `@theme` block) and must not be used in the light Settings window.
-
-| Token / utility suffix | Value | Role |
+| Token / utility suffix | Hex | Role |
 |---|---|---|
-| `hud-bg` | `rgba(11, 53, 88, 0.92)` | Near-black translucent pill background (dark slate / midnight-indigo @ 92%). Pairs with a `backdrop-blur`. |
-| `hud-bg-solid` | `#0B3558` | Opaque fallback when the OS/WebView2 can't composite translucency. |
-| `hud-text` | `#FFFFFF` (`snow-white`) | HUD label text ("Listening…", "Transcribing…"). |
-| `hud-text-dim` | `rgba(255,255,255,0.64)` | Secondary HUD text (elapsed time, language tag). |
-| `hud-accent` | `#006BFF` (`action-blue`) | **The "listening" accent**: the pulse ring + active waveform bars. Same one action color. |
-| `hud-wave` | `rgba(0,107,255,0.85)` | Live level-meter / waveform bar fill. |
-| `hud-success` | `#1A7F4B` (`success`) | Brief "inserted" check tick. |
-| `hud-danger` | `#C2362F` (`danger`) | Error state (mic lost, transcription failed). |
-| `hud-border` | `rgba(255,255,255,0.08)` | Hairline ring around the pill for definition over light backgrounds. |
+| `pumpkin` | `#EF724F` | **Active nav**, primary accent fill, "recommended"/progress badges, HUD waveform, focus ring. |
+| `bubblegum` | `#981082` | Secondary accent fill (pairs with `text-surface`). |
+| `sky` | `#84BFFF` | Card / stat-tile fill, info badge. |
+| `seafoam` | `#ACE2DF` | Soft accent fill (the "ready to dictate" hero card). |
+| `lavender` | `#E69DFF` | Soft accent fill / stat tile. |
+| `lemon` | `#E7DB4C` | Highlight splash / stat tile. |
+| `spring` | `#6ED311` | Positive / "on" — Toggle on-state, success pill, level meter. |
+| `deep-blue` | `#5196FF` | Precise accent (reserved). |
 
-Rule: the HUD keeps the **one-action-color discipline** — `action-blue` (`hud-accent`) is the
-*only* chromatic accent; everything else is white / dim-white on dark slate, plus the semantic
-success/danger ticks.
+### 2c. Semantic status
+
+The accent palette doesn't carry reliable error/ok hues, so two semantic tokens are kept:
+
+| Token | Hex | Role |
+|---|---|---|
+| `success` | `#1A7F4B` | Success text + "✓ instalado" / "inserted" tick. |
+| `danger` | `#C2362F` | Error text, error card outline, danger-button outline, HUD error glyph. |
+
+> Keep the palette tight. Add a `--color-*` token before using a new shade.
 
 ---
 
 ## 3. Typography
 
-Family: `font-gilroy` (Montserrat). MIA needs only the small-to-mid end of Toolzy's scale (it's
-a utility app, not a marketing site). Each utility carries its line-height in the `@theme` block.
+Family by role (§1). Each size utility carries its line-height in the `@theme` block.
 
-| Utility | Size | Line height | Use |
-|---|---|---|---|
-| `text-body` | 14px | 1.71 | small / caption / HUD secondary label |
-| `text-body-lg` | 16px | 1.6 | body default (settings copy) |
-| `text-subheading` | 18px | 1.6 | lead paragraph, section intro |
-| `text-heading` | 24px | 1.4 | card titles, tab H3 |
-| `text-heading-lg` | 28px | 1.2 | window / onboarding H2 |
-| `text-display-sm` | 38px | 1.21 | onboarding hero / welcome title (largest MIA uses) |
+| Utility | Size | Line height | Family | Use |
+|---|---|---|---|---|
+| `text-caption` | 12px | 1.5 | body | badges, tiny labels, version |
+| `text-body` | 14px | 1.6 | body | small / helper / HUD label |
+| `text-body-lg` | 16px | 1.55 | body | body default, field labels, buttons |
+| `text-title` | 22px | 1.2 | **display** | card / section titles |
+| `text-page` | 32px | 1.08 | **display** | page header (`PageHeader`), big stat values |
+| `text-hero` | 46px | 1.04 | **display** | onboarding welcome headline (largest MIA uses) |
 
-> MIA does **not** define `text-display` / `text-display-lg` (no landing-page hero in the app).
-> The HUD label ("Listening…") uses `text-body` / `text-body-lg`, weight 500.
-
-Weights: `font-normal` 400 (body) · `font-medium` 500 (nav, HUD label) · `font-semibold` 600
-(titles, buttons) · `font-bold` 700 (onboarding headline). Letter spacing: normal.
+Weights: `font-normal` 400 (body) · `font-medium` 500 · `font-bold` 700 (labels, buttons, titles,
+emphasis) · `font-extrabold` 800 available. Alfa Slab One is single-weight (400) and only used via
+`font-display`. Letter spacing: normal.
 
 ---
 
 ## 4. Spacing
 
-Base unit **8px**. Tailwind v4's default scale is already a 4/8px grid, so MIA uses the stock
-utilities — there are **no custom `--spacing-*` tokens** (note Tailwind's `p-24` = 96px, not
-24px). Typical values: window/section padding `px-6` (24px), tab content rhythm `py-8`/`py-12`,
-card and field gaps `gap-4`/`gap-6`. The HUD pill uses tight padding `px-3 py-2` (12px/8px).
-Stay on the scale to keep the 8px feel.
+Tailwind v4's default 4/8px scale (no custom `--spacing-*` tokens). Typical values: content area
+padding `px-10 py-9`; sidebar `px-3`–`px-6`; card padding `p-6` (default) / `p-5` (accent cards);
+inter-card rhythm `gap-6` (24px); field/label gap `gap-1.5`. The HUD pill uses `px-4 py-2`.
 
 ---
 
 ## 5. Radius
 
-| Element | Value | Utility |
+| Element | Value | Token / utility |
 |---|---|---|
-| small (chips, inline tags) | 4px | `rounded-md` |
-| **buttons** | **8px** | `rounded-lg` |
-| medium (fields, inputs) | 12px | `rounded-xl` |
-| **cards / panels** | **16px** | `rounded-2xl` |
-| **mic HUD pill** / badges / toggles | full | `rounded-full` |
+| default cards / inset list rows | 10px | `--radius-card` → `rounded-card` |
+| accent cards / stat tiles | 28px | `--radius-bubble` → `rounded-bubble` |
+| **buttons, nav, fields, selects, badges, HUD, toggles** | full pill | `--radius-pill` → `rounded-pill` |
+| inline code chips | 6px | `rounded-md` |
+| multiline textarea | 20px | `rounded-[20px]` |
+
+No sharp corners anywhere (Lpalo).
 
 ---
 
-## 6. Elevation (shadows)
+## 6. Elevation — outline, not shadow
 
-### 6a. Light surfaces
+**There are no shadow tokens.** Definition comes from a **2px charcoal border** (`border-2
+border-charcoal`) plus the background-color step between `canvas` → `surface` / accent. This holds
+on **both** surfaces:
 
-Two soft, slate-tinted (`rgba(71,103,136,…)`) shadows, identical to Toolzy — `--shadow-sm` and
-`--shadow-sm-2`. Map by intent:
+- **Cards / panels**: `border-2 border-charcoal` on a white or accent fill.
+- **Buttons / nav / inputs**: 2px charcoal outline; hover "lift" is a 0.5px upward `translate`,
+  not a shadow.
+- **Mic HUD pill**: a solid white pill with the same 2px charcoal outline — the outline alone
+  separates it from whatever app is behind it.
+- **Focus**: a 4px **pumpkin** ring at low opacity (`focus-visible:ring-4 ring-pumpkin/45`), never
+  a shadow. (See §9c.)
 
-| Intent | Token / utility |
-|---|---|
-| Resting / elevated card or panel | `shadow-sm-2` (deep triple-layer — featured surfaces) |
-| Hover / interactive lift | `shadow-sm` |
-| Button / field focus | a `focus-visible` ring (`action-blue`, 2px, offset), **not** a shadow |
-
-Don't put heavy shadows on non-interactive, non-emphasized elements.
-
-### 6b. HUD (dark, translucent)
-
-The HUD reads as a floating glass object, not a paper card:
-
-```css
-/* applied to the HUD pill */
-backdrop-filter: blur(16px);
-box-shadow: rgba(0, 0, 0, 0.35) 0px 8px 24px 0px;  /* --shadow-hud: subtle, dark, diffuse */
-```
-
-Plus the `hud-border` hairline ring (`rgba(255,255,255,0.08)`) so the pill stays legible over a
-bright window behind it. Keep HUD elevation **subtle** — it should feel light and unobtrusive,
-never a heavy modal.
+No gradients (Lpalo) — solid color blocks only.
 
 ---
 
 ## 7. Components
 
-Class recipes (Tailwind v4 utilities). Implemented in `app/src/lib/components/ui/` as Svelte 5
-components (`Button.svelte`, `Card.svelte`, `Field.svelte`, `Toggle.svelte`, `Pill.svelte`,
-`MicHud.svelte`, `ModelDownloadGate.svelte`, `HotkeyRecorder.svelte`).
+Implemented in `app/src/lib/components/ui/` as Svelte 5 components.
 
-### Button
-- **Primary CTA**: `bg-action-blue text-snow-white rounded-lg font-semibold px-4 py-1.5`
-  (lg size: `px-6 py-3 text-body-lg`). Hover: `brightness-105`.
-  Focus: `focus-visible:ring-2 ring-action-blue ring-offset-2` (shared `focusRing`).
-- **Ghost**: transparent, `text-midnight-indigo font-semibold rounded-lg`, optional
-  `border border-platinum-tint`. Secondary/destructive-cancel actions.
-- **Danger (text)**: `text-danger font-semibold` ghost for destructive confirmations
-  (e.g. "Delete model"). Never the primary blue.
+### Button (`Button.svelte`)
+Pill, 2px outline, `font-body font-bold`, ≥40px hit target, hover `-translate-y-0.5`. Variants:
+- **primary**: `bg-charcoal text-surface border-charcoal` — the unambiguous action (Download, Add,
+  Test). Charcoal fill keeps it crisp and high-contrast.
+- **secondary**: `bg-surface text-charcoal border-charcoal hover:bg-canvas` — outline pill.
+- **ghost**: transparent until hover (`hover:border-charcoal hover:bg-canvas-deep`) — tertiary
+  (Remove, Cancel, Reset).
+- **danger**: `bg-surface text-danger border-danger hover:bg-danger hover:text-surface`.
+- Sizes: `md` (default) / `sm` (inline list actions). `pumpkin` is **not** a button fill — it is
+  reserved for active navigation and accent emphasis.
 
-### Card / Panel
-`bg-snow-white rounded-2xl shadow-sm-2 p-6` (24px). Interactive variant adds
-`transition-shadow hover:shadow-sm`. No border by default. Used for each Hub tab section and
-onboarding step.
+### Card (`Card.svelte`)
+`border-2 border-charcoal`. `tone="surface"` (default) → `bg-surface rounded-card p-6`. Accent
+tones (`pumpkin`/`bubblegum`/`sky`/`seafoam`/`lavender`/`lemon`/`spring`) → vivid fill,
+`rounded-bubble p-5` (`bubblegum` flips text to `text-surface`). No shadow, ever.
 
-### Field (text input)
-`bg-snow-white border border-platinum-tint rounded-xl px-3 py-2 text-body-lg`.
-Focus: `border-action-blue ring-2 ring-action-blue/20`. Disabled: `text-steel-gray`,
-`border-platinum-tint`. Label `text-body font-medium text-slate-blue` above the control.
+### Field (`Field.svelte`)
+Label (`text-body-lg font-bold text-charcoal`) above the control, optional hint (`text-body
+text-ink-soft`). The control class comes from `inputClass` / `textareaClass` (`ui/inputClass.ts`):
+pill outline input, `focus-visible:ring-4 ring-pumpkin/45`, `placeholder:text-ink-soft`.
 
-### Toggle (switch)
-`rounded-full` track. Off: `bg-steel-gray`. On: `bg-action-blue`. White knob, slate-tinted
-shadow. Focus ring as above. Always paired with a text label — never color-only (see §12). Used
-heavily in [`settings.md`](./settings.md) (e.g. "Polish on insert", "Play sound on start").
+### Toggle (`Toggle.svelte`)
+Pill track, 2px charcoal outline, charcoal knob. Off: `bg-surface`. On: `bg-spring`. Always paired
+with a text label — never color-only (§9c). Used for "launch at login", "snippets enabled",
+"per-app enabled".
 
-### Pill / Badge
-- **Native badge**: `bg-cloud-mist text-slate-blue rounded-full text-body font-semibold px-2 py-1`
-  — the "100% local · offline" trust marker.
-- **Status pill**: `success` / `danger` / `slate-blue` fill at low opacity with matching text,
-  `rounded-full`. Always carries a text label, not just a color.
+### Pill / Badge (`Pill.svelte`)
+Pill, 2px charcoal outline, `text-caption font-bold`. Tones (fill + always a text label):
+`neutral` (white), `success` (spring), `danger` (red, white text), `accent` (pumpkin),
+`info` (sky). Carries the "100% local · offline" trust marker (`info`) and status (downloading,
+installed, warm/cold engine).
 
-### Mic HUD pill (signature component)
-A small always-on-top frameless pill (`MicHud.svelte`), `rounded-full`,
-`bg-[hud-bg] backdrop-blur-[16px] text-hud-text px-3 py-2`, `shadow-hud`, `hud-border` ring.
-Layout: `[ status glyph ] [ live level meter ] [ label ]`. It is driven entirely by a single
-state value pushed from Rust (see [`dictation.md`](./dictation.md) and
-[`tray-and-hud.md`](./tray-and-hud.md)). Visual states:
+### NavItem (`NavItem.svelte`)
+Sidebar pill. Active = `border-charcoal bg-pumpkin` (the Lpalo active-nav treatment); inactive =
+`border-transparent hover:border-charcoal hover:bg-surface`. Leading emoji glyph is decorative
+(`aria-hidden`). Sets `aria-current="page"` when active.
+
+### PageHeader (`PageHeader.svelte`)
+Per-view header: Alfa Slab One `text-page` title + optional `text-body-lg text-ink-soft` subtitle,
+plus an optional right-aligned `action` snippet (e.g. the section's enable Toggle).
+
+### StatTile (`StatTile.svelte`)
+Overview metric: big Alfa Slab One value (`text-page`) over a vivid accent fill, `rounded-bubble`,
+2px charcoal outline. Tone per tile (sky / lavender / lemon / spring …).
+
+### Mic HUD pill (`MicHud.svelte`) — signature component
+A small always-on-top frameless pill: `rounded-pill border-2 border-charcoal bg-surface px-4 py-2
+text-charcoal`. Layout: `[ status glyph / waveform ] [ label ]`. Driven entirely by one state value
+pushed from Rust (see [`dictation.md`](./dictation.md) and [`tray-and-hud.md`](./tray-and-hud.md)).
 
 | State | Visual | Notes |
 |---|---|---|
-| `idle` | hidden | HUD is not shown at all (no resting pill). |
-| `listening` | `hud-accent` **pulsing ring** + **live waveform** bars animated from the real mic level meter (`hud-wave`) | The "you are being heard" signal. Bars react to RMS amplitude streamed from cpal. |
-| `transcribing` | small `hud-accent` **spinner**, waveform frozen/dimmed, label "Transcribing…" | Whisper is running on the captured buffer. |
-| `inserting` | brief **check tick** in `hud-success`, label "Inserted" | ~400ms, then fade. |
-| `error` | `hud-danger` glyph + short label (e.g. "Mic blocked", "No speech") | Auto-dismiss after a few seconds; details surface in the Hub. |
+| `idle` | hidden | No resting pill. |
+| `listening` | **pumpkin waveform** bars pulsing + scaled by live RMS (`hud://level`) | "You are being heard." |
+| `transcribing` | small spinner (`border-hairline border-t-pumpkin`), label "Transcrevendo…" | Whisper running. |
+| `inserting` | `success` ✓ tick, label "Inserido" | brief, then fade. |
+| `error` | `danger` ⚠ glyph + short label | auto-dismiss; details surface in the Hub. |
 
-The HUD **never steals focus** (created as a no-activate, always-on-top tool window) so the
-user's target app keeps the caret. It is click-through where the OS allows, so it never blocks
-the app underneath.
-
-### Model-download gate
-`ModelDownloadGate.svelte` — a `Card` shown when the required Whisper model isn't present yet
-(first run / engine switch). Contents: model name + size, a **primary `action-blue` "Download"
-button**, an indeterminate-then-determinate progress bar (`action-blue` fill on `cloud-mist`
-track; progress streamed over a Tauri Channel — reuses Toolzy's pattern, see
-[`speech-to-text.md`](./speech-to-text.md) and [`REUSE-FROM-TOOLZY.md`](../REUSE-FROM-TOOLZY.md)),
-and a "downloads once, then fully offline" reassurance line. Cancelable. Maps to the on-demand
-"download gate" UX.
-
-### Hotkey recorder
-`HotkeyRecorder.svelte` — a `Field`-styled control that, when focused/clicked, captures the next
-key chord and renders it as `rounded-md` key caps (e.g. `Ctrl` + `Space`). Shows a `danger`
-inline message on a reserved/conflicting combo. Backs the push-to-talk binding in
-[`hotkeys.md`](./hotkeys.md) and [`onboarding.md`](./onboarding.md).
+The HUD **never steals focus** (no-activate, always-on-top tool window) and is click-through where
+the OS allows.
 
 ---
 
 ## 8. Layout
 
-### 8a. Settings / Hub window (light)
-- **Background** `cloud-mist`; content panels are `snow-white` `Card`s.
-- **Structure**: a left **sidebar (or top tab bar) + content area**. Sidebar holds the Hub
-  sections — Dictation, Models/Engine, Dictionary, Snippets, AI (Phase 2), Stats, About/Update.
-  Active item = `text-action-blue` (`font-medium`); inactive = `text-midnight-indigo`.
-- **Header strip**: window title / logo + a `native` "100% local" badge, and a right-aligned
-  version / "Update to vX" button (signed auto-update — see [`architecture.md`](./architecture.md)
-  ADR-009).
-- **Content**: one `Card` per logical group; section title `text-heading`, helper text
-  `text-slate-blue`. Comfortable vertical rhythm (~32–40px between groups).
-- Window is **resizable**, sensible min size; WebView2 host (ADR-002).
+### 8a. Settings / Hub window — sidebar shell (`Hub.svelte`)
+- **Background** `canvas`. The whole window is a flex row: a fixed-width **sidebar** + a scrollable
+  content area.
+- **Sidebar** (`w-[244px]`, `bg-canvas-deep`, `border-r-2 border-charcoal`): the `MIA` wordmark
+  (Alfa Slab One) at top, the "100% local · offline" `info` pill, then the nav (`NavItem`s), and a
+  footer with the signed-update button (or the version label). Sections:
+  **Visão geral · Ditado · Modelos & Motor · Dicionário · Snippets · Por app**.
+- **Content area** (`max-w-[820px]`, `px-10 py-9`): one view at a time. Each view opens with a
+  `PageHeader`, then `Card`s with `gap-6` rhythm. Section titles use `font-display text-title`;
+  helper text `text-ink-soft`.
+- Each view is **self-contained** — it calls the typed `invoke()` wrappers itself
+  (`OverviewView`, `DictationView`, `ModelsView`, and the `DictionarySection` / `SnippetsSection` /
+  `PerAppSection` CRUD views). The shell owns only navigation + the update affordance.
+- Window is **resizable** (min 720×520); native Windows title bar (decorations on). WebView2 host.
 
-### 8b. Floating mic HUD (dark, frameless, always-on-top)
-- A **frameless, transparent, no-activate, always-on-top** Tauri window holding only the
-  `MicHud` pill. No title bar, no chrome.
-- **Positioning** (in priority order):
-  1. **Near the caret** — anchored just below/above the current text insertion point when its
-     location is obtainable, so feedback sits where the user is typing.
-  2. **Screen-anchored fallback** — a fixed corner/edge (default: bottom-center, just above the
-     taskbar) when the caret position is unknown. User-configurable in
-     [`settings.md`](./settings.md).
-- Appears on `listening`, disappears (fade) after `inserting`/`error`. Sized to content
-  (compact pill); does not grow into a panel.
+### 8b. Floating mic HUD (frameless, always-on-top)
+- A **frameless, transparent, no-activate, always-on-top** Tauri window holding only the `MicHud`
+  pill. No title bar, no chrome.
+- **Positioning** (priority): near the caret when obtainable; else screen-anchored fallback
+  (default bottom-center, above the taskbar), user-configurable in [`settings.md`](./settings.md).
+- Appears on `listening`, disappears (fade) after `inserting`/`error`. Sized to content.
 
 ---
 
@@ -292,23 +278,19 @@ inline message on a reserved/conflicting combo. Backs the push-to-talk binding i
 
 ### 9a. Design principles
 
-1. **Latency-first.** The product is judged on time-to-text. The HUD must show `listening`
-   *instantly* on hotkey press (before any model work), and the warm/resident STT (ADR-004)
-   exists precisely so transcription starts without a cold model load. Never animate or block
-   the path to inserted text.
-2. **Faithful, not creative, by default.** MIA types **what you said**, cleaned up — not
-   reworded. Deterministic rule-based cleanup is always-on (Phase 1); the LLM "Polish" and
-   Command Mode are **opt-in** (Phase 2, [`ai-commands.md`](./ai-commands.md)). The UI's
-   defaults reflect this: fidelity on, magic off until chosen.
-3. **Unobtrusive / low-distraction.** The HUD is small, dark, translucent, click-through, and
-   present only while dictating. No persistent overlay, no bouncing, no sound by default. The
-   app's real home is the system tray ([`tray-and-hud.md`](./tray-and-hud.md)).
+1. **Latency-first.** The product is judged on time-to-text. The HUD shows `listening` *instantly*
+   on hotkey press (before any model work); the warm/resident STT (ADR-004) starts transcription
+   without a cold load. Never animate or block the path to inserted text.
+2. **Faithful, not creative, by default.** MIA types **what you said**, cleaned up — not reworded.
+   Rule-based cleanup is always-on; LLM polish/commands are descoped (Phase 2). UI defaults reflect
+   this: fidelity on, magic off.
+3. **Unobtrusive.** The HUD is small, present only while dictating, click-through, no sound by
+   default. The app's home is the system tray ([`tray-and-hud.md`](./tray-and-hud.md)).
 4. **Keyboard-first.** The whole point is a global push-to-talk hotkey ([`hotkeys.md`](./hotkeys.md)).
-   The Hub is fully keyboard-navigable; every control is reachable and operable without a mouse.
-5. **Permission-honest.** Be explicit and truthful about what MIA needs and what it can't do:
-   the mic permission, that **voice never leaves the machine**, that the first model is a
-   one-time download, and that synthetic input **cannot reach elevated/UAC windows** unless MIA
-   itself is elevated (ADR-005). Surface these as plain text, never buried.
+   The Hub is fully keyboard-navigable; every control reachable without a mouse.
+5. **Permission-honest.** Be explicit about the mic permission, that **voice never leaves the
+   machine**, that the first model is a one-time download, and that synthetic input **cannot reach
+   elevated/UAC windows** unless MIA is elevated (ADR-005). Plain text, never buried.
 
 ### 9b. End-to-end interaction flow
 
@@ -316,75 +298,62 @@ inline message on a reserved/conflicting combo. Backs the push-to-talk binding i
 [idle: tray icon only, HUD hidden]
    │  user presses & holds the push-to-talk hotkey (works unfocused)
    ▼
-[HUD appears → listening]   ← pulsing action-blue ring + live waveform from the mic level meter
-   │  user speaks (cpal captures 16 kHz mono; Silero VAD gates silence)
-   ▼
-   │  user releases the key (push-to-talk) or toggles off (toggle mode)
-   ▼
+[HUD appears → listening]   ← pumpkin waveform driven by the live mic level meter
+   │  user speaks (cpal 16 kHz mono; Silero VAD gates silence)
+   ▼  user releases the key (push-to-talk) or toggles off
 [HUD → transcribing]        ← spinner; warm whisper.cpp runs on the buffer
-   │
    ▼
 [text inserted at the cursor]  ← SendInput Unicode at the focused app's caret (ADR-005);
    │                              deterministic cleanup applied before injection
    ▼
-[HUD → inserting → brief success tick → fade out]
-   │
-   ▼
-[idle]
+[HUD → inserting → brief ✓ → fade out]  →  [idle]
 ```
 
-The user's focused application keeps focus throughout — the HUD never activates. See
-[`dictation.md`](./dictation.md) for the full orchestration and [`text-injection.md`](./text-injection.md)
-for the injection/clipboard-fallback detail.
+The user's focused application keeps focus throughout — the HUD never activates.
 
 ### 9c. Accessibility
 
-- **Visible focus rings** on every interactive control: `action-blue`, 2px, offset
-  (`focus-visible:ring-2 ring-action-blue ring-offset-2`). Never remove the outline without
-  replacing it.
-- **Hit targets ≥ 40px** for all clickable controls in the Hub.
-- **Never color-only.** Every state pairs color with text and/or an icon — Toggle has on/off
-  text, the HUD `listening`/`transcribing`/`error` states each carry a label, status pills carry
-  a word. (Critical for the HUD's success/danger ticks.)
-- **Contrast.** Light surface: `midnight-indigo` / `text-black` body on `snow-white`/`cloud-mist`
-  is high-contrast; `slate-blue` is fine for secondary text ≥16px; `steel-gray` is disabled-only.
-  HUD: `snow-white` on `hud-bg` (dark slate @92%) clears AA; `hud-text-dim` is for non-essential
-  secondary labels only.
-- **HUD must not steal focus or trap input** — it is a no-activate, click-through overlay, so it
-  never interferes with screen readers or keyboard focus in the user's active application.
-- **Reduced motion.** Honor `prefers-reduced-motion`: replace the waveform/pulse animation with a
-  static `action-blue` "listening" dot and a non-spinning transcribing indicator.
+- **Visible focus rings** on every interactive control: 4px **pumpkin** at low opacity
+  (`focus-visible:ring-4 ring-pumpkin/45`). Never remove without replacing.
+- **Hit targets ≥ 40px** for all Hub controls.
+- **Never color-only.** Every state pairs color with text and/or icon — Toggle has on/off + a
+  label, the HUD states each carry a label, status pills carry a word.
+- **Contrast.** `charcoal` on `canvas`/`surface` is maximal. `ink-soft` (#5B4F4A) on `canvas`/
+  `surface` clears AA for secondary text. On accent fills, body text is `charcoal` (the palette was
+  chosen so charcoal-on-accent stays legible); `bubblegum` is dark enough to take `text-surface`.
+- **HUD must not steal focus or trap input** — no-activate, click-through overlay.
+- **Reduced motion.** Honor `prefers-reduced-motion`: the HUD waveform animation is disabled
+  (`@media (prefers-reduced-motion: reduce)`), leaving static bars; button hover-lift is a tiny
+  transform only.
 
 ---
 
 ## 10. Do / Don't
 
 **Do**
-- Use `font-gilroy` (Montserrat) for all text, on both surfaces.
-- Reserve `action-blue` for the single action path (light) and the single "listening" accent (HUD).
-- Apply `rounded-2xl` + `shadow-sm-2` to prominent light cards; `rounded-full` + `backdrop-blur`
-  to the HUD pill.
-- Keep the HUD small, dark, translucent, click-through, and visible only while dictating.
+- Use `font-display` (Alfa Slab One) for titles/headlines and `font-body` (Manrope) for everything
+  else, on both surfaces.
+- Define every surface with a **2px charcoal outline** + background step.
+- Reserve `pumpkin` for active navigation, accent emphasis, and the HUD waveform/focus ring.
+- Keep all interactive controls **pill-shaped**; cards `rounded-card`, accent cards `rounded-bubble`.
 - Pair every state with text/icon, not color alone.
-- Bundle Montserrat offline via `@fontsource` (no CDN — privacy-first).
+- Bundle fonts offline via `@fontsource` (no CDN — privacy-first).
 
 **Don't**
-- No second accent / CTA color on either surface.
-- No light/paper styling inside the HUD; no dark styling inside the Settings window.
-- No heavy shadows or large motion — this is "Calm Focus", not a flashy overlay.
-- No font families beyond Montserrat.
-- Don't break the 8px spacing grid.
-- Never pure black `#000` — use `text-black` (`#0A0A0A`) or `midnight-indigo`.
+- **No shadows. No gradients.** Definition is outline + color only.
+- **No sharp corners** — everything is rounded (10 / 28 / pill).
+- No `font-semibold` (600 isn't loaded) — use `font-bold`.
+- No second display/body typeface beyond Alfa Slab One + Manrope.
+- No accent color behind large blocks of text — accents are fills/cards/icons.
+- No `pumpkin`-filled buttons (pumpkin = nav/accent); the primary button is charcoal.
 - Don't let the HUD activate, steal focus, or block the app under the cursor.
 
 ---
 
 ## 11. Out of scope (V1)
 
-- **Full dark theme for the Settings/Hub window.** Only the **mic HUD** is dark in V1; the Hub
-  stays light. Tokens are structured (HUD tokens isolated under `hud-*`) so a future Hub dark
-  theme could be added without disturbing the HUD.
-- **A heavy motion/animation system** beyond the HUD's listening pulse/waveform, simple hover
-  transitions, and the success/error ticks.
-- **Mobile / responsive-for-touch layouts** — MIA is Windows-desktop-only in V1 (ADR-011).
-- Licensed Gilroy (using the Montserrat substitute — see §1).
+- A separate dark theme for the Hub (one blush language across both surfaces).
+- A heavy motion/animation system beyond the HUD waveform, hover transforms, and success/error
+  ticks.
+- Mobile / touch layouts — MIA is Windows-desktop-only in V1 (ADR-011).
+- A custom (frameless) Hub title bar — the native Windows chrome is kept in V1.

@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { Phase } from "../dictation";
 
-  // The floating mic HUD pill — dark, translucent, always-on-top (design-system.md
-  // §8b). Presentation only: the dictation orchestrator drives `state` + `level`
-  // (RMS 0–1); `HudWindow.svelte` mounts this in the dedicated transparent,
-  // click-through HUD window (hud.rs + tauri.conf) and forwards the engine's
-  // `hud://state` + `hud://level` events. `state` reuses the orchestrator `Phase`.
+  // The floating mic HUD pill — "Blush Playground" (design-system.md §8b). A solid
+  // white pill with a 2px charcoal outline so it stays legible floating over ANY
+  // app (the outline does the separation work — no shadow, Lpalo discipline).
+  // Presentation only: the dictation orchestrator drives `state` + `level` (RMS 0–1);
+  // `HudWindow.svelte` mounts this in the transparent, click-through HUD window
+  // (hud.rs + tauri.conf) and forwards the engine's `hud://state` + `hud://level`.
 
   interface Props {
     state?: Phase;
@@ -36,31 +37,31 @@
 </script>
 
 <div
-  class="inline-flex items-center gap-3 rounded-full border border-hud-border bg-hud-bg
-         px-4 py-2 text-hud-text shadow-hud select-none"
+  class="inline-flex select-none items-center gap-3 rounded-pill border-2 border-charcoal
+         bg-surface px-4 py-2 text-charcoal"
   data-state={state}
 >
   {#if state === "listening" || state === "idle"}
-    <span class="flex items-end gap-1 h-6" aria-hidden="true">
+    <span class="flex h-6 items-end gap-1" aria-hidden="true">
       {#each bars as mult, i (i)}
         <span
-          class="eq-bar w-1 rounded-full bg-hud-wave"
+          class="eq-bar w-1 rounded-pill bg-pumpkin"
           style="height: {barHeight(mult)}px; animation-delay: {i * 0.12}s"
         ></span>
       {/each}
     </span>
   {:else if state === "transcribing"}
     <span
-      class="h-4 w-4 animate-spin rounded-full border-2 border-hud-text-dim border-t-hud-accent"
+      class="h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-pumpkin"
       aria-hidden="true"
     ></span>
   {:else if state === "inserting"}
-    <span class="text-hud-success" aria-hidden="true">✓</span>
+    <span class="text-success" aria-hidden="true">✓</span>
   {:else}
-    <span class="text-hud-danger" aria-hidden="true">⚠</span>
+    <span class="text-danger" aria-hidden="true">⚠</span>
   {/if}
 
-  <span class="text-body font-semibold">{label}</span>
+  <span class="text-body font-bold">{label}</span>
 </div>
 
 <style>

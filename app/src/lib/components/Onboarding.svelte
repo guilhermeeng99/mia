@@ -78,95 +78,102 @@
   const hasModel = $derived(models.some((m) => m.downloaded));
 </script>
 
-<main class="min-h-screen bg-cloud-mist text-midnight-indigo font-gilroy grid place-items-center px-6 py-8">
-  <Card class="w-full max-w-[560px]">
-    <div class="flex items-center gap-2 text-body text-slate-blue">
-      {#each steps as label, i (label)}
-        <span class={i === step ? "text-action-blue font-semibold" : ""}>{label}</span>
-        {#if i < steps.length - 1}<span>·</span>{/if}
-      {/each}
+<main class="grid min-h-screen place-items-center bg-canvas px-6 py-8 font-body text-charcoal">
+  <div class="w-full max-w-[560px]">
+    <div class="mb-5 flex items-center gap-2">
+      <span class="font-display text-[1.6rem] leading-none">MIA</span>
+      <span class="ml-auto flex items-center gap-1.5 text-caption font-bold text-ink-soft">
+        {#each steps as label, i (label)}
+          <span class={i === step ? "text-charcoal" : ""}>{label}</span>
+          {#if i < steps.length - 1}<span class="text-hairline">·</span>{/if}
+        {/each}
+      </span>
     </div>
 
-    {#if error}
-      <p class="mt-3 text-body text-danger">⚠ {error}</p>
-    {/if}
+    <Card>
+      {#if error}
+        <p class="mb-3 text-body text-danger">⚠ {error}</p>
+      {/if}
 
-    {#if step === 0}
-      <h1 class="mt-4 text-heading-lg font-bold">Bem-vindo ao MIA</h1>
-      <p class="mt-2 text-body-lg text-slate-blue">
-        Ditado por voz <strong>100% local</strong> para Windows. Sua voz nunca sai da máquina.
-      </p>
-      <div class="mt-6"><Button onclick={() => (step = 1)}>Começar</Button></div>
-    {:else if step === 1}
-      <h1 class="mt-4 text-heading font-semibold">Seu atalho</h1>
-      <p class="mt-2 text-body-lg text-slate-blue">
-        Segure <strong>{chord}</strong> e fale; solte para inserir o texto onde o cursor estiver.
-      </p>
-      <div class="mt-6 flex gap-3">
-        <Button variant="secondary" onclick={() => (step = 0)}>Voltar</Button>
-        <Button onclick={() => (step = 2)}>Próximo</Button>
-      </div>
-    {:else if step === 2}
-      <h1 class="mt-4 text-heading font-semibold">Testar microfone</h1>
-      <p class="mt-2 text-body-lg text-slate-blue">Fale algo e confirme que estamos ouvindo.</p>
-      <div class="mt-4 flex items-center gap-3">
-        <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
-          {micTesting ? "Ouvindo…" : "Testar"}
-        </Button>
-        {#if micTesting}
-          <div class="h-2 w-40 overflow-hidden rounded-full bg-platinum-tint" aria-hidden="true">
-            <div
-              class="h-full rounded-full bg-action-blue transition-[width] duration-75"
-              style="width: {Math.min(100, micLevel * 600)}%"
-            ></div>
+      {#if step === 0}
+        <h1 class="font-display text-hero leading-none">Bem-vindo ao MIA</h1>
+        <p class="mt-4 text-body-lg text-ink-soft">
+          Ditado por voz <strong class="text-charcoal">100% local</strong> para Windows. Sua voz
+          nunca sai da máquina.
+        </p>
+        <div class="mt-6"><Button onclick={() => (step = 1)}>Começar</Button></div>
+      {:else if step === 1}
+        <h1 class="font-display text-page">Seu atalho</h1>
+        <p class="mt-3 text-body-lg text-ink-soft">
+          Segure <span class="font-display text-charcoal">{chord}</span> e fale; solte para inserir
+          o texto onde o cursor estiver.
+        </p>
+        <div class="mt-6 flex gap-3">
+          <Button variant="secondary" onclick={() => (step = 0)}>Voltar</Button>
+          <Button onclick={() => (step = 2)}>Próximo</Button>
+        </div>
+      {:else if step === 2}
+        <h1 class="font-display text-page">Testar microfone</h1>
+        <p class="mt-3 text-body-lg text-ink-soft">Fale algo e confirme que estamos ouvindo.</p>
+        <div class="mt-4 flex items-center gap-3">
+          <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
+            {micTesting ? "Ouvindo…" : "Testar"}
+          </Button>
+          {#if micTesting}
+            <div class="h-3 w-40 overflow-hidden rounded-pill border-2 border-charcoal bg-surface" aria-hidden="true">
+              <div
+                class="h-full bg-spring transition-[width] duration-75"
+                style="width: {Math.min(100, micLevel * 600)}%"
+              ></div>
+            </div>
+          {:else if micMsg}
+            <span class="text-body text-ink-soft">{micMsg}</span>
+          {/if}
+        </div>
+        {#if micDenied}
+          <div class="mt-3 flex flex-wrap items-center gap-3">
+            <span class="text-body text-danger">Acesso ao microfone bloqueado pelo Windows.</span>
+            <Button variant="secondary" size="sm" onclick={openMicSettings}>Abrir configurações</Button>
           </div>
-        {:else if micMsg}
-          <span class="text-body text-slate-blue">{micMsg}</span>
         {/if}
-      </div>
-      {#if micDenied}
-        <div class="mt-3 flex flex-wrap items-center gap-3">
-          <span class="text-body text-danger">Acesso ao microfone bloqueado pelo Windows.</span>
-          <Button variant="secondary" onclick={openMicSettings}>Abrir configurações</Button>
+        <div class="mt-6 flex gap-3">
+          <Button variant="secondary" onclick={() => (step = 1)}>Voltar</Button>
+          <Button onclick={() => (step = 3)}>Próximo</Button>
+        </div>
+      {:else}
+        <h1 class="font-display text-page">Baixar o modelo</h1>
+        <p class="mt-3 text-body-lg text-ink-soft">
+          Baixe um modelo (uma única vez). <strong class="text-charcoal">Small</strong> é o recomendado.
+        </p>
+        <ul class="mt-4 flex flex-col gap-3">
+          {#each models as model (model.id)}
+            <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-body-lg font-bold">{model.label}</span>
+                  {#if model.recommended}<Pill tone="accent">Recomendado</Pill>{/if}
+                </div>
+                <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
+              </div>
+              <div class="shrink-0">
+                {#if model.downloaded}
+                  <Pill tone="success">✓ instalado</Pill>
+                {:else if downloading === model.id}
+                  <Pill tone="accent">{progress}%</Pill>
+                {:else}
+                  <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
+                    Baixar
+                  </Button>
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+        <div class="mt-6 flex gap-3">
+          <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>Voltar</Button>
+          <Button disabled={!hasModel || downloading !== null} onclick={ondone}>Concluir</Button>
         </div>
       {/if}
-      <div class="mt-6 flex gap-3">
-        <Button variant="secondary" onclick={() => (step = 1)}>Voltar</Button>
-        <Button onclick={() => (step = 3)}>Próximo</Button>
-      </div>
-    {:else}
-      <h1 class="mt-4 text-heading font-semibold">Baixar o modelo</h1>
-      <p class="mt-2 text-body-lg text-slate-blue">
-        Baixe um modelo (uma única vez). <strong>Small</strong> é o recomendado.
-      </p>
-      <ul class="mt-4 flex flex-col gap-3">
-        {#each models as model (model.id)}
-          <li class="flex items-center gap-3">
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-body-lg font-semibold">{model.label}</span>
-                {#if model.recommended}<Pill tone="action">Recomendado</Pill>{/if}
-              </div>
-              <span class="text-body text-slate-blue">{model.sizeMb} MB</span>
-            </div>
-            <div class="shrink-0">
-              {#if model.downloaded}
-                <Pill tone="success">✓ instalado</Pill>
-              {:else if downloading === model.id}
-                <Pill tone="action">{progress}%</Pill>
-              {:else}
-                <Button variant="secondary" disabled={downloading !== null} onclick={() => download(model.id)}>
-                  Baixar
-                </Button>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-      <div class="mt-6 flex gap-3">
-        <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>Voltar</Button>
-        <Button disabled={!hasModel || downloading !== null} onclick={ondone}>Concluir</Button>
-      </div>
-    {/if}
-  </Card>
+    </Card>
+  </div>
 </main>

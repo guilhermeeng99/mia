@@ -10,6 +10,7 @@
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
   import Pill from "./ui/Pill.svelte";
   import { inputClass } from "./ui/inputClass";
 
@@ -77,51 +78,42 @@
   }
 </script>
 
+<PageHeader title="Dicionário pessoal" subtitle="Nomes, jargões e siglas escritos do seu jeito (ex.: mia → MIA)." />
+
+{#if error}
+  <div class="mb-6 rounded-card border-2 border-danger bg-surface px-4 py-3">
+    <p class="text-body-lg text-danger">⚠ {error}</p>
+  </div>
+{/if}
+
 <Card>
-  <h2 class="text-heading font-semibold">Dicionário pessoal</h2>
-  <p class="mt-1 text-body text-slate-blue">
-    Nomes, jargões e siglas escritos do seu jeito (ex.: mia → MIA).
-  </p>
-
-  {#if error}
-    <p class="mt-2 text-body text-danger">⚠ {error}</p>
-  {/if}
-
-  <ul class="mt-4 flex flex-col gap-2">
+  <ul class="flex flex-col gap-2">
     {#each entries as entry (entry.id)}
-      <li class="flex items-center gap-3">
-        <span class="text-body-lg font-semibold">{entry.replacement}</span>
+      <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-2.5">
+        <span class="text-body-lg font-bold">{entry.replacement}</span>
         {#if entry.soundsLike.length}
-          <span class="text-body text-slate-blue">← {entry.soundsLike.join(", ")}</span>
+          <span class="text-body text-ink-soft">← {entry.soundsLike.join(", ")}</span>
         {/if}
         <span class="ml-auto flex items-center gap-2">
           {#if !entry.enabled}<Pill tone="neutral">desligado</Pill>{/if}
-          <Button variant="ghost" onclick={() => toggle(entry)}>
+          <Button variant="ghost" size="sm" onclick={() => toggle(entry)}>
             {entry.enabled ? "Desativar" : "Ativar"}
           </Button>
-          <Button variant="ghost" onclick={() => remove(entry.id)}>Remover</Button>
+          <Button variant="ghost" size="sm" onclick={() => remove(entry.id)}>Remover</Button>
         </span>
       </li>
     {/each}
     {#if entries.length === 0}
-      <li class="text-body text-slate-blue">Nenhum termo ainda.</li>
+      <li class="text-body text-ink-soft">Nenhum termo ainda.</li>
     {/if}
   </ul>
 
-  <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
-    <Field label="Forma correta">
-      <input
-        bind:value={replacement}
-        placeholder="MIA"
-        class={inputClass}
-      />
+  <div class="mt-5 flex flex-col gap-4 border-t-2 border-hairline pt-5 sm:flex-row sm:items-end">
+    <Field class="flex-1" label="Forma correta">
+      <input bind:value={replacement} placeholder="MIA" class={inputClass} />
     </Field>
-    <Field label="Variantes faladas (vírgula)" hint="opcional">
-      <input
-        bind:value={sounds}
-        placeholder="mia, m i a"
-        class={inputClass}
-      />
+    <Field class="flex-1" label="Variantes faladas — opcional">
+      <input bind:value={sounds} placeholder="mia, m i a" class={inputClass} />
     </Field>
     <Button onclick={add} disabled={replacement.trim() === ""}>Adicionar</Button>
   </div>

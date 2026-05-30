@@ -1,58 +1,68 @@
 @import "tailwindcss";
 
 /*
-  MIA design tokens — "Calm Focus" (see docs/specs/design-system.md).
+  MIA design tokens — "Blush Playground" (Lpalo). See docs/specs/design-system.md.
   Tailwind v4 CSS-first config: every token here generates utilities
-  (bg-*, text-*, border-*, font-*, shadow-*, text-{scale}). Never use raw hex
+  (bg-*, text-*, border-*, font-*, text-{scale}, rounded-*). Never use raw hex
   in components — always the generated utility.
+
+  Lpalo discipline: soft blush canvas, bold charcoal type + 2px charcoal outlines
+  for definition (NO shadows, NO gradients), pill-shaped controls, a playful but
+  restrained accent palette used for fills/cards — never large text blocks.
 */
 @theme {
-  /* ── Font ─────────────────────────────────────────────────────────────── */
-  --font-gilroy: "Montserrat", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+  /* ── Fonts ────────────────────────────────────────────────────────────── */
+  /* Display: Alfa Slab One — heavy slab, single weight. Body: Manrope. Both
+     bundled offline via @fontsource (no CDN — privacy-first). */
+  --font-display: "Alfa Slab One", ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, sans-serif;
 
-  /* ── Light theme — Settings/Hub (Calendly "Sky Blueprint") ────────────── */
-  --color-midnight-indigo: #0b3558; /* primary text, headings */
-  --color-action-blue: #006bff; /* THE one action color */
-  --color-slate-blue: #476788; /* secondary text, icon fills */
-  --color-steel-gray: #a6bbd1; /* tertiary / disabled / fine borders */
-  --color-platinum-tint: #d4e0ed; /* inactive field borders, dividers */
-  --color-cloud-mist: #f8f9fb; /* window / section background */
-  --color-snow-white: #ffffff; /* card surfaces */
-  --color-text-black: #0a0a0a; /* body text (never pure #000) */
-  --color-success: #1a7f4b; /* success status */
-  --color-danger: #c2362f; /* error status */
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --color-canvas: #f6e0db; /* page background (surface 0) */
+  --color-canvas-deep: #efd2ca; /* sidebar / inset wash, hover tint */
+  --color-canvas-deeper: #e0bdb3; /* scrollbar-thumb hover (darker blush) */
+  --color-surface: #ffffff; /* cards, fields (surface 1) */
 
-  /* ── Mic HUD — dark, translucent (HUD-only tokens) ────────────────────── */
-  --color-hud-bg: rgba(11, 53, 88, 0.92);
-  --color-hud-bg-solid: #0b3558;
-  --color-hud-text: #ffffff;
-  --color-hud-text-dim: rgba(255, 255, 255, 0.64);
-  --color-hud-accent: #006bff; /* the "listening" accent (same action color) */
-  --color-hud-wave: rgba(0, 107, 255, 0.85);
-  --color-hud-success: #1a7f4b;
-  --color-hud-danger: #c2362f;
-  --color-hud-border: rgba(255, 255, 255, 0.08);
+  /* ── Ink ──────────────────────────────────────────────────────────────── */
+  --color-charcoal: #000000; /* primary text, borders, active outlines */
+  --color-ink-soft: #5b4f4a; /* secondary / helper text on light surfaces */
+  --color-hairline: #e3c9c1; /* subtle dividers when an outline is too heavy */
 
-  /* ── Typography scale (size + line height) ────────────────────────────── */
+  /* ── Accent palette (fills / cards / iconography — never big text) ──────── */
+  --color-pumpkin: #ef724f; /* primary action fill, active nav */
+  --color-bubblegum: #981082; /* secondary accent fill */
+  --color-sky: #84bfff; /* card / illustration fill */
+  --color-seafoam: #ace2df; /* soft accent fill */
+  --color-lavender: #e69dff; /* soft accent fill */
+  --color-lemon: #e7db4c; /* highlight splash */
+  --color-spring: #6ed311; /* positive / "on" accent */
+  --color-deep-blue: #5196ff; /* precise accent */
+
+  /* ── Semantic status (palette doesn't carry reliable error/ok hues) ─────── */
+  --color-success: #1a7f4b;
+  --color-danger: #c2362f;
+
+  /* ── Typography scale — Lpalo flavor, adapted to a desktop utility UI ───── */
+  /* Display sizes use Alfa Slab One; body/labels use Manrope. The marketing
+     site's 25px body / 120px display are scaled down for a dense settings app. */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
   --text-body: 14px;
-  --text-body--line-height: 1.71;
+  --text-body--line-height: 1.6;
   --text-body-lg: 16px;
-  --text-body-lg--line-height: 1.6;
-  --text-subheading: 18px;
-  --text-subheading--line-height: 1.6;
-  --text-heading: 24px;
-  --text-heading--line-height: 1.4;
-  --text-heading-lg: 28px;
-  --text-heading-lg--line-height: 1.2;
-  --text-display-sm: 38px;
-  --text-display-sm--line-height: 1.21;
+  --text-body-lg--line-height: 1.55;
+  --text-title: 22px;
+  --text-title--line-height: 1.2;
+  --text-page: 32px;
+  --text-page--line-height: 1.08;
+  --text-hero: 46px;
+  --text-hero--line-height: 1.04;
 
-  /* ── Elevation — soft, slate-tinted ───────────────────────────────────── */
-  --shadow-sm: 0 1px 2px rgba(71, 103, 136, 0.1), 0 2px 8px rgba(71, 103, 136, 0.08);
-  --shadow-sm-2: 0 1px 2px rgba(71, 103, 136, 0.08), 0 2px 4px rgba(71, 103, 136, 0.1), 0 8px 24px
-    rgba(71, 103, 136, 0.12);
-  --shadow-hud: 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* ── Radius — generous rounding only (Lpalo: no sharp corners) ──────────── */
+  --radius-card: 10px; /* default cards */
+  --radius-bubble: 28px; /* accent cards / stat tiles */
+  --radius-pill: 999px; /* buttons, nav, fields, badges, HUD */
 }
 
 :root {
@@ -63,17 +73,50 @@ html,
 body {
   margin: 0;
   padding: 0;
+  background: var(--color-canvas);
 }
 
 body {
-  font-family: var(--font-gilroy);
+  font-family: var(--font-body);
+  color: var(--color-charcoal);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* The HUD window is transparent so the translucent pill floats over other apps. */
+/* The HUD window is transparent so the outlined pill floats over other apps.
+   The `hud` class is set on BOTH <html> and <body> before mount (main.ts) so the
+   blush page background never leaks as a beige square on the empty/idle HUD. */
+html.hud,
 body.hud {
   background: transparent;
+}
+body.hud {
   overflow: hidden;
   user-select: none;
+}
+
+/* The native <select> arrow is pinned to the very edge and ignores padding —
+   replace it with a charcoal chevron we can position to match the pill field. */
+select.mia-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 16px 16px;
+  padding-right: 2.75rem;
+}
+
+/* Custom scrollbar tuned to the blush canvas (the content area scrolls). */
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-canvas-deep);
+  border: 3px solid var(--color-canvas);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-canvas-deeper);
 }
