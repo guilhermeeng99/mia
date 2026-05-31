@@ -47,12 +47,10 @@
   }
 </script>
 
-<div class="flex h-screen overflow-hidden bg-canvas font-body text-charcoal">
+<div class="flex h-full overflow-hidden bg-canvas font-body text-charcoal">
   <aside class="flex w-[244px] shrink-0 flex-col border-r-2 border-charcoal bg-canvas-deep">
-    <div class="flex items-center gap-3 px-6 pt-7 pb-3">
-      <span class="font-display text-[1.9rem] leading-none text-charcoal">MIA</span>
-    </div>
-    <div class="px-5 pb-5">
+    <div class="flex items-center gap-3 px-5 pt-6 pb-5">
+      <img src="/logo.png" alt="MIA" class="h-11 w-auto shrink-0" />
       <Pill tone="info">100% local · offline</Pill>
     </div>
 

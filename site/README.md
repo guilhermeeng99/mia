@@ -15,5 +15,5 @@ Deploys to **GitHub Pages** automatically via `.github/workflows/deploy-site.yml
 `dist/` to any static host). The download link in `index.html` points at GitHub Releases.
 
 > The app itself uses Bun; this standalone site mirrors the sibling **Toolzy** site and uses
-> pnpm so the deploy workflow stays identical. The favicon is MIA's app icon
-> (`app/src-tauri/icons/icon.png`), copied to `public/favicon.png`.
+> pnpm so the deploy workflow stays identical. The favicon and header/footer mark
+> are generated from `public/logo.png`.

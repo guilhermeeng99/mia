@@ -8,6 +8,7 @@
   import Hub from "./lib/components/Hub.svelte";
   import HudWindow from "./lib/components/HudWindow.svelte";
   import Onboarding from "./lib/components/Onboarding.svelte";
+  import WindowTitleBar from "./lib/components/WindowTitleBar.svelte";
 
   // App.svelte is the single entry for both webviews. The "hud" window renders only
   // the floating mic HUD (driven by the engine's `hud://state` events); the main
@@ -62,7 +63,17 @@
 {#if isHud}
   <HudWindow />
 {:else if showOnboarding}
-  <Onboarding ondone={finishOnboarding} />
+  <div class="flex h-screen flex-col overflow-hidden bg-canvas">
+    <WindowTitleBar />
+    <div class="min-h-0 flex-1">
+      <Onboarding ondone={finishOnboarding} />
+    </div>
+  </div>
 {:else}
-  <Hub {version} />
+  <div class="flex h-screen flex-col overflow-hidden bg-canvas">
+    <WindowTitleBar />
+    <div class="min-h-0 flex-1">
+      <Hub {version} />
+    </div>
+  </div>
 {/if}

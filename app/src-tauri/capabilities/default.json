@@ -3,5 +3,14 @@
   "identifier": "default",
   "description": "Core capability for the main (Hub) window.",
   "windows": ["main"],
-  "permissions": ["core:default", "updater:default", "process:allow-restart"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }

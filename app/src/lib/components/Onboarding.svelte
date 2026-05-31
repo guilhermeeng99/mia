@@ -79,10 +79,10 @@
   const hasModel = $derived(models.some((m) => m.downloaded));
 </script>
 
-<main class="grid min-h-screen place-items-center bg-canvas px-6 py-8 font-body text-charcoal">
+<main class="grid min-h-full place-items-center bg-canvas px-6 py-8 font-body text-charcoal">
   <div class="w-full max-w-[560px]">
-    <div class="mb-5 flex items-center gap-2">
-      <span class="font-display text-[1.6rem] leading-none">MIA</span>
+    <div class="mb-5 flex items-center gap-3">
+      <img src="/logo.png" alt="MIA" class="h-11 w-auto" />
       <span class="ml-auto flex items-center gap-1.5 text-caption font-bold text-ink-soft">
         {#each steps as label, i (label)}
           <span class={i === step ? "text-charcoal" : ""}>{label}</span>
