@@ -33,17 +33,21 @@ export function listInputDevices(): Promise<AudioDevice[]> {
 }
 
 /**
- * Capture briefly from the default mic and report peak/RMS — "we can hear you" (no STT).
+ * Capture briefly from the selected mic and report peak/RMS — "we can hear you" (no STT).
  * Pass `onLevel` to receive the live RMS stream while the test runs (for a live meter).
  */
-export function testMicrophone(ms?: number, onLevel?: (rms: number) => void): Promise<MicTest> {
+export function testMicrophone(
+  ms?: number,
+  onLevel?: (rms: number) => void,
+  deviceId?: string,
+): Promise<MicTest> {
   const level = new Channel<CaptureEvent>();
   if (onLevel) {
     level.onmessage = (e) => {
       if (e.kind === "level") onLevel(e.rms);
     };
   }
-  return invoke<MicTest>("test_microphone", { ms, level });
+  return invoke<MicTest>("test_microphone", { ms, level, deviceId });
 }
 
 /** Open Windows' microphone privacy settings (deep-link) when capture is permission-denied. */

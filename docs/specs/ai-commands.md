@@ -123,8 +123,7 @@ async fn ai_status() -> Result<AiStatus, String>;
 #[tauri::command]
 async fn download_llm(model_id: String, on_progress: tauri::ipc::Channel<DownloadProgress>)
     -> Result<(), String>;
-//   On-demand HF download (ureq, .part → rename), reusing Toolzy's transcription.rs pattern
-//   (REUSE-FROM-TOOLZY.md). Same "download gate" UX as Whisper models.
+//   On-demand HF download (ureq, verified .part → rename). Same download-gate UX as Whisper models.
 
 #[tauri::command]
 async fn run_command(state: State<'_, LlmState>, transcript: String, lang: String)
@@ -174,9 +173,8 @@ rewrites faithful dictation unless the user explicitly asked.**
    text flows down the faithful path untouched. The LLM is loaded **only** for `Command`/`Polish`.
 3. **On-demand model download (gate).** `Command`/`Polish` requires the GGUF present in app-data. If
    missing, the action returns `Err("model not installed")` and the UI offers a one-tap download
-   (`download_llm`, streamed progress) — the same gate UX as Whisper
-   ([speech-to-text.md](speech-to-text.md)), reusing Toolzy's HF download pattern
-   ([REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)). Dictation keeps working while it downloads.
+   (`download_llm`, streamed progress) — the same gate UX and verified `.part` download pattern as
+   Whisper ([speech-to-text.md](speech-to-text.md)). Dictation keeps working while it downloads.
 4. **Constrained Command parsing into `{action, target, params}`.** Command Mode decodes under the
    GBNF grammar (`command_grammar`) so the model can emit **only** a valid `ParsedCommand` — a known
    `action` (Concise, Formal, Casual, BulletList, Summarize, Translate, Fix, Expand, Custom), a

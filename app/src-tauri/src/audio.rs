@@ -400,6 +400,13 @@ fn default_input_name() -> String {
         .unwrap_or_else(|| "default".to_string())
 }
 
+fn input_name(device_id: Option<&str>) -> String {
+    match device_id.filter(|id| !id.is_empty() && *id != "default") {
+        Some(id) => normalize_device_name(id),
+        None => default_input_name(),
+    }
+}
+
 /// One-shot mic test for the Hub: capture briefly, report peak/RMS (no STT, §2).
 /// The `level` channel streams `CaptureEvent::Level` while the test runs so the
 /// Hub/onboarding can show a **live** meter, not just the final aggregate. (Required —
@@ -410,12 +417,13 @@ pub fn test_microphone(
     state: State<'_, CaptureState>,
     ms: Option<u32>,
     level: Channel<CaptureEvent>,
+    device_id: Option<String>,
 ) -> Result<MicTest, String> {
     let dur = ms.unwrap_or(1500).clamp(200, 5000);
-    begin_capture(&state, None, Some(level), None)?;
+    begin_capture(&state, device_id.as_deref(), Some(level), None)?;
     std::thread::sleep(Duration::from_millis(dur as u64));
     let samples = end_capture(&state)?;
-    Ok(MicTest { peak: peak(&samples), rms: rms(&samples), device_name: default_input_name() })
+    Ok(MicTest { peak: peak(&samples), rms: rms(&samples), device_name: input_name(device_id.as_deref()) })
 }
 
 /// Open Windows' microphone privacy settings (`ms-settings:privacy-microphone`) so the
@@ -525,6 +533,11 @@ mod tests {
     #[test]
     fn device_name_collapses_whitespace() {
         assert_eq!(normalize_device_name("  Mic   (USB)\t Array "), "Mic (USB) Array");
+    }
+
+    #[test]
+    fn selected_input_name_is_normalized() {
+        assert_eq!(input_name(Some("  Mic   USB  ")), "Mic USB");
     }
 
     #[test]

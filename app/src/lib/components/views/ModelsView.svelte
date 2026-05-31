@@ -12,6 +12,7 @@
     type WarmStatus,
     type WhisperModel,
   } from "../../stt";
+  import { getSettings, updateSettings, type ModelSettings } from "../../settings";
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
@@ -21,6 +22,8 @@
   // The model + engine view — download Whisper models on demand (the one network
   // call MIA makes, ADR-007) and the optional NVIDIA CUDA engine. Presentation only.
   let models = $state<WhisperModel[]>([]);
+  let modelSettings = $state<ModelSettings | null>(null);
+  let activeModel = $state("small");
   let warm = $state<WarmStatus | null>(null);
   let gpu = $state<GpuStatus | null>(null);
   let downloading = $state<string | null>(null);
@@ -39,9 +42,28 @@
 
   onMount(() => {
     loadModels().catch(fail);
+    getSettings()
+      .then((s) => {
+        modelSettings = s.model;
+        activeModel = s.model.model;
+      })
+      .catch(fail);
     warmStatus().then((w) => (warm = w)).catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
   });
+
+  async function selectModel(id: string) {
+    error = null;
+    try {
+      const base = modelSettings ?? (await getSettings()).model;
+      const s = await updateSettings({ model: { ...base, model: id } });
+      modelSettings = s.model;
+      activeModel = s.model.model;
+      warm = await warmStatus();
+    } catch (e) {
+      fail(e);
+    }
+  }
 
   async function download(id: string) {
     downloading = id;
@@ -51,6 +73,7 @@
       const channel = new Channel<DownloadProgress>();
       channel.onmessage = (p) => (progress = Math.round(p.percent));
       await downloadWhisperModel(id, channel);
+      await selectModel(id);
       await loadModels();
     } catch (e) {
       fail(e);
@@ -98,7 +121,18 @@
           </div>
           <div class="shrink-0">
             {#if model.downloaded}
-              <Pill tone="success">✓ instalado</Pill>
+              {#if activeModel === model.id}
+                <Pill tone="success">✓ em uso</Pill>
+              {:else}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={downloading !== null}
+                  onclick={() => selectModel(model.id)}
+                >
+                  Usar
+                </Button>
+              {/if}
             {:else if downloading === model.id}
               <Pill tone="accent">baixando… {progress}%</Pill>
             {:else}

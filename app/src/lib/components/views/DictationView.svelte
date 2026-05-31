@@ -8,8 +8,14 @@
     type AudioDevice,
   } from "../../audio";
   import { injectText } from "../../inject";
-  import { getHotkey, updateHotkey, type ActivationMode, type HotkeyConfig } from "../../hotkey";
-  import { getSettings, updateSettings, type GeneralSettings } from "../../settings";
+  import type { ActivationMode, HotkeyConfig } from "../../hotkey";
+  import {
+    getSettings,
+    updateSettings,
+    type AudioSettings,
+    type CleanupSettings,
+    type GeneralSettings,
+  } from "../../settings";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
@@ -32,6 +38,8 @@
   let micLevel = $state(0);
   let micDenied = $state(false);
   let general = $state<GeneralSettings | null>(null);
+  let audio = $state<AudioSettings | null>(null);
+  let cleanup = $state<CleanupSettings | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
   let recording = $state(false);
   let hotkeyError = $state<string | null>(null);
@@ -88,14 +96,13 @@
     window.removeEventListener("keydown", onRecordKey, true);
   }
 
-  // Persist + re-register via update_hotkey, which rejects a conflicting chord
-  // (the engine's conflict-probe) and keeps the old binding on failure.
+  // Persist + re-register via settings; a conflicting chord rejects before disk write.
   async function commitHotkey(accelerator: string) {
     stopRecording();
     const mode = hotkey?.mode ?? "pushToHold";
     try {
-      await updateHotkey({ accelerator, mode });
-      hotkey = { accelerator, mode };
+      const s = await updateSettings({ hotkey: { accelerator, mode } });
+      hotkey = s.hotkey;
     } catch (e) {
       hotkeyError = String(e);
     }
@@ -104,8 +111,8 @@
   async function setMode(mode: ActivationMode) {
     if (!hotkey || hotkey.mode === mode) return;
     try {
-      await updateHotkey({ accelerator: hotkey.accelerator, mode });
-      hotkey = { ...hotkey, mode };
+      const s = await updateSettings({ hotkey: { accelerator: hotkey.accelerator, mode } });
+      hotkey = s.hotkey;
     } catch (e) {
       hotkeyError = String(e);
     }
@@ -135,10 +142,61 @@
     }
   }
 
+  async function setDictationEnabled(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, dictationEnabled: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function setCollectStats(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, collectStats: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function setInputDevice(value: string) {
+    selectedDevice = value;
+    if (!audio) return;
+    try {
+      const s = await updateSettings({
+        audio: { ...audio, inputDevice: value || "default" },
+      });
+      audio = s.audio;
+      selectedDevice = s.audio.inputDevice === "default" ? "" : s.audio.inputDevice;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function setCleanup<K extends keyof CleanupSettings>(key: K, value: CleanupSettings[K]) {
+    if (!cleanup) return;
+    try {
+      const s = await updateSettings({ cleanup: { ...cleanup, [key]: value } });
+      cleanup = s.cleanup;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   onMount(() => {
     listInputDevices().then((d) => (devices = d)).catch(fail);
-    getSettings().then((s) => (general = s.general)).catch(fail);
-    getHotkey().then((h) => (hotkey = h)).catch(fail);
+    getSettings()
+      .then((s) => {
+        general = s.general;
+        audio = s.audio;
+        cleanup = s.cleanup;
+        hotkey = s.hotkey;
+        selectedDevice = s.audio.inputDevice === "default" ? "" : s.audio.inputDevice;
+      })
+      .catch(fail);
     // Always drop the global capture-phase keydown listener if the view unmounts while
     // still recording a chord (switching sidebar views destroys this component) — else
     // it leaks and keeps capturing keys against a dead component.
@@ -152,7 +210,7 @@
     micTesting = true;
     micLevel = 0;
     try {
-      const r = await testMicrophone(1500, (rms) => (micLevel = rms));
+      const r = await testMicrophone(1500, (rms) => (micLevel = rms), selectedDevice || "default");
       micMsg =
         r.peak > 0.02
           ? `Ouvimos você (pico ${(r.peak * 100).toFixed(0)}%).`
@@ -191,8 +249,12 @@
     <h2 class="font-display text-title">Microfone</h2>
     <p class="mt-1 text-body text-ink-soft">Escolha a entrada de áudio para o ditado.</p>
     <div class="mt-4">
-      <Field label="Dispositivo de entrada" hint="Persistência da escolha chega com a captura ao vivo.">
-        <select bind:value={selectedDevice} class={selectClass}>
+      <Field label="Dispositivo de entrada" hint="Usado no teste e no ditado ao vivo.">
+        <select
+          value={selectedDevice}
+          onchange={(e) => setInputDevice((e.currentTarget as HTMLSelectElement).value)}
+          class={selectClass}
+        >
           <option value="">Padrão do sistema</option>
           {#each devices as device (device.id)}
             <option value={device.id}>{device.name}{device.isDefault ? " · padrão" : ""}</option>
@@ -274,9 +336,47 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Inicialização</h2>
-    <div class="mt-3">
+    <h2 class="font-display text-title">Limpeza de texto</h2>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      {#if cleanup}
+        <Toggle
+          checked={cleanup.fillerRemoval}
+          label="Remover vícios de fala"
+          onchange={(value) => setCleanup("fillerRemoval", value)}
+        />
+        <Toggle
+          checked={cleanup.spokenPunctuation}
+          label="Converter pontuação falada"
+          onchange={(value) => setCleanup("spokenPunctuation", value)}
+        />
+        <Toggle
+          checked={cleanup.stutterCollapse}
+          label="Juntar repetições"
+          onchange={(value) => setCleanup("stutterCollapse", value)}
+        />
+        <Toggle
+          checked={cleanup.capitalization}
+          label="Ajustar maiúsculas"
+          onchange={(value) => setCleanup("capitalization", value)}
+        />
+      {/if}
+    </div>
+  </Card>
+
+  <Card>
+    <h2 class="font-display text-title">Geral</h2>
+    <div class="mt-3 flex flex-col gap-3">
       {#if general}
+        <Toggle
+          checked={general.dictationEnabled}
+          label="Ditado ativado"
+          onchange={setDictationEnabled}
+        />
+        <Toggle
+          checked={general.collectStats}
+          label="Coletar estatísticas locais"
+          onchange={setCollectStats}
+        />
         <Toggle
           checked={general.launchAtLogin}
           label="Abrir o MIA ao iniciar o Windows"

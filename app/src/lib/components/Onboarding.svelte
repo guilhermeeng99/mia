@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { isMicPermissionDenied, openMicPrivacy, testMicrophone } from "../audio";
   import { getHotkey } from "../hotkey";
+  import { getSettings, updateSettings, type ModelSettings } from "../settings";
   import { downloadWhisperModel, listWhisperModels, type DownloadProgress, type WhisperModel } from "../stt";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
@@ -24,6 +25,8 @@
   let micLevel = $state(0);
   let micDenied = $state(false);
   let models = $state<WhisperModel[]>([]);
+  let modelSettings = $state<ModelSettings | null>(null);
+  let selectedModel = $state("small");
   let downloading = $state<string | null>(null);
   let progress = $state(0);
   let error = $state<string | null>(null);
@@ -36,6 +39,12 @@
 
   onMount(() => {
     getHotkey().then((h) => (chord = h.accelerator)).catch(() => {});
+    getSettings()
+      .then((s) => {
+        modelSettings = s.model;
+        selectedModel = s.model.model;
+      })
+      .catch((e) => (error = String(e)));
     refreshModels().catch((e) => (error = String(e)));
   });
 
@@ -68,6 +77,7 @@
       const ch = new Channel<DownloadProgress>();
       ch.onmessage = (p) => (progress = Math.round(p.percent));
       await downloadWhisperModel(id, ch);
+      await selectModel(id);
       await refreshModels();
     } catch (e) {
       error = String(e);
@@ -76,7 +86,14 @@
     }
   }
 
-  const hasModel = $derived(models.some((m) => m.downloaded));
+  async function selectModel(id: string) {
+    const base = modelSettings ?? (await getSettings()).model;
+    const s = await updateSettings({ model: { ...base, model: id } });
+    modelSettings = s.model;
+    selectedModel = s.model.model;
+  }
+
+  const hasSelectedModel = $derived(models.some((m) => m.id === selectedModel && m.downloaded));
 </script>
 
 <main class="grid min-h-full place-items-center bg-canvas px-6 py-8 font-body text-charcoal">
@@ -153,7 +170,18 @@
               </div>
               <div class="shrink-0">
                 {#if model.downloaded}
-                  <Pill tone="success">✓ instalado</Pill>
+                  {#if selectedModel === model.id}
+                    <Pill tone="success">✓ em uso</Pill>
+                  {:else}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={downloading !== null}
+                      onclick={() => selectModel(model.id).catch((e) => (error = String(e)))}
+                    >
+                      Usar
+                    </Button>
+                  {/if}
                 {:else if downloading === model.id}
                   <Pill tone="accent">{progress}%</Pill>
                 {:else}
@@ -167,7 +195,7 @@
         </ul>
         <div class="mt-6 flex gap-3">
           <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>Voltar</Button>
-          <Button disabled={!hasModel || downloading !== null} onclick={ondone}>Concluir</Button>
+          <Button disabled={!hasSelectedModel || downloading !== null} onclick={ondone}>Concluir</Button>
         </div>
       {/if}
     </Card>

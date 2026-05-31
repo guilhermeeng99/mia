@@ -13,8 +13,9 @@
 // Windows 10+ (bsdtar). Windows-only target (ADR-011); a no-op on other OSes.
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -24,6 +25,7 @@ import { fileURLToPath } from "node:url";
 // CPU whisper.cpp Windows x64 release (matches the v1.8.4 GPU build in stt.rs).
 const CPU_URL =
   "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-bin-x64.zip";
+const CPU_SHA256 = "74f973345cb52ef5ba3ec9e7e7af8e48cc8c71722d1528603b80588a11f82e3e";
 
 const SERVER_EXE = "whisper-server.exe";
 
@@ -36,14 +38,28 @@ function fail(message) {
   process.exit(1);
 }
 
-/** Download a URL (following redirects) to `dest`, via a `.part` temp + atomic rename. */
-async function downloadFile(url, dest) {
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("hex");
+}
+
+async function verifySha256(path, expected) {
+  const got = await sha256File(path);
+  if (got.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`integrity check failed for ${path}: expected ${expected}, got ${got}`);
+  }
+}
+
+/** Download a URL (following redirects) to `dest`, via a verified `.part` temp + atomic rename. */
+async function downloadFile(url, dest, expectedSha256) {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok || !res.body) {
     throw new Error(`download failed (${res.status} ${res.statusText}) for ${url}`);
   }
   const part = `${dest}.part`;
   await pipeline(Readable.fromWeb(res.body), createWriteStream(part));
+  await verifySha256(part, expectedSha256);
   await rename(part, dest);
 }
 
@@ -109,7 +125,7 @@ async function main() {
   const tmp = join(BINARIES_DIR, "extract");
   try {
     console.log(`fetch-binaries: downloading ${CPU_URL}`);
-    await downloadFile(CPU_URL, zip);
+    await downloadFile(CPU_URL, zip, CPU_SHA256);
 
     console.log("fetch-binaries: extracting...");
     await extractZip(zip, tmp);

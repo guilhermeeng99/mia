@@ -342,7 +342,7 @@ Transitions:
   session (release / 2nd press) — never on a silent pause. Errors (no mic, denied, device lost)
   render the HUD **error** state with a short message. Keep click-through where possible.
 - **Settings/Hub (light theme)** — an **input-device picker** (`list_input_devices` →
-  `set_input_device`; "System default" first), and a **"Test microphone"** button
+  `update_settings({ audio.inputDevice })`; "System default" first), and a **"Test microphone"** button
   (`test_microphone`) that shows a live level bar / "we can hear you" confirmation without running
   STT. If permission is denied, show an inline explainer + a button/link to **Windows Settings →
   Privacy & security → Microphone** (Rule/Edge: denied permission).

@@ -1,7 +1,7 @@
 # Onboarding Feature Spec
 
-> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirroring the Hub; it is **mandatory** — there is no skip and "Concluir" stays disabled until a model is on disk (Rule 6/7). `App.svelte` shows the wizard only when onboarding hasn't been completed **and** no model is installed; "Concluir" persists `settings.general.onboarding_completed=true` (Rule 1/14) so MIA then boots straight to the Hub. The **permission-denied deep-link is now wired**: a denied mic capture is tagged by `classify_mic_error` (sentinel `mic-permission-denied:`) and the mic-test step surfaces an "Abrir configurações" button that launches `ms-settings:privacy-microphone` (the `open_mic_privacy` command). Live mic level meter during the test.
-> **Last updated**: 2026-05-30
+> **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirrors the Hub, and persists the selected downloaded model to `settings.model.model`; it is **mandatory** — there is no skip and "Concluir" stays disabled until the active selected model is on disk (Rule 6/7). `App.svelte` shows the wizard only when onboarding hasn't been completed **and** the active selected model is not installed; "Concluir" persists `settings.general.onboarding_completed=true` (Rule 1/14) so MIA then boots straight to the Hub. The **permission-denied deep-link is now wired**: a denied mic capture is tagged by `classify_mic_error` (sentinel `mic-permission-denied:`) and the mic-test step surfaces an "Abrir configurações" button that launches `ms-settings:privacy-microphone` (the `open_mic_privacy` command). Live mic level meter during the test.
+> **Last updated**: 2026-05-31
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -14,8 +14,8 @@ window closes and the app lives in the system tray, ready for global push-to-tal
 not run dictation itself, but it provisions and validates every prerequisite that pipeline needs. It
 lands in **Phase 4 — Polish & Distribution** (see [../ROADMAP.md](../ROADMAP.md)), though the model
 download gate it depends on ships in Phase 1. It implements **ADR-001** (privacy-first, everything
-local), **ADR-007** (on-demand model download + optional CUDA engine), and reuses Toolzy's download
-gate UX (see [../REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)).
+local) and **ADR-007** (on-demand model download + optional CUDA engine) using the same verified
+download-gate UX as the Hub model controls.
 
 **Scope decisions** (locked at design time):
 
@@ -99,9 +99,9 @@ import { downloadWhisperModel, listWhisperModels } from "../stt";
 ```
 
 - The four shipped steps are **Welcome → Hotkey → Mic test → Model download** (labels in the component:
-  "Bem-vindo", "Atalho", "Microfone", "Modelo"). `App.svelte` shows the wizard when **no Whisper model is
-  installed yet** (gated on model presence, not a persisted flag). The Model step is **mandatory — there is
-  no skip** (Rule 6): "Concluir" is disabled until at least one model is on disk; only "Voltar" navigates away.
+  "Bem-vindo", "Atalho", "Microfone", "Modelo"). `App.svelte` shows the wizard when the **active selected
+  Whisper model is not installed yet**. The Model step is **mandatory — there is no skip** (Rule 6):
+  "Concluir" is disabled until the selected active model is on disk; only "Voltar" navigates away.
 - The hotkey step is **read-only**: it *displays* the current PTT chord via `get_hotkey` (the locked
   `Ctrl+Space` default — `DEFAULT_ACCEL` in `hotkey.rs`); the wizard does not yet record/rebind a chord.
   Rebinding lives in [settings.md](settings.md) / [hotkeys.md](hotkeys.md).
@@ -150,8 +150,9 @@ import { downloadWhisperModel, listWhisperModels } from "../stt";
 5. **Mic step can proceed on Unknown** — Because Windows may report `Unknown` even when capture works,
    the user may proceed past a non-Granted state with an explicit "Continue anyway" affordance; the TryIt
    step is the real test. Only `NoDevice` hard-blocks Next.
-6. **The Model step is mandatory** — Next is disabled until at least one model is `downloaded`. There is
-   no skip. (Dictation is impossible without a model; ADR-007.)
+6. **The Model step is mandatory** — Next is disabled until the selected active model is `downloaded`.
+   There is no skip. Downloading or choosing an installed model persists `settings.model.model` so the
+   first dictation warms the same model the user selected. (Dictation is impossible without a model; ADR-007.)
 7. **`small` is pre-selected and labeled "Recommended"** — Each option shows download size and estimated
    RAM. The user may switch to `medium`, `large-v3-turbo`, or `large-v3` (slower/more accurate) before
    downloading (there is no `base` in the registry). Definitions live in [speech-to-text.md](speech-to-text.md).

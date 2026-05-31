@@ -12,21 +12,27 @@ type Intent = "start" | "stop" | "cancel";
  */
 export async function installPtt(onEvent: (e: DictationEvent) => void): Promise<UnlistenFn> {
   let active = false;
+  const reportError = (e: unknown) => {
+    onEvent({ kind: "error", message: String(e) });
+  };
   const stop = () => {
     if (!active) return;
     active = false;
-    void stopDictation(onEvent);
+    void stopDictation(onEvent).catch(reportError);
   };
   const unIntent = await listen<Intent>("dictation://intent", ({ payload }) => {
     if (payload === "start") {
       if (active) return;
       active = true;
-      void startDictation(onEvent);
+      void startDictation(onEvent).catch((e) => {
+        active = false;
+        reportError(e);
+      });
     } else if (payload === "stop") {
       stop();
     } else {
       active = false;
-      void cancelDictation(onEvent);
+      void cancelDictation(onEvent).catch(reportError);
     }
   });
   return unIntent;

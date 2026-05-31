@@ -267,18 +267,29 @@ pub fn start_dictation(
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
     let s = settings.snapshot()?;
+    if !s.general.dictation_enabled {
+        let msg = "ditado desativado nas configurações".to_string();
+        emit_hud(&app, Phase::Error, Some(&msg));
+        emit_then_idle(&events, DictationEvent::Error { message: msg.clone() });
+        return Err(msg);
+    }
     crate::dlog!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
     // Capture the focused app now (before the HUD or anything can shift focus) so the
     // per-app style targets the app the user is dictating into (per-app-context.md).
     focus.set(crate::win32::foreground_process_name());
     // Pass the AppHandle so the capture thread streams live RMS to the HUD waveform
     // over `hud://level`; the CaptureEvent channel stays unused on this path.
-    crate::audio::begin_capture(
+    if let Err(e) = crate::audio::begin_capture(
         &capture,
         Some(&s.audio.input_device),
         None,
         Some(app.clone()),
-    )?;
+    ) {
+        focus.take();
+        emit_hud(&app, Phase::Error, Some(&e));
+        emit_then_idle(&events, DictationEvent::Error { message: e.clone() });
+        return Err(e);
+    }
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
     emit_hud(&app, Phase::Listening, None);
     Ok(())
@@ -389,7 +400,9 @@ pub fn stop_dictation(
 
     let chars = final_text.chars().count();
     let elapsed = done.saturating_sub(t0);
-    let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
+    if s.general.collect_stats {
+        let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
+    }
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     emit_hud(&app, Phase::Idle, None);

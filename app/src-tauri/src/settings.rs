@@ -397,14 +397,21 @@ pub fn update_settings(
 ) -> Result<Settings, String> {
     let current = state.get()?;
     let next = apply_patch(&current, &patch);
-    // Side effect: re-register the PTT hotkey if it changed. Done BEFORE persisting
-    // so a conflicting chord is rejected and the old binding/config stays (Rule 8).
+    // Probe/apply the PTT hotkey before persisting so a conflicting chord is rejected
+    // and the old binding/config stays (Rule 8). If the disk write fails below, roll
+    // back the runtime binding to the previous config.
     if next.hotkey != current.hotkey {
-        crate::hotkey::register_hotkey(app.clone(), hotkey, next.hotkey.clone())?;
+        crate::hotkey::register_hotkey_runtime(&app, &hotkey, next.hotkey.clone())?;
     }
-    // Side effect: a model change invalidates the warm engine. Drop it so the next
-    // dictation warms the newly chosen model — a lazy swap, avoiding a multi-second
-    // server spawn inside this settings write. warm_status reflects it immediately.
+    if let Err(e) = save_settings(&app, &next) {
+        if next.hotkey != current.hotkey {
+            let _ = crate::hotkey::register_hotkey_runtime(&app, &hotkey, current.hotkey.clone());
+        }
+        return Err(e);
+    }
+    state.set(next.clone())?;
+    // Side effect: a model change invalidates the warm engine after the new setting is
+    // durable. The next dictation warms the chosen model lazily.
     if next.model.model != current.model.model {
         let _ = crate::stt::unload(&stt);
     }
@@ -414,8 +421,6 @@ pub fn update_settings(
         let mgr = app.autolaunch();
         let _ = if next.general.launch_at_login { mgr.enable() } else { mgr.disable() };
     }
-    save_settings(&app, &next)?;
-    state.set(next.clone())?;
     Ok(next)
 }
 

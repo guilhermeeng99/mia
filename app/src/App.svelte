@@ -50,7 +50,8 @@
     Promise.all([getSettings(), listWhisperModels()])
       .then(([s, models]) => {
         general = s.general;
-        showOnboarding = !s.general.onboardingCompleted && !models.some((m) => m.downloaded);
+        showOnboarding =
+          !s.general.onboardingCompleted && !models.some((m) => m.id === s.model.model && m.downloaded);
       })
       .catch(() => {});
     const pending = installPtt(onDictationEvent);

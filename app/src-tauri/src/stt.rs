@@ -4,8 +4,8 @@
 //! POST of in-memory PCM (never disk, ADR-001). `whisper-rs` in-process is the
 //! later optimization behind the same `SttBackend` seam.
 //!
-//! Most of the registry / download / GPU-engine code is lifted from Toolzy's
-//! `transcription.rs` (see `docs/specs/speech-to-text.md` + `REUSE-FROM-TOOLZY.md`).
+//! The registry / download / GPU-engine code follows the proven file-transcription
+//! pattern documented in `docs/specs/speech-to-text.md`, adapted to MIA's warm live path.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
@@ -26,10 +27,12 @@ const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main
 const VAD_FILENAME: &str = "ggml-silero-v6.2.0.bin";
 const VAD_URL: &str =
     "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin";
+const VAD_SHA256: &str = "b65ad872758ea4ac85ec18aa132b384d91804f52799c70edc80f8fdb0420e1a5";
 /// Self-contained NVIDIA (CUDA) whisper.cpp build — bundles cuBLAS DLLs, needs only
 /// an NVIDIA driver. Downloaded on demand (~435 MB) for the GPU speedup.
 const GPU_URL: &str =
     "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-cublas-12.4.0-bin-x64.zip";
+const GPU_SHA256: &str = "b07cff4e59831b227896018facbb6334907bf324a342c84597c44f087823d252";
 
 /// A model offered in the UI. For *dictation* the default favours latency, so the
 /// list leads with `small` (see `docs/specs/speech-to-text.md` §4).
@@ -116,6 +119,16 @@ fn model_filename(id: &str) -> Option<String> {
 /// Hugging Face resolve URL for a known model id, else `None`.
 fn model_url(id: &str) -> Option<String> {
     model_filename(id).map(|f| format!("{HF_BASE}/{f}"))
+}
+
+fn model_sha256(id: &str) -> Option<&'static str> {
+    match id {
+        "small" => Some("edd29d67e70b000132af65205b99bb774b77abc13d10103e14f80ce2242913e1"),
+        "medium" => Some("d3d5696e6a3e0ca2aa08eb31cad208ffa1e87b3cc341f59e628fbdcf8122de9b"),
+        "large-v3-turbo" => Some("5a4b65b05933d70ce9d5aa6265eb128fa5eba38f6fee40836fdedc4d2fde42ad"),
+        "large-v3" => Some("766d11cebbdf5a67c179c5774e2642b609e35e1a30240e7b559d5647c655b0a4"),
+        _ => None,
+    }
 }
 
 /// Encode mono/stereo 16-bit PCM as a canonical 44-byte-header WAV (what Whisper
@@ -243,9 +256,38 @@ fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
     let filename = model_filename(model).ok_or_else(|| format!("unknown model: {model}"))?;
     let path = models_dir(app)?.join(filename);
     if path.exists() {
+        if let Some(expected) = model_sha256(model) {
+            verify_file_sha256(&path, expected)?;
+        }
         Ok(path)
     } else {
         Err(format!("model not downloaded: {model}"))
+    }
+}
+
+fn file_sha256(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let got = file_sha256(path)?;
+    if got.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(format!(
+            "integrity check failed for {}: expected {expected}, got {got}",
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("download")
+        ))
     }
 }
 
@@ -264,6 +306,7 @@ fn download_file(
     url: &str,
     dest: &Path,
     progress: Option<&Channel<DownloadProgress>>,
+    expected_sha256: &str,
 ) -> Result<(), String> {
     let resp = ureq::get(url).call().map_err(|e| format!("download failed: {e}"))?;
     let total: Option<u64> = resp
@@ -295,6 +338,7 @@ fn download_file(
     }
 
     drop(file);
+    verify_file_sha256(&part, expected_sha256)?;
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
 }
 
@@ -323,6 +367,8 @@ pub async fn download_whisper_model(
     on_progress: Channel<DownloadProgress>,
 ) -> Result<String, String> {
     let url = model_url(&model).ok_or_else(|| format!("unknown model: {model}"))?;
+    let expected_sha256 =
+        model_sha256(&model).ok_or_else(|| format!("missing trusted hash for model: {model}"))?;
     let filename = model_filename(&model).ok_or_else(|| format!("unknown model: {model}"))?;
     let dir = models_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -330,16 +376,22 @@ pub async fn download_whisper_model(
     let dest = dir.join(&filename);
     let vad_path = dir.join(VAD_FILENAME);
     let dest_str = dest.to_string_lossy().into_owned();
+    if dest.exists() {
+        verify_file_sha256(&dest, expected_sha256)?;
+    }
+    if vad_path.exists() {
+        verify_file_sha256(&vad_path, VAD_SHA256)?;
+    }
     if dest.exists() && vad_path.exists() {
         return Ok(dest_str);
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         if !vad_path.exists() {
-            download_file(VAD_URL, &vad_path, None)?;
+            download_file(VAD_URL, &vad_path, None, VAD_SHA256)?;
         }
         if !dest.exists() {
-            download_file(&url, &dest, Some(&on_progress))?;
+            download_file(&url, &dest, Some(&on_progress), expected_sha256)?;
         }
         Ok(())
     })
@@ -420,10 +472,7 @@ fn copy_engine_files(extracted: &Path, dest: &Path) -> Result<(), String> {
 fn install_gpu_engine(dir: &Path, on_progress: &Channel<DownloadProgress>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let zip = dir.join("engine.zip");
-    // SECURITY: `zip` ships executable cuBLAS/whisper DLLs loaded in-process below. There
-    // is no integrity check here yet — verify a pinned SHA-256 of `zip` before extract
-    // (see download_file's SECURITY note). Owner must supply the upstream hash.
-    download_file(GPU_URL, &zip, Some(on_progress))?;
+    download_file(GPU_URL, &zip, Some(on_progress), GPU_SHA256)?;
     let tmp = dir.join("extract");
     extract_zip(&zip, &tmp)?;
     copy_engine_files(&tmp, dir)?;
@@ -627,8 +676,13 @@ mod tests {
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin"
         );
         assert_eq!(model_filename("small").unwrap(), "ggml-small.bin");
+        assert_eq!(
+            model_sha256("small").unwrap(),
+            "edd29d67e70b000132af65205b99bb774b77abc13d10103e14f80ce2242913e1"
+        );
         assert!(model_url("nope").is_none());
         assert!(model_filename("nope").is_none());
+        assert!(model_sha256("nope").is_none());
     }
 
     // NOTE: the f32→i16 quantizer is now the single canonical `audio::f32_to_s16`

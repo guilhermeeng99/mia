@@ -145,8 +145,8 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
   `migrate(json, from_version)`, `validate(&Settings)` (clamps/normalizes — e.g. unknown language →
   `auto`), WPM/streak arithmetic in `stats.rs`. None do I/O.
 - The model/engine controls reuse the **`stt.rs`** command surface and the
-  `ModelDownloadGate` / progress-`Channel` UX from [speech-to-text.md](speech-to-text.md) and
-  [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md) — the Hub does not re-implement download logic.
+  `ModelDownloadGate` / progress-`Channel` UX from [speech-to-text.md](speech-to-text.md) — the Hub
+  does not re-implement download logic.
 
 ---
 

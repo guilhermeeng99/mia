@@ -14,7 +14,7 @@ export function getHotkey(): Promise<HotkeyConfig> {
   return invoke<HotkeyConfig>("get_hotkey");
 }
 
-/** = unregister + register; persists only when the OS accepts the new chord. */
+/** Runtime-only unregister + register. Settings UI persists hotkeys through updateSettings. */
 export function updateHotkey(cfg: HotkeyConfig): Promise<void> {
   return invoke<void>("update_hotkey", { cfg });
 }

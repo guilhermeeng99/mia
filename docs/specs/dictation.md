@@ -31,7 +31,7 @@ timing, cancellation, and failure flow* across them.
   sidecar across utterances
   ([ADR-004](architecture.md#adr-004-warmresident-stt-for-live-dictation)); `dictation.rs`
   **never** cold-spawns a CLI per utterance. This is the latency-critical divergence from
-  Toolzy's file mode ([REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)).
+  the old file-transcription shape.
 - **Faithful, not creative, by default** — the always-on path is STT → deterministic cleanup →
   inject. No LLM is on the hot path; AI Command Mode / Polish ([ai-commands.md](ai-commands.md)) is
   Phase 2 and opt-in ([ADR-008](architecture.md#adr-008-hybrid-text-intelligence)).
@@ -375,6 +375,6 @@ Transitions:
   ([speech-to-text.md](speech-to-text.md)).
 - **Target-window selection / smart per-app behavior** — injects at the live cursor only; per-app
   writing styles are Phase 3 ([custom-dictionary.md](custom-dictionary.md), [snippets.md](snippets.md)).
-- **File-transcription mode** — MIA is live-only; the Toolzy ffmpeg+file path is backlog
-  ([REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md), [../ROADMAP.md](../ROADMAP.md)).
+- **File-transcription mode** — MIA is live-only; a future batch/file path would use ffmpeg
+  preprocessing plus the same Whisper registry/download policy ([../ROADMAP.md](../ROADMAP.md)).
 - **macOS / Linux** — Windows-only v1 ([ADR-011](architecture.md#adr-011-windows-only-v1)).

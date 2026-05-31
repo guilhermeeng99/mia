@@ -130,7 +130,7 @@ on-demand Hugging Face download, the `detected_language`/`parse_whisper_progress
 the anti-hallucination arg builder. The **divergence**: Toolzy runs a cold `whisper-cli` sidecar
 per file; MIA runs a **warm/resident** model for live dictation
 ([ADR-004](#adr-004-warmresident-stt-for-live-dictation)). See [speech-to-text.md](speech-to-text.md)
-and [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md).
+for the active model registry/download/GPU contract.
 
 **Consequences.**
 - ✅ Faithful pt-BR + English + ~99 languages; MIT-clean engine and weights.
@@ -280,7 +280,6 @@ download with `.part` rename, the Silero VAD constants, the anti-hallucination `
 builder, the progress `Channel`, cancel-via-managed-`State`, and the CUDA detect
 (`nvcuda.dll`)/download/extract flow. The **adaptation**: MIA feeds the warm model from **cpal
 mic capture** ([audio-capture.md](audio-capture.md)) instead of a file preprocessed by ffmpeg.
-See [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md).
 
 **Consequences.**
 - ✅ Small installer; users pick the fidelity/speed they need; faithful, hallucination-resistant
@@ -443,7 +442,7 @@ live mic + VAD) differs. This is explicitly out of scope for v1.
 ## Cross-references
 
 - [README.md](../../README.md) · [CLAUDE.md](../../CLAUDE.md)
-- [ROADMAP.md](../ROADMAP.md) · [FEATURE-MAP.md](../FEATURE-MAP.md) · [REUSE-FROM-TOOLZY.md](../REUSE-FROM-TOOLZY.md)
+- [ROADMAP.md](../ROADMAP.md)
 - Specs: [dictation.md](dictation.md) · [speech-to-text.md](speech-to-text.md) ·
   [audio-capture.md](audio-capture.md) · [text-injection.md](text-injection.md) ·
   [text-cleanup.md](text-cleanup.md) · [hotkeys.md](hotkeys.md) · [tray-and-hud.md](tray-and-hud.md) ·

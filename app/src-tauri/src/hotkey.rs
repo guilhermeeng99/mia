@@ -524,8 +524,7 @@ fn arm_watchdog(app: &AppHandle) {
 
 /// Register `cfg`'s chord, replacing any prior registration (Rule 1; rolls back the
 /// stored config only after the OS accepts the new chord).
-#[tauri::command]
-pub fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+pub fn register_hotkey_runtime(app: &AppHandle, rt: &HotkeyRuntime, cfg: HotkeyConfig) -> Result<(), String> {
     let accel = parse_accelerator(&cfg.accelerator)?;
     if is_reserved(&accel) {
         return Err(format!("hotkey already in use by the system or another app: {}", cfg.accelerator));
@@ -533,14 +532,23 @@ pub fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: Hotkey
     let shortcut = to_shortcut(&accel)?;
     let gs = app.global_shortcut();
     let prev = rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone();
-    if let Ok(prev_sc) = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)) {
-        let _ = gs.unregister(prev_sc);
+    let prev_shortcut = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)).ok();
+    let same_shortcut = prev_shortcut.as_ref().is_some_and(|prev_sc| prev_sc == &shortcut);
+    if !same_shortcut {
+        gs.register(shortcut)
+            .map_err(|e| format!("hotkey already in use by the system or another app: {e}"))?;
+        if let Some(prev_sc) = prev_shortcut {
+            let _ = gs.unregister(prev_sc);
+        }
     }
-    gs.register(shortcut)
-        .map_err(|e| format!("hotkey already in use by the system or another app: {e}"))?;
     *rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())? = cfg;
     *rt.edge.lock().map_err(|_| "hotkey state poisoned".to_string())? = EdgeState::default();
     Ok(())
+}
+
+#[tauri::command]
+pub fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+    register_hotkey_runtime(&app, &rt, cfg)
 }
 
 /// Unregister the active chord (idempotent).
@@ -556,7 +564,7 @@ pub fn unregister_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>) -> Result
 /// = unregister + register (persists only on OS acceptance).
 #[tauri::command]
 pub fn update_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
-    register_hotkey(app, rt, cfg)
+    register_hotkey_runtime(&app, &rt, cfg)
 }
 
 /// The active chord + mode.

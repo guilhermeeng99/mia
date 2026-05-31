@@ -10,6 +10,8 @@
 //! returns the run-as-administrator error when the target outranks MIA (Rule 7). These
 //! backends stay focus-agnostic — they just type into whatever currently has focus.
 
+use std::borrow::Cow;
+
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
@@ -169,19 +171,43 @@ impl TextInjector for SendInputInjector {
 /// the user's prior clipboard (Rules 3-5). Restore is attempted even if paste fails.
 pub struct ClipboardInjector;
 
+enum SavedClipboard {
+    Text(String),
+    Image(arboard::ImageData<'static>),
+}
+
+fn save_clipboard(cb: &mut arboard::Clipboard) -> Option<SavedClipboard> {
+    if let Ok(text) = cb.get_text() {
+        return Some(SavedClipboard::Text(text));
+    }
+    cb.get_image().ok().map(|image| {
+        SavedClipboard::Image(arboard::ImageData {
+            width: image.width,
+            height: image.height,
+            bytes: Cow::Owned(image.bytes.into_owned()),
+        })
+    })
+}
+
+fn restore_clipboard(cb: &mut arboard::Clipboard, saved: Option<SavedClipboard>) -> Result<(), String> {
+    match saved {
+        Some(SavedClipboard::Text(prev)) => cb.set_text(prev).map_err(|_| "clipboard restore failed".to_string()),
+        Some(SavedClipboard::Image(prev)) => cb.set_image(prev).map_err(|_| "clipboard restore failed".to_string()),
+        None => Ok(()),
+    }
+}
+
 impl TextInjector for ClipboardInjector {
     fn inject(&self, text: &str) -> Result<(), String> {
         let mut cb = arboard::Clipboard::new().map_err(|_| "clipboard unavailable".to_string())?;
-        let saved = cb.get_text().ok();
+        let saved = save_clipboard(&mut cb);
         cb.set_text(text.to_string()).map_err(|_| "clipboard unavailable".to_string())?;
 
         let pasted = paste_shortcut();
+        std::thread::sleep(std::time::Duration::from_millis(120));
         // Compute the restore BEFORE settling so the user's prior clipboard is restored
         // even when the paste failed (Rule 4); settle_clipboard only picks which error wins.
-        let restored = match saved {
-            Some(prev) => cb.set_text(prev).map_err(|_| "clipboard restore failed".to_string()),
-            None => Ok(()),
-        };
+        let restored = restore_clipboard(&mut cb, saved);
         settle_clipboard(pasted, restored)
     }
     fn name(&self) -> &'static str {
@@ -193,9 +219,10 @@ fn paste_shortcut() -> Result<(), String> {
     let mut enigo =
         Enigo::new(&Settings::default()).map_err(|e| format!("injection backend failed: {e}"))?;
     enigo.key(Key::Control, Direction::Press).map_err(|e| format!("injection backend failed: {e}"))?;
-    enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| format!("injection backend failed: {e}"))?;
-    enigo.key(Key::Control, Direction::Release).map_err(|e| format!("injection backend failed: {e}"))?;
-    Ok(())
+    let pasted = enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| format!("injection backend failed: {e}"));
+    let released = enigo.key(Key::Control, Direction::Release).map_err(|e| format!("injection backend failed: {e}"));
+    pasted?;
+    released
 }
 
 /// Inject cleaned text into the focused window. Empty/whitespace → no-op (Rule 8).
