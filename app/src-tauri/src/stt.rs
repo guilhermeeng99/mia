@@ -28,6 +28,7 @@ const VAD_FILENAME: &str = "ggml-silero-v6.2.0.bin";
 const VAD_URL: &str =
     "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin";
 const VAD_SHA256: &str = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987";
+const VAD_SIZE_BYTES: u64 = 885_098;
 /// Self-contained NVIDIA (CUDA) whisper.cpp build — bundles cuBLAS DLLs, needs only
 /// an NVIDIA driver. Downloaded on demand (~435 MB) for the GPU speedup.
 const GPU_URL: &str =
@@ -40,16 +41,17 @@ struct ModelDef {
     id: &'static str,
     label: &'static str,
     size_mb: u32,
+    size_bytes: u64,
     // The latency-friendly default for live dictation; the UI flags it so both the
     // onboarding picker and the Hub stay consistent (docs/specs/onboarding.md Rule 7).
     recommended: bool,
 }
 
 const MODELS: &[ModelDef] = &[
-    ModelDef { id: "small", label: "Small", size_mb: 466, recommended: true },
-    ModelDef { id: "medium", label: "Medium", size_mb: 1500, recommended: false },
-    ModelDef { id: "large-v3-turbo", label: "Large v3 Turbo", size_mb: 1600, recommended: false },
-    ModelDef { id: "large-v3", label: "Large v3", size_mb: 3100, recommended: false },
+    ModelDef { id: "small", label: "Small", size_mb: 466, size_bytes: 487_601_967, recommended: true },
+    ModelDef { id: "medium", label: "Medium", size_mb: 1500, size_bytes: 1_533_763_059, recommended: false },
+    ModelDef { id: "large-v3-turbo", label: "Large v3 Turbo", size_mb: 1600, size_bytes: 1_624_555_275, recommended: false },
+    ModelDef { id: "large-v3", label: "Large v3", size_mb: 3100, size_bytes: 3_095_033_483, recommended: false },
 ];
 
 #[derive(Serialize)]
@@ -112,8 +114,12 @@ pub struct SttState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// `ggml-<id>.bin` for a known model id, else `None`.
+fn model_def(id: &str) -> Option<&'static ModelDef> {
+    MODELS.iter().find(|m| m.id == id)
+}
+
 fn model_filename(id: &str) -> Option<String> {
-    MODELS.iter().find(|m| m.id == id).map(|_| format!("ggml-{id}.bin"))
+    model_def(id).map(|_| format!("ggml-{id}.bin"))
 }
 
 /// Hugging Face resolve URL for a known model id, else `None`.
@@ -301,19 +307,16 @@ fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     }
 }
 
-fn file_matches_sha256(path: &Path, expected: &str) -> bool {
-    path.exists() && verify_file_sha256(path, expected).is_ok()
+fn file_matches_size(path: &Path, expected: u64) -> bool {
+    std::fs::metadata(path).map(|m| m.len() == expected).unwrap_or(false)
 }
 
 fn valid_downloaded_model(dir: &Path, id: &str) -> bool {
-    let Some(filename) = model_filename(id) else {
+    let Some(model) = model_def(id) else {
         return false;
     };
-    let Some(expected) = model_sha256(id) else {
-        return false;
-    };
-    file_matches_sha256(&dir.join(filename), expected)
-        && file_matches_sha256(&dir.join(VAD_FILENAME), VAD_SHA256)
+    file_matches_size(&dir.join(format!("ggml-{}.bin", model.id)), model.size_bytes)
+        && file_matches_size(&dir.join(VAD_FILENAME), VAD_SIZE_BYTES)
 }
 
 fn remove_invalid_file(path: &Path, expected: &str) -> Result<bool, String> {
@@ -733,6 +736,25 @@ mod tests {
         assert!(valid.exists());
         assert!(!remove_invalid_file(&invalid, abc_sha).unwrap());
         assert!(!invalid.exists());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_matches_size_checks_exact_length() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mia-stt-size-{nonce}"));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = dir.join("model.bin");
+        std::fs::write(&path, b"abc").unwrap();
+
+        assert!(file_matches_size(&path, 3));
+        assert!(!file_matches_size(&path, 2));
+        assert!(!file_matches_size(&dir.join("missing.bin"), 3));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

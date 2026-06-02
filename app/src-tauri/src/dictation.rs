@@ -307,6 +307,7 @@ pub fn stop_dictation(
     dict: State<'_, crate::dictionary::DictState>,
     snips: State<'_, crate::snippets::SnippetState>,
     stats: State<'_, crate::stats::StatsState>,
+    history: State<'_, crate::history::HistoryState>,
     focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<DictationResult, String> {
@@ -368,6 +369,10 @@ pub fn stop_dictation(
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
+    }
+
+    if let Err(e) = history.record_and_save(&app, &final_text) {
+        crate::dlog!("[dictation] history save failed: {e}");
     }
 
     // Rule 7: a higher-integrity (elevated/UAC) foreground window silently eats SendInput;

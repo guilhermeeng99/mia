@@ -11,6 +11,7 @@ pub mod audio;
 pub mod cleanup;
 pub mod dictation;
 pub mod dictionary;
+pub mod history;
 pub mod hotkey;
 pub mod hud;
 pub mod inject;
@@ -64,6 +65,7 @@ pub fn run() {
         .manage(hotkey::HotkeyRuntime::new(hotkey::HotkeyConfig::default()))
         .manage(stats::StatsState::new(stats::UsageStats::default()))
         .manage(dictionary::DictState::new(Vec::new(), dictionary::DictSettings::default()))
+        .manage(history::HistoryState::new(Vec::new()))
         .manage(snippets::SnippetState::new(Vec::new()))
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
         // pure reducer and emits `dictation://intent` for the frontend (hotkey.rs).
@@ -120,6 +122,8 @@ pub fn run() {
             // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
             let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
             app.state::<dictionary::DictState>().hydrate(dict_entries, dict_settings);
+            let history = history::load_history(app.handle());
+            app.state::<history::HistoryState>().hydrate(history);
             // Voice-triggered snippets — loaded from snippets.json.
             let snips = snippets::load_snippets(app.handle());
             app.state::<snippets::SnippetState>().hydrate(snips);
@@ -166,6 +170,10 @@ pub fn run() {
             dictionary::dict_remove,
             dictionary::dict_settings_get,
             dictionary::dict_settings_set,
+            history::list_history,
+            history::copy_history_entry,
+            history::delete_history_entry,
+            history::clear_history,
             inject::inject_text,
             settings::get_settings,
             settings::update_settings,

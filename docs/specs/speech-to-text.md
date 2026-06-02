@@ -143,7 +143,7 @@ Numbered, testable.
 8. **Deterministic decoding (anti-hallucination, fixed)** — recognition **always** uses greedy decoding (temperature 0), **no temperature fallback ladder**, and **no previous-text conditioning** to stop repetition/looping drift between utterances. With whisper-server this is `temperature=0.0` + `temperature_inc=0.0` per `/inference` (the fallback-ladder kill) plus the fact that each `/inference` call is stateless (no cross-utterance context) — i.e. the same effect as whisper-CLI's `--no-fallback` / `--max-context 0`, but achieved via the server's request fields rather than those literal flags. `inference_fields` always emits them; cargo-tested.
 9. **Empty / no-speech utterance** — if VAD finds no speech, recognition returns an **empty** string (`Ok`, never hallucinated text); the orchestrator injects nothing and returns the HUD to Idle.
 10. **GPU when available** — if `gpu_engine_status.downloaded` is true (and `gpu_present`), `warm_model` loads the **CUDA** engine/build (≈7–10× faster); otherwise the bundled **CPU** build. No NVIDIA ⇒ CPU, transparently.
-11. **Download integrity** — `download_whisper_model`, `download_gpu_engine`, and the release-time CPU binary fetch stream to a `.part` file, verify a pinned SHA-256, and rename only after the hash matches. An interrupted or tampered download leaves **no** trusted model/engine in place. Progress is reported via the `Channel` (reused from Toolzy `download_file`).
+11. **Download integrity** — `download_whisper_model`, `download_gpu_engine`, and the release-time CPU binary fetch stream to a `.part` file, verify a pinned SHA-256, and rename only after the hash matches. An interrupted or tampered download leaves **no** trusted model/engine in place. Progress is reported via the `Channel` (reused from Toolzy `download_file`). `list_whisper_models` uses an exact byte-size check for the UI so the Hub opens without hashing multi-GB files; the full SHA-256 check still runs before download reuse, warm-up, and use.
 12. **Unload frees RAM** — `unload` drops the resident context; subsequent `transcribe_chunk` → `Err("no model loaded")` until re-warmed.
 
 ---
@@ -172,7 +172,7 @@ Every user-facing parameter; the anti-hallucination settings are **fixed**, not 
 
 **Fixed (not user options)** — Silero VAD on, greedy/temperature 0, no temperature fallback ladder (whisper-server `temperature_inc=0.0`), and stateless per-utterance recognition (no cross-utterance context) — the equivalents of whisper-CLI's `--no-fallback` / `--max-context 0`, but enforced via the server's request fields, not those literal flags. A correct result never depends on the user knowing to enable them ([ADR-007](architecture.md#adr-007-on-demand-model-download--cpu-bundled--optional-cuda-engine), rules 7–8).
 
-The UI (onboarding + Hub settings) offers the model picker with each model's **size** and a **download gate**: if the chosen model (or the Silero VAD model) isn't on disk, the action is disabled and a one-time "needs the *\<model\>* model (~N GB) — download once" prompt + streamed progress bar appears (see [onboarding.md](onboarding.md), [settings.md](settings.md)). The engine re-checks existence defensively (rule 3).
+The UI (onboarding + Hub settings) offers the model picker with each model's **size**, fidelity/latency trade-off, and a **download gate**: if the chosen model (or the Silero VAD model) isn't on disk, the user must download it once before selecting it. Downloading a model does not silently change the active model; a downloaded model becomes selectable, and the selected model applies to the next dictation. The engine re-checks existence defensively (rule 3).
 
 ---
 
@@ -200,7 +200,7 @@ HUD (live, this feature's slice):
 
 Hub/onboarding (model lifecycle):
   Not downloaded → Downloading(progress) → Downloaded
-        → Warming(spinner) → Warm(ready) | Error
+        → Selected → Warming(spinner) → Warm(ready) | Error
   (+ optional) GPU: Not installed → Downloading → Installed
 ```
 

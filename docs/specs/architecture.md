@@ -448,4 +448,5 @@ live mic + VAD) differs. This is explicitly out of scope for v1.
   [text-cleanup.md](text-cleanup.md) · [hotkeys.md](hotkeys.md) · [tray-and-hud.md](tray-and-hud.md) ·
   [onboarding.md](onboarding.md) · [settings.md](settings.md) ·
   [custom-dictionary.md](custom-dictionary.md) · [snippets.md](snippets.md) ·
-  [ai-commands.md](ai-commands.md) · [design-system.md](design-system.md) · [_template.md](_template.md)
+  [dictation-history.md](dictation-history.md) · [ai-commands.md](ai-commands.md) ·
+  [design-system.md](design-system.md) · [_template.md](_template.md)

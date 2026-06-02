@@ -32,6 +32,44 @@
   let gpuProgress = $state(0);
   let error = $state<string | null>(null);
 
+  const MODEL_DETAILS: Record<
+    string,
+    { fidelity: string; latency: string; tone: "neutral" | "success" | "accent" | "info"; note: string }
+  > = {
+    small: {
+      fidelity: "Fidelidade basica",
+      latency: "Mais rapido",
+      tone: "info",
+      note: "Bom para respostas rapidas; pode errar mais em fala longa ou ambiente ruidoso.",
+    },
+    medium: {
+      fidelity: "Fidelidade media",
+      latency: "Equilibrado",
+      tone: "neutral",
+      note: "Mais fiel que Small, ainda viavel em CPU boa.",
+    },
+    "large-v3-turbo": {
+      fidelity: "Fidelidade alta",
+      latency: "Rapido na NVIDIA",
+      tone: "success",
+      note: "Melhor ponto de partida com GPU NVIDIA.",
+    },
+    "large-v3": {
+      fidelity: "Fidelidade maxima",
+      latency: "Mais lento",
+      tone: "accent",
+      note: "Mais pesado; escolha quando a qualidade vale esperar mais.",
+    },
+  };
+
+  function detailsFor(id: string) {
+    return MODEL_DETAILS[id] ?? MODEL_DETAILS.small;
+  }
+
+  function activeModelLabel() {
+    return models.find((model) => model.id === activeModel)?.label ?? activeModel;
+  }
+
   function fail(e: unknown) {
     error = String(e);
   }
@@ -73,8 +111,8 @@
       const channel = new Channel<DownloadProgress>();
       channel.onmessage = (p) => (progress = Math.round(p.percent));
       await downloadWhisperModel(id, channel);
-      await selectModel(id);
       await loadModels();
+      warm = await warmStatus();
     } catch (e) {
       fail(e);
     } finally {
@@ -111,15 +149,28 @@
     <p class="mt-1 text-body text-ink-soft">
       Baixado sob demanda do Hugging Face — a única saída de rede do MIA.
     </p>
+    <p class="mt-2 text-body text-ink-soft">
+      Modelo ativo: <span class="font-bold text-charcoal">{activeModelLabel()}</span>. Baixe modelos uma vez e
+      selecione qual usar nas proximas falas.
+    </p>
     <ul class="mt-4 flex flex-col gap-3">
       {#each models as model (model.id)}
-        <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-3">
-          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {@const details = detailsFor(model.id)}
+        <li
+          class="flex items-start gap-3 rounded-card border-2 border-charcoal px-4 py-3
+                 {activeModel === model.id ? 'bg-surface' : 'bg-canvas'}"
+        >
+          <div class="flex min-w-0 flex-1 flex-col gap-2">
+            <div class="flex flex-wrap items-center gap-2">
             <span class="text-body-lg font-bold">{model.label}</span>
             <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
-            {#if model.recommended}<Pill tone="accent">Recomendado</Pill>{/if}
+              <Pill tone={details.tone}>{details.fidelity}</Pill>
+              <Pill tone="neutral">{details.latency}</Pill>
+            {#if model.recommended}<Pill tone="accent">Padrao</Pill>{/if}
+            </div>
+            <p class="text-body text-ink-soft">{details.note}</p>
           </div>
-          <div class="shrink-0">
+          <div class="shrink-0 pt-1">
             {#if model.downloaded}
               {#if activeModel === model.id}
                 <Pill tone="success">✓ em uso</Pill>
@@ -130,7 +181,7 @@
                   disabled={downloading !== null}
                   onclick={() => selectModel(model.id)}
                 >
-                  Usar
+                  Selecionar
                 </Button>
               {/if}
             {:else if downloading === model.id}
