@@ -27,7 +27,7 @@ const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main
 const VAD_FILENAME: &str = "ggml-silero-v6.2.0.bin";
 const VAD_URL: &str =
     "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin";
-const VAD_SHA256: &str = "b65ad872758ea4ac85ec18aa132b384d91804f52799c70edc80f8fdb0420e1a5";
+const VAD_SHA256: &str = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987";
 /// Self-contained NVIDIA (CUDA) whisper.cpp build — bundles cuBLAS DLLs, needs only
 /// an NVIDIA driver. Downloaded on demand (~435 MB) for the GPU speedup.
 const GPU_URL: &str =
@@ -123,10 +123,10 @@ fn model_url(id: &str) -> Option<String> {
 
 fn model_sha256(id: &str) -> Option<&'static str> {
     match id {
-        "small" => Some("edd29d67e70b000132af65205b99bb774b77abc13d10103e14f80ce2242913e1"),
-        "medium" => Some("d3d5696e6a3e0ca2aa08eb31cad208ffa1e87b3cc341f59e628fbdcf8122de9b"),
-        "large-v3-turbo" => Some("5a4b65b05933d70ce9d5aa6265eb128fa5eba38f6fee40836fdedc4d2fde42ad"),
-        "large-v3" => Some("766d11cebbdf5a67c179c5774e2642b609e35e1a30240e7b559d5647c655b0a4"),
+        "small" => Some("1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"),
+        "medium" => Some("6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"),
+        "large-v3-turbo" => Some("1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"),
+        "large-v3" => Some("64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"),
         _ => None,
     }
 }
@@ -265,6 +265,16 @@ fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
     }
 }
 
+fn require_vad(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = models_dir(app)?.join(VAD_FILENAME);
+    if path.exists() {
+        verify_file_sha256(&path, VAD_SHA256)?;
+        Ok(path)
+    } else {
+        Err("model not downloaded: silero VAD".into())
+    }
+}
+
 fn file_sha256(path: &Path) -> Result<String, String> {
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
@@ -289,6 +299,33 @@ fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
             path.file_name().and_then(|n| n.to_str()).unwrap_or("download")
         ))
     }
+}
+
+fn file_matches_sha256(path: &Path, expected: &str) -> bool {
+    path.exists() && verify_file_sha256(path, expected).is_ok()
+}
+
+fn valid_downloaded_model(dir: &Path, id: &str) -> bool {
+    let Some(filename) = model_filename(id) else {
+        return false;
+    };
+    let Some(expected) = model_sha256(id) else {
+        return false;
+    };
+    file_matches_sha256(&dir.join(filename), expected)
+        && file_matches_sha256(&dir.join(VAD_FILENAME), VAD_SHA256)
+}
+
+fn remove_invalid_file(path: &Path, expected: &str) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    if verify_file_sha256(path, expected).is_ok() {
+        return Ok(true);
+    }
+    std::fs::remove_file(path)
+        .map_err(|e| format!("invalid download could not be replaced: {e}"))?;
+    Ok(false)
 }
 
 /// Stream a URL to `dest` via a `.part` file renamed on completion, so an
@@ -352,7 +389,7 @@ pub fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModel>, String> 
             id: m.id.into(),
             label: m.label.into(),
             size_mb: m.size_mb,
-            downloaded: dir.join(format!("ggml-{}.bin", m.id)).exists(),
+            downloaded: valid_downloaded_model(&dir, m.id),
             recommended: m.recommended,
         })
         .collect())
@@ -376,21 +413,13 @@ pub async fn download_whisper_model(
     let dest = dir.join(&filename);
     let vad_path = dir.join(VAD_FILENAME);
     let dest_str = dest.to_string_lossy().into_owned();
-    if dest.exists() {
-        verify_file_sha256(&dest, expected_sha256)?;
-    }
-    if vad_path.exists() {
-        verify_file_sha256(&vad_path, VAD_SHA256)?;
-    }
-    if dest.exists() && vad_path.exists() {
-        return Ok(dest_str);
-    }
-
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        if !vad_path.exists() {
+        let vad_ready = remove_invalid_file(&vad_path, VAD_SHA256)?;
+        let model_ready = remove_invalid_file(&dest, expected_sha256)?;
+        if !vad_ready {
             download_file(VAD_URL, &vad_path, None, VAD_SHA256)?;
         }
-        if !dest.exists() {
+        if !model_ready {
             download_file(&url, &dest, Some(&on_progress), expected_sha256)?;
         }
         Ok(())
@@ -588,10 +617,7 @@ pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), 
     let model_path = require_model(app, model)?;
     // Silero VAD must be present too (downloaded alongside the model) — it's passed to
     // the server so recognition is VAD-gated (anti-hallucination).
-    let vad_path = models_dir(app)?.join(VAD_FILENAME);
-    if !vad_path.exists() {
-        return Err("model not downloaded: silero VAD".into());
-    }
+    let vad_path = require_vad(app)?;
     let exe = server_exe(app)?;
     let gpu = exe.starts_with(gpu_dir(app)?);
     let port = free_port()?;
@@ -678,7 +704,7 @@ mod tests {
         assert_eq!(model_filename("small").unwrap(), "ggml-small.bin");
         assert_eq!(
             model_sha256("small").unwrap(),
-            "edd29d67e70b000132af65205b99bb774b77abc13d10103e14f80ce2242913e1"
+            "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
         );
         assert!(model_url("nope").is_none());
         assert!(model_filename("nope").is_none());
@@ -687,6 +713,29 @@ mod tests {
 
     // NOTE: the f32→i16 quantizer is now the single canonical `audio::f32_to_s16`
     // (rounding, clamped) — its clamp/round behavior is covered in audio.rs tests.
+
+    #[test]
+    fn remove_invalid_file_keeps_valid_and_deletes_mismatch() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mia-stt-{nonce}"));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let valid = dir.join("valid.bin");
+        let invalid = dir.join("invalid.bin");
+        let abc_sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        std::fs::write(&valid, b"abc").unwrap();
+        std::fs::write(&invalid, b"bad").unwrap();
+
+        assert!(remove_invalid_file(&valid, abc_sha).unwrap());
+        assert!(valid.exists());
+        assert!(!remove_invalid_file(&invalid, abc_sha).unwrap());
+        assert!(!invalid.exists());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn wav_header_is_canonical() {
