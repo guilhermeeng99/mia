@@ -251,6 +251,7 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
 /// unparseable hotkey or empty device/model falls back to its default.
 pub fn validate(mut s: Settings) -> Settings {
     s.schema_version = SCHEMA_VERSION;
+    s.general.dictation_enabled = true;
     if crate::hotkey::parse_accelerator(&s.hotkey.accelerator).is_err() {
         s.hotkey.accelerator = crate::hotkey::DEFAULT_ACCEL.to_string();
     }

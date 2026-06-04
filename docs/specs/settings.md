@@ -225,7 +225,6 @@ transcription fidelity.
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | `launchAtLogin` | bool | — | `false` | Start MIA (to tray) on Windows login. Writes a Run-key. |
-| `dictationEnabled` | bool | — | `true` | Master switch; when off, the PTT hotkey is ignored (tray shows "paused"). |
 | `defaultLanguage` | enum | `auto` \| `pt` \| `en` | `auto` | Forces Whisper language or auto-detect ([speech-to-text.md](speech-to-text.md)). |
 | `playSounds` | bool | — | `false` | Optional start/stop chime (off = unobtrusive default, design §9a). |
 | `collectStats` | bool | — | `true` | Enable local usage-stat collection (§6). |

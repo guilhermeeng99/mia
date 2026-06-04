@@ -173,16 +173,6 @@
     }
   }
 
-  async function setDictationEnabled(value: boolean) {
-    if (!general) return;
-    try {
-      const s = await updateSettings({ general: { ...general, dictationEnabled: value } });
-      general = s.general;
-    } catch (e) {
-      fail(e);
-    }
-  }
-
   async function setCollectStats(value: boolean) {
     if (!general) return;
     try {
@@ -396,11 +386,6 @@
     <h2 class="font-display text-title">Geral</h2>
     <div class="mt-3 flex flex-col gap-3">
       {#if general}
-        <Toggle
-          checked={general.dictationEnabled}
-          label="Ditado ativado"
-          onchange={setDictationEnabled}
-        />
         <Toggle
           checked={general.collectStats}
           label="Coletar estatísticas locais"
