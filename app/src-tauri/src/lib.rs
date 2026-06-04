@@ -64,7 +64,10 @@ pub fn run() {
         .manage(settings::SettingsState::new(settings::Settings::default()))
         .manage(hotkey::HotkeyRuntime::new(hotkey::HotkeyConfig::default()))
         .manage(stats::StatsState::new(stats::UsageStats::default()))
-        .manage(dictionary::DictState::new(Vec::new(), dictionary::DictSettings::default()))
+        .manage(dictionary::DictState::new(
+            Vec::new(),
+            dictionary::DictSettings::default(),
+        ))
         .manage(history::HistoryState::new(Vec::new()))
         .manage(snippets::SnippetState::new(Vec::new()))
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
@@ -75,7 +78,10 @@ pub fn run() {
                     hotkey::on_shortcut(
                         app,
                         shortcut,
-                        matches!(event.state, tauri_plugin_global_shortcut::ShortcutState::Pressed),
+                        matches!(
+                            event.state,
+                            tauri_plugin_global_shortcut::ShortcutState::Pressed
+                        ),
                     );
                 })
                 .build(),
@@ -104,7 +110,11 @@ pub fn run() {
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let mgr = app.autolaunch();
-                let _ = if launch_at_login { mgr.enable() } else { mgr.disable() };
+                let _ = if launch_at_login {
+                    mgr.enable()
+                } else {
+                    mgr.disable()
+                };
             }
             // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
             app.state::<hotkey::HotkeyRuntime>().hydrate(hk_cfg.clone());
@@ -115,13 +125,15 @@ pub fn run() {
             // without recovery the hotkey stays dead until restart. An idle tick re-claims
             // the chord periodically, and a resume/unlock watcher re-claims it immediately.
             hotkey::start_self_heal(app.handle());
+            hotkey::start_windows_key_polling(app.handle());
             power_resume::start(app.handle());
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
             app.state::<stats::StatsState>().hydrate(stats);
             // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
             let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
-            app.state::<dictionary::DictState>().hydrate(dict_entries, dict_settings);
+            app.state::<dictionary::DictState>()
+                .hydrate(dict_entries, dict_settings);
             let history = history::load_history(app.handle());
             app.state::<history::HistoryState>().hydrate(history);
             // Voice-triggered snippets — loaded from snippets.json.
@@ -164,6 +176,7 @@ pub fn run() {
             hotkey::unregister_hotkey,
             hotkey::update_hotkey,
             hotkey::get_hotkey,
+            hotkey::sample_hotkey_recording,
             dictionary::dict_list,
             dictionary::dict_add,
             dictionary::dict_update,

@@ -8,7 +8,13 @@
     type AudioDevice,
   } from "../../audio";
   import { injectText } from "../../inject";
-  import type { ActivationMode, HotkeyConfig } from "../../hotkey";
+  import {
+    sampleHotkeyRecording,
+    unregisterHotkey,
+    updateHotkey,
+    type ActivationMode,
+    type HotkeyConfig,
+  } from "../../hotkey";
   import {
     getSettings,
     updateSettings,
@@ -42,6 +48,10 @@
   let cleanup = $state<CleanupSettings | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
   let recording = $state(false);
+  let armingHotkeyRecorder = $state(false);
+  let hotkeySuspended = $state(false);
+  let recordingPoll = $state<number | null>(null);
+  let pendingHotkey = $state<string | null>(null);
   let hotkeyError = $state<string | null>(null);
   let error = $state<string | null>(null);
 
@@ -49,51 +59,60 @@
     error = String(e);
   }
 
-  // Map a KeyboardEvent.code to MIA's canonical key token (matches the Rust parser).
-  function keyFromCode(code: string): string | null {
-    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
-    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
-    const named: Record<string, string> = {
-      Space: "Space", Tab: "Tab", Enter: "Enter", Escape: "Escape", Delete: "Delete",
-      ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
-    };
-    return named[code] ?? null;
-  }
-
-  // Build a canonical accelerator (e.g. "Ctrl+Shift+D") or null while still waiting
-  // for a modifier+key chord (a bare key is rejected by the engine, Rule 5).
-  function accelFromEvent(e: KeyboardEvent): string | null {
-    const mods: string[] = [];
-    if (e.ctrlKey) mods.push("Ctrl");
-    if (e.altKey) mods.push("Alt");
-    if (e.shiftKey) mods.push("Shift");
-    if (e.metaKey) mods.push("Super");
-    const key = keyFromCode(e.code);
-    if (!key || mods.length === 0) return null;
-    return [...mods, key].join("+");
-  }
-
-  function onRecordKey(e: KeyboardEvent) {
+  async function pollHotkeyRecording() {
     if (!recording) return;
-    e.preventDefault();
-    if (e.code === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-      stopRecording();
-      return;
+    try {
+      const sample = await sampleHotkeyRecording();
+      if (!recording) return;
+      if (sample.cancelled) {
+        await cancelRecording();
+        return;
+      }
+      if (sample.accelerator) pendingHotkey = sample.accelerator;
+      if (sample.released && pendingHotkey) {
+        await commitHotkey(pendingHotkey);
+      }
+    } catch (e) {
+      hotkeyError = String(e);
+      await cancelRecording();
     }
-    const accel = accelFromEvent(e);
-    if (accel) void commitHotkey(accel);
   }
 
-  function startRecording() {
+  async function startRecording() {
+    if (recording || armingHotkeyRecorder) return;
     hotkeyError = null;
-    recording = true;
-    window.addEventListener("keydown", onRecordKey, true);
+    pendingHotkey = null;
+    armingHotkeyRecorder = true;
+    try {
+      await unregisterHotkey();
+      hotkeySuspended = true;
+      recording = true;
+      recordingPoll = window.setInterval(() => void pollHotkeyRecording(), 30);
+      void pollHotkeyRecording();
+    } catch (e) {
+      hotkeyError = String(e);
+    } finally {
+      armingHotkeyRecorder = false;
+    }
   }
 
   function stopRecording() {
     recording = false;
-    window.removeEventListener("keydown", onRecordKey, true);
+    if (recordingPoll !== null) {
+      window.clearInterval(recordingPoll);
+      recordingPoll = null;
+    }
+  }
+
+  async function restoreCurrentHotkeyRuntime() {
+    if (!hotkeySuspended || !hotkey) return;
+    try {
+      await updateHotkey(hotkey);
+    } catch (e) {
+      hotkeyError = String(e);
+    } finally {
+      hotkeySuspended = false;
+    }
   }
 
   // Persist + re-register via settings; a conflicting chord rejects before disk write.
@@ -103,9 +122,24 @@
     try {
       const s = await updateSettings({ hotkey: { accelerator, mode } });
       hotkey = s.hotkey;
+      pendingHotkey = null;
+      hotkeySuspended = false;
     } catch (e) {
       hotkeyError = String(e);
+      await restoreCurrentHotkeyRuntime();
     }
+  }
+
+  async function cancelRecording() {
+    stopRecording();
+    pendingHotkey = null;
+    hotkeyError = null;
+    await restoreCurrentHotkeyRuntime();
+  }
+
+  function confirmPendingHotkey() {
+    if (!pendingHotkey) return;
+    void commitHotkey(pendingHotkey);
   }
 
   async function setMode(mode: ActivationMode) {
@@ -200,7 +234,9 @@
     // Always drop the global capture-phase keydown listener if the view unmounts while
     // still recording a chord (switching sidebar views destroys this component) — else
     // it leaks and keeps capturing keys against a dead component.
-    return () => stopRecording();
+    return () => {
+      void cancelRecording();
+    };
   });
 
   async function runMicTest() {
@@ -292,11 +328,17 @@
     {/if}
     <div class="mt-4 flex flex-wrap items-center gap-3">
       <Pill tone="accent">{hotkey?.accelerator ?? "—"}</Pill>
-      <Button variant="secondary" size="sm" disabled={recording} onclick={startRecording}>
-        {recording ? "Pressione a combinação…" : "Gravar atalho"}
+      {#if pendingHotkey}
+        <Pill tone="info">Novo: {pendingHotkey}</Pill>
+      {/if}
+      <Button variant="secondary" size="sm" disabled={recording || armingHotkeyRecorder || !!pendingHotkey} onclick={() => void startRecording()}>
+        {recording ? "Pressione a combinação…" : armingHotkeyRecorder ? "Preparando…" : "Gravar atalho"}
       </Button>
-      {#if recording}
-        <Button variant="ghost" size="sm" onclick={stopRecording}>Cancelar</Button>
+      {#if pendingHotkey}
+        <Button size="sm" onclick={confirmPendingHotkey}>Confirmar</Button>
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
+      {:else if recording}
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
       {/if}
     </div>
     <div class="mt-4">

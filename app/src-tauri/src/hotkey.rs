@@ -12,13 +12,19 @@
 //! commands convert `Accel` to the plugin's `Shortcut` (`Modifiers` + `Code`) at the
 //! boundary.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+#[cfg(windows)]
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_INSERT, VK_LCONTROL,
+    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RETURN, VK_RIGHT,
+    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SPACE, VK_TAB, VK_UP,
+};
 
 /// Default PTT chord — `Ctrl + Space`. A modifier-anchored chord with a real key
 /// (a modifier-only chord like `Ctrl+Win` is not registrable via `RegisterHotKey`),
@@ -39,6 +45,10 @@ pub const SELF_HEAL_INTERVAL_MS: u64 = 30_000;
 /// Poll cadence of the self-heal loop — short so a cycle skipped because a hold was in
 /// progress retries soon after the user lets go (Rule 15).
 const SELF_HEAL_POLL_MS: u64 = 5_000;
+/// Windows-key polling cadence. Needed for Win/Super and modifier-only chords that
+/// `RegisterHotKey`/the Tauri plugin cannot reliably deliver.
+#[cfg(windows)]
+const WINDOWS_KEY_POLL_MS: u64 = 30;
 
 /// How the chord activates dictation (§2). Persisted in settings.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -58,9 +68,19 @@ pub struct HotkeyConfig {
     pub mode: ActivationMode,
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct HotkeyRecordSample {
+    pub accelerator: Option<String>,
+    pub released: bool,
+    pub cancelled: bool,
+}
+
 impl Default for HotkeyConfig {
     fn default() -> Self {
-        Self { accelerator: DEFAULT_ACCEL.to_string(), mode: ActivationMode::PushToHold }
+        Self {
+            accelerator: DEFAULT_ACCEL.to_string(),
+            mode: ActivationMode::PushToHold,
+        }
     }
 }
 
@@ -283,17 +303,37 @@ fn reduce_push_to_hold(
 ) -> (EdgeState, Option<DictationIntent>) {
     match edge {
         RawEdge::Pressed if !state.active => (
-            EdgeState { active: true, held: true, last_edge_ms: Some(now_ms) },
+            EdgeState {
+                active: true,
+                held: true,
+                last_edge_ms: Some(now_ms),
+            },
             Some(DictationIntent::Start),
         ),
         // Auto-repeat down while already active: ignored, no second Start (Rule 3/10).
-        RawEdge::Pressed => (EdgeState { held: true, ..state }, None),
+        RawEdge::Pressed => (
+            EdgeState {
+                held: true,
+                ..state
+            },
+            None,
+        ),
         RawEdge::Released if state.active => (
-            EdgeState { active: false, held: false, last_edge_ms: Some(now_ms) },
+            EdgeState {
+                active: false,
+                held: false,
+                last_edge_ms: Some(now_ms),
+            },
             Some(DictationIntent::Stop),
         ),
         // Release while inactive: nothing (Rule 10).
-        RawEdge::Released => (EdgeState { held: false, ..state }, None),
+        RawEdge::Released => (
+            EdgeState {
+                held: false,
+                ..state
+            },
+            None,
+        ),
     }
 }
 
@@ -305,11 +345,19 @@ fn reduce_press_to_toggle(
     match edge {
         // Toggle on the press edge only; release is irrelevant in toggle mode (Rule 4).
         RawEdge::Pressed if state.active => (
-            EdgeState { active: false, last_edge_ms: Some(now_ms), ..state },
+            EdgeState {
+                active: false,
+                last_edge_ms: Some(now_ms),
+                ..state
+            },
             Some(DictationIntent::Stop),
         ),
         RawEdge::Pressed => (
-            EdgeState { active: true, last_edge_ms: Some(now_ms), ..state },
+            EdgeState {
+                active: true,
+                last_edge_ms: Some(now_ms),
+                ..state
+            },
             Some(DictationIntent::Start),
         ),
         RawEdge::Released => (state, None),
@@ -362,6 +410,24 @@ pub fn to_shortcut(accel: &Accel) -> Result<Shortcut, String> {
     Ok(Shortcut::new(Some(mods), code))
 }
 
+#[cfg(windows)]
+fn should_poll_accel(accel: &Accel) -> bool {
+    accel.mods.sup || accel.key.is_none()
+}
+
+#[cfg(not(windows))]
+fn should_poll_accel(_accel: &Accel) -> bool {
+    false
+}
+
+fn plugin_shortcut(accel: &Accel) -> Result<Option<Shortcut>, String> {
+    if should_poll_accel(accel) {
+        Ok(None)
+    } else {
+        to_shortcut(accel).map(Some)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Runtime registration + event loop (tauri-plugin-global-shortcut; validated on Windows)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,6 +436,7 @@ pub fn to_shortcut(accel: &Accel) -> Result<Shortcut, String> {
 pub struct HotkeyRuntime {
     cfg: Mutex<HotkeyConfig>,
     edge: Mutex<EdgeState>,
+    suspended: AtomicBool,
     /// Monotonic session generation: each Start bumps it. A watchdog armed for an
     /// older generation no-ops, so a real Stop/Cancel silently disarms it (Rule 11).
     generation: AtomicU64,
@@ -380,6 +447,7 @@ impl HotkeyRuntime {
         Self {
             cfg: Mutex::new(cfg),
             edge: Mutex::new(EdgeState::default()),
+            suspended: AtomicBool::new(false),
             generation: AtomicU64::new(0),
         }
     }
@@ -424,10 +492,17 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     let Some(rt) = app.try_state::<HotkeyRuntime>() else {
         return;
     };
+    if rt.suspended.load(Ordering::SeqCst) {
+        return;
+    }
     let Ok(mode) = rt.cfg.lock().map(|c| c.mode) else {
         return;
     };
-    let edge = if pressed { RawEdge::Pressed } else { RawEdge::Released };
+    let edge = if pressed {
+        RawEdge::Pressed
+    } else {
+        RawEdge::Released
+    };
     let intent = {
         let Ok(mut e) = rt.edge.lock() else { return };
         let (next, intent) = reduce(*e, edge, mode, crate::persist::now_ms(), DEBOUNCE_MS);
@@ -437,7 +512,10 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     let Some(intent) = intent else {
         return;
     };
-    crate::dlog!("[hotkey] {} → intent {intent:?}", if pressed { "down" } else { "up" });
+    crate::dlog!(
+        "[hotkey] {} → intent {intent:?}",
+        if pressed { "down" } else { "up" }
+    );
     // Emit FIRST — the orchestrator drives off this. Then run the session side-effects
     // (Esc binding + watchdog) on a SEPARATE thread: we are *inside* the plugin's
     // shortcut handler, so calling register/unregister here would re-enter the plugin
@@ -457,7 +535,12 @@ fn on_session_start(app: &AppHandle) {
     let _ = app.global_shortcut().register(escape_shortcut());
     let push_to_hold = app
         .try_state::<HotkeyRuntime>()
-        .and_then(|rt| rt.cfg.lock().ok().map(|c| c.mode == ActivationMode::PushToHold))
+        .and_then(|rt| {
+            rt.cfg
+                .lock()
+                .ok()
+                .map(|c| c.mode == ActivationMode::PushToHold)
+        })
         .unwrap_or(false);
     if push_to_hold {
         arm_watchdog(app);
@@ -524,60 +607,110 @@ fn arm_watchdog(app: &AppHandle) {
 
 /// Register `cfg`'s chord, replacing any prior registration (Rule 1; rolls back the
 /// stored config only after the OS accepts the new chord).
-pub fn register_hotkey_runtime(app: &AppHandle, rt: &HotkeyRuntime, cfg: HotkeyConfig) -> Result<(), String> {
+pub fn register_hotkey_runtime(
+    app: &AppHandle,
+    rt: &HotkeyRuntime,
+    cfg: HotkeyConfig,
+) -> Result<(), String> {
     let accel = parse_accelerator(&cfg.accelerator)?;
     if is_reserved(&accel) {
-        return Err(format!("hotkey already in use by the system or another app: {}", cfg.accelerator));
+        return Err(format!(
+            "hotkey already in use by the system or another app: {}",
+            cfg.accelerator
+        ));
     }
-    let shortcut = to_shortcut(&accel)?;
+    let shortcut = plugin_shortcut(&accel)?;
     let gs = app.global_shortcut();
-    let prev = rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone();
-    let prev_shortcut = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)).ok();
-    let same_shortcut = prev_shortcut.as_ref().is_some_and(|prev_sc| prev_sc == &shortcut);
+    let prev = rt
+        .cfg
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())?
+        .clone();
+    let prev_shortcut = parse_accelerator(&prev.accelerator)
+        .ok()
+        .and_then(|a| plugin_shortcut(&a).ok().flatten());
+    let same_shortcut = shortcut
+        .as_ref()
+        .is_some_and(|sc| prev_shortcut.as_ref().is_some_and(|prev_sc| prev_sc == sc));
     if !same_shortcut {
-        gs.register(shortcut)
-            .map_err(|e| format!("hotkey already in use by the system or another app: {e}"))?;
+        if let Some(sc) = shortcut {
+            gs.register(sc)
+                .map_err(|e| format!("hotkey already in use by the system or another app: {e}"))?;
+        }
         if let Some(prev_sc) = prev_shortcut {
             let _ = gs.unregister(prev_sc);
         }
     }
-    *rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())? = cfg;
-    *rt.edge.lock().map_err(|_| "hotkey state poisoned".to_string())? = EdgeState::default();
+    *rt.cfg
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())? = cfg;
+    *rt.edge
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())? = EdgeState::default();
+    rt.suspended.store(false, Ordering::SeqCst);
     Ok(())
 }
 
 #[tauri::command]
-pub fn register_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+pub fn register_hotkey(
+    app: AppHandle,
+    rt: State<'_, HotkeyRuntime>,
+    cfg: HotkeyConfig,
+) -> Result<(), String> {
     register_hotkey_runtime(&app, &rt, cfg)
 }
 
 /// Unregister the active chord (idempotent).
 #[tauri::command]
 pub fn unregister_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>) -> Result<(), String> {
-    let prev = rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone();
-    if let Ok(sc) = parse_accelerator(&prev.accelerator).and_then(|a| to_shortcut(&a)) {
+    let prev = rt
+        .cfg
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())?
+        .clone();
+    if let Some(sc) = parse_accelerator(&prev.accelerator)
+        .ok()
+        .and_then(|a| plugin_shortcut(&a).ok().flatten())
+    {
         let _ = app.global_shortcut().unregister(sc);
     }
+    rt.suspended.store(true, Ordering::SeqCst);
+    *rt.edge
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())? = EdgeState::default();
     Ok(())
 }
 
 /// = unregister + register (persists only on OS acceptance).
 #[tauri::command]
-pub fn update_hotkey(app: AppHandle, rt: State<'_, HotkeyRuntime>, cfg: HotkeyConfig) -> Result<(), String> {
+pub fn update_hotkey(
+    app: AppHandle,
+    rt: State<'_, HotkeyRuntime>,
+    cfg: HotkeyConfig,
+) -> Result<(), String> {
     register_hotkey_runtime(&app, &rt, cfg)
 }
 
 /// The active chord + mode.
 #[tauri::command]
 pub fn get_hotkey(rt: State<'_, HotkeyRuntime>) -> Result<HotkeyConfig, String> {
-    Ok(rt.cfg.lock().map_err(|_| "hotkey state poisoned".to_string())?.clone())
+    Ok(rt
+        .cfg
+        .lock()
+        .map_err(|_| "hotkey state poisoned".to_string())?
+        .clone())
+}
+
+#[tauri::command]
+pub fn sample_hotkey_recording() -> HotkeyRecordSample {
+    platform_record_sample()
 }
 
 /// Best-effort startup registration from the saved config (Rule 14: a conflict
 /// leaves the chord unregistered rather than stealing a different key).
 pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
-    match parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) {
-        Ok(sc) => match app.global_shortcut().register(sc) {
+    match parse_accelerator(&cfg.accelerator).and_then(|a| plugin_shortcut(&a)) {
+        Ok(Some(sc)) => match app.global_shortcut().register(sc) {
             Ok(()) => crate::dlog!("[hotkey] PTT '{}' registered", cfg.accelerator),
             // The likeliest cause on Windows is the chord already being claimed (an
             // IME often owns Ctrl+Space) — surface it instead of failing silently.
@@ -586,6 +719,10 @@ pub fn register_initial(app: &AppHandle, cfg: &HotkeyConfig) {
                 cfg.accelerator
             ),
         },
+        Ok(None) => crate::dlog!(
+            "[hotkey] PTT '{}' registered via Windows polling",
+            cfg.accelerator
+        ),
         Err(e) => eprintln!("[hotkey] PTT '{}' is invalid: {e}", cfg.accelerator),
     }
 }
@@ -611,7 +748,20 @@ fn do_reregister(app: &AppHandle) {
     let Ok(cfg) = rt.cfg.lock().map(|c| c.clone()) else {
         return;
     };
-    let Ok(sc) = parse_accelerator(&cfg.accelerator).and_then(|a| to_shortcut(&a)) else {
+    let Ok(accel) = parse_accelerator(&cfg.accelerator) else {
+        return;
+    };
+    if should_poll_accel(&accel) {
+        if let Ok(mut e) = rt.edge.lock() {
+            *e = EdgeState::default();
+        }
+        crate::dlog!(
+            "[hotkey] self-heal: PTT '{}' is handled by Windows polling",
+            cfg.accelerator
+        );
+        return;
+    }
+    let Ok(sc) = to_shortcut(&accel) else {
         return;
     };
     let gs = app.global_shortcut();
@@ -621,12 +771,18 @@ fn do_reregister(app: &AppHandle) {
             if let Ok(mut e) = rt.edge.lock() {
                 *e = EdgeState::default();
             }
-            crate::dlog!("[hotkey] self-heal: re-registered PTT '{}'", cfg.accelerator);
+            crate::dlog!(
+                "[hotkey] self-heal: re-registered PTT '{}'",
+                cfg.accelerator
+            );
         }
         // Chord momentarily owned by the OS/another app (e.g. an IME armed Ctrl+Space):
         // leave it; the next tick retries and re-claims it once they release it.
         Err(e) => {
-            crate::dlog!("[hotkey] self-heal: re-register deferred ('{}'): {e}", cfg.accelerator)
+            crate::dlog!(
+                "[hotkey] self-heal: re-register deferred ('{}'): {e}",
+                cfg.accelerator
+            )
         }
     }
 }
@@ -652,12 +808,258 @@ pub fn start_self_heal(app: &AppHandle) {
                 .try_state::<HotkeyRuntime>()
                 .and_then(|rt| rt.edge.lock().ok().map(|e| e.active))
                 .unwrap_or(false);
-            if should_self_heal(active, crate::persist::now_ms().saturating_sub(last), SELF_HEAL_INTERVAL_MS) {
+            if should_self_heal(
+                active,
+                crate::persist::now_ms().saturating_sub(last),
+                SELF_HEAL_INTERVAL_MS,
+            ) {
                 do_reregister(&app);
                 last = crate::persist::now_ms();
             }
         }
     });
+}
+
+#[cfg(windows)]
+pub fn start_windows_key_polling(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last_accelerator = String::new();
+        let mut active = false;
+        let mut blocked_until_release = false;
+        loop {
+            std::thread::sleep(Duration::from_millis(WINDOWS_KEY_POLL_MS));
+            let Some(rt) = app.try_state::<HotkeyRuntime>() else {
+                continue;
+            };
+            if rt.suspended.load(Ordering::SeqCst) {
+                active = false;
+                blocked_until_release = false;
+                continue;
+            }
+            let Ok(cfg) = rt.cfg.lock().map(|c| c.clone()) else {
+                continue;
+            };
+            let Ok(accel) = parse_accelerator(&cfg.accelerator) else {
+                active = false;
+                blocked_until_release = false;
+                continue;
+            };
+            if !should_poll_accel(&accel) {
+                active = false;
+                blocked_until_release = false;
+                continue;
+            }
+            if cfg.accelerator != last_accelerator {
+                last_accelerator = cfg.accelerator.clone();
+                active = false;
+                blocked_until_release = false;
+            }
+            let pressed = polled_accel_pressed(&accel, &mut blocked_until_release);
+            if pressed != active {
+                active = pressed;
+                on_shortcut_event(&app, pressed);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+pub fn start_windows_key_polling(_app: &AppHandle) {}
+
+#[cfg(windows)]
+fn polled_accel_pressed(accel: &Accel, blocked_until_release: &mut bool) -> bool {
+    if !expected_modifiers_pressed(accel.mods) {
+        *blocked_until_release = false;
+        return false;
+    }
+    if *blocked_until_release {
+        return false;
+    }
+    if accel.key.is_none() && any_non_modifier_pressed() {
+        *blocked_until_release = true;
+        return false;
+    }
+    accel.key.as_deref().is_none_or(key_pressed)
+}
+
+#[cfg(windows)]
+fn expected_modifiers_pressed(expected: Mods) -> bool {
+    let ctrl = any_pressed(&[VK_LCONTROL as i32, VK_RCONTROL as i32]);
+    let alt = any_pressed(&[VK_LMENU as i32, VK_RMENU as i32]);
+    let shift = any_pressed(&[VK_LSHIFT as i32, VK_RSHIFT as i32]);
+    let sup = any_pressed(&[VK_LWIN as i32, VK_RWIN as i32]);
+
+    expected_modifiers_match(
+        expected,
+        Mods {
+            ctrl,
+            alt,
+            shift,
+            sup,
+        },
+    )
+}
+
+fn expected_modifiers_match(expected: Mods, actual: Mods) -> bool {
+    (!expected.ctrl || actual.ctrl)
+        && (!expected.alt || actual.alt)
+        && (!expected.shift || actual.shift)
+        && (!expected.sup || actual.sup)
+}
+
+#[cfg(windows)]
+fn key_pressed(key: &str) -> bool {
+    if key.len() == 1 {
+        let c = key.chars().next().unwrap();
+        if c.is_ascii_alphabetic() {
+            return vk_pressed(c.to_ascii_uppercase() as i32);
+        }
+        if c.is_ascii_digit() {
+            return vk_pressed(c as i32);
+        }
+    }
+    match key {
+        "Space" => vk_pressed(VK_SPACE as i32),
+        "Tab" => vk_pressed(VK_TAB as i32),
+        "Enter" => vk_pressed(VK_RETURN as i32),
+        "Escape" => vk_pressed(VK_ESCAPE as i32),
+        "Delete" => vk_pressed(VK_DELETE as i32),
+        "Up" => vk_pressed(VK_UP as i32),
+        "Down" => vk_pressed(VK_DOWN as i32),
+        "Left" => vk_pressed(VK_LEFT as i32),
+        "Right" => vk_pressed(VK_RIGHT as i32),
+        key if key.starts_with('F') => key[1..]
+            .parse::<i32>()
+            .ok()
+            .filter(|n| (1..=24).contains(n))
+            .is_some_and(|n| vk_pressed(0x6F + n)),
+        _ => false,
+    }
+}
+
+#[cfg(windows)]
+fn platform_record_sample() -> HotkeyRecordSample {
+    let mods = current_mods_pressed();
+    let key = first_pressed_record_key();
+    let released = mods.is_empty() && key.is_none();
+    let cancelled = mods.is_empty() && key.as_deref() == Some("Escape");
+    let accelerator = if cancelled {
+        None
+    } else if let Some(key) = key {
+        (!mods.is_empty()).then(|| to_canonical(&Accel {
+            mods,
+            key: Some(key),
+        }))
+    } else {
+        (modifier_count(mods) >= 2).then(|| to_canonical(&Accel { mods, key: None }))
+    };
+
+    HotkeyRecordSample {
+        accelerator,
+        released,
+        cancelled,
+    }
+}
+
+#[cfg(not(windows))]
+fn platform_record_sample() -> HotkeyRecordSample {
+    HotkeyRecordSample {
+        accelerator: None,
+        released: true,
+        cancelled: false,
+    }
+}
+
+#[cfg(windows)]
+fn current_mods_pressed() -> Mods {
+    Mods {
+        ctrl: any_pressed(&[VK_LCONTROL as i32, VK_RCONTROL as i32]),
+        alt: any_pressed(&[VK_LMENU as i32, VK_RMENU as i32]),
+        shift: any_pressed(&[VK_LSHIFT as i32, VK_RSHIFT as i32]),
+        sup: any_pressed(&[VK_LWIN as i32, VK_RWIN as i32]),
+    }
+}
+
+fn modifier_count(mods: Mods) -> usize {
+    [mods.ctrl, mods.alt, mods.shift, mods.sup]
+        .into_iter()
+        .filter(|pressed| *pressed)
+        .count()
+}
+
+#[cfg(windows)]
+fn first_pressed_record_key() -> Option<String> {
+    let named = [
+        ("Space", VK_SPACE as i32),
+        ("Tab", VK_TAB as i32),
+        ("Enter", VK_RETURN as i32),
+        ("Escape", VK_ESCAPE as i32),
+        ("Delete", VK_DELETE as i32),
+        ("Up", VK_UP as i32),
+        ("Down", VK_DOWN as i32),
+        ("Left", VK_LEFT as i32),
+        ("Right", VK_RIGHT as i32),
+    ];
+    for (key, vk) in named {
+        if vk_pressed(vk) {
+            return Some(key.to_string());
+        }
+    }
+    for vk in 0x41i32..=0x5A {
+        if vk_pressed(vk) {
+            return char::from_u32(vk as u32).map(|c| c.to_string());
+        }
+    }
+    for vk in 0x30i32..=0x39 {
+        if vk_pressed(vk) {
+            return char::from_u32(vk as u32).map(|c| c.to_string());
+        }
+    }
+    for n in 1..=24 {
+        if vk_pressed(0x6F + n) {
+            return Some(format!("F{n}"));
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn any_pressed(keys: &[i32]) -> bool {
+    keys.iter().copied().any(vk_pressed)
+}
+
+#[cfg(windows)]
+fn vk_pressed(vk: i32) -> bool {
+    unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 }
+}
+
+#[cfg(windows)]
+fn any_non_modifier_pressed() -> bool {
+    const VK_BACK: i32 = 0x08;
+    let nav = [
+        VK_BACK,
+        VK_TAB as i32,
+        VK_RETURN as i32,
+        VK_SPACE as i32,
+        VK_PRIOR as i32,
+        VK_NEXT as i32,
+        VK_END as i32,
+        VK_HOME as i32,
+        VK_LEFT as i32,
+        VK_UP as i32,
+        VK_RIGHT as i32,
+        VK_DOWN as i32,
+        VK_INSERT as i32,
+        VK_DELETE as i32,
+    ];
+    if nav.iter().copied().any(vk_pressed) {
+        return true;
+    }
+    (0x30i32..=0x39)
+        .chain(0x41..=0x5A)
+        .chain(0x70..=0x87)
+        .any(vk_pressed)
 }
 
 #[cfg(test)]
@@ -670,9 +1072,38 @@ mod tests {
 
     #[test]
     fn parses_canonical_chords() {
-        assert_eq!(accel("Ctrl+Super"), Accel { mods: Mods { ctrl: true, sup: true, ..Default::default() }, key: None });
-        assert_eq!(accel("Alt+Space"), Accel { mods: Mods { alt: true, ..Default::default() }, key: Some("Space".into()) });
-        assert_eq!(accel("Ctrl+Shift+D"), Accel { mods: Mods { ctrl: true, shift: true, ..Default::default() }, key: Some("D".into()) });
+        assert_eq!(
+            accel("Ctrl+Super"),
+            Accel {
+                mods: Mods {
+                    ctrl: true,
+                    sup: true,
+                    ..Default::default()
+                },
+                key: None
+            }
+        );
+        assert_eq!(
+            accel("Alt+Space"),
+            Accel {
+                mods: Mods {
+                    alt: true,
+                    ..Default::default()
+                },
+                key: Some("Space".into())
+            }
+        );
+        assert_eq!(
+            accel("Ctrl+Shift+D"),
+            Accel {
+                mods: Mods {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                key: Some("D".into())
+            }
+        );
     }
 
     #[test]
@@ -684,11 +1115,26 @@ mod tests {
     #[test]
     fn rejects_empty_unparseable_bare_and_fn() {
         assert_eq!(parse_accelerator("   "), Err("empty hotkey".into()));
-        assert_eq!(parse_accelerator("Ctrl+Nope"), Err("unparseable hotkey: Ctrl+Nope".into()));
-        assert_eq!(parse_accelerator("D"), Err("hotkey must include a modifier".into()));
-        assert_eq!(parse_accelerator("F8"), Err("hotkey must include a modifier".into()));
-        assert_eq!(parse_accelerator("Fn"), Err("Fn key is not hookable".into()));
-        assert_eq!(parse_accelerator("Ctrl+Fn"), Err("Fn key is not hookable".into()));
+        assert_eq!(
+            parse_accelerator("Ctrl+Nope"),
+            Err("unparseable hotkey: Ctrl+Nope".into())
+        );
+        assert_eq!(
+            parse_accelerator("D"),
+            Err("hotkey must include a modifier".into())
+        );
+        assert_eq!(
+            parse_accelerator("F8"),
+            Err("hotkey must include a modifier".into())
+        );
+        assert_eq!(
+            parse_accelerator("Fn"),
+            Err("Fn key is not hookable".into())
+        );
+        assert_eq!(
+            parse_accelerator("Ctrl+Fn"),
+            Err("Fn key is not hookable".into())
+        );
     }
 
     #[test]
@@ -714,21 +1160,79 @@ mod tests {
         assert!(!is_reserved(&accel("Ctrl+Shift+D")));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_key_chords_use_polling() {
+        assert!(should_poll_accel(&accel("Ctrl+Win")));
+        assert!(should_poll_accel(&accel("Win+Space")));
+        assert!(!should_poll_accel(&accel("Ctrl+Space")));
+        assert!(plugin_shortcut(&accel("Ctrl+Win")).unwrap().is_none());
+        assert!(plugin_shortcut(&accel("Ctrl+Space")).unwrap().is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn polled_modifier_match_allows_extra_modifiers() {
+        let expected = Mods {
+            sup: true,
+            ..Default::default()
+        };
+        assert!(expected_modifiers_match(
+            expected,
+            Mods {
+                ctrl: true,
+                sup: true,
+                ..Default::default()
+            }
+        ));
+        assert!(!expected_modifiers_match(
+            expected,
+            Mods {
+                ctrl: true,
+                ..Default::default()
+            }
+        ));
+    }
+
     #[test]
     fn push_to_hold_down_starts_repeat_ignored_release_stops() {
         let s0 = EdgeState::default();
-        let (s1, i1) = reduce(s0, RawEdge::Pressed, ActivationMode::PushToHold, 100, DEBOUNCE_MS);
+        let (s1, i1) = reduce(
+            s0,
+            RawEdge::Pressed,
+            ActivationMode::PushToHold,
+            100,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i1, Some(DictationIntent::Start));
         assert!(s1.active);
         // Auto-repeat down beyond the debounce window: no second Start (Rule 3/10).
-        let (s2, i2) = reduce(s1, RawEdge::Pressed, ActivationMode::PushToHold, 1_000, DEBOUNCE_MS);
+        let (s2, i2) = reduce(
+            s1,
+            RawEdge::Pressed,
+            ActivationMode::PushToHold,
+            1_000,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i2, None);
         assert!(s2.active);
-        let (s3, i3) = reduce(s2, RawEdge::Released, ActivationMode::PushToHold, 2_000, DEBOUNCE_MS);
+        let (s3, i3) = reduce(
+            s2,
+            RawEdge::Released,
+            ActivationMode::PushToHold,
+            2_000,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i3, Some(DictationIntent::Stop));
         assert!(!s3.active);
         // Release while inactive: nothing (Rule 10).
-        let (_s4, i4) = reduce(s3, RawEdge::Released, ActivationMode::PushToHold, 3_000, DEBOUNCE_MS);
+        let (_s4, i4) = reduce(
+            s3,
+            RawEdge::Released,
+            ActivationMode::PushToHold,
+            3_000,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i4, None);
     }
 
@@ -738,13 +1242,25 @@ mod tests {
         let fire = |s: EdgeState, edge: RawEdge, t: u64| {
             reduce(s, edge, ActivationMode::PressToToggle, t, DEBOUNCE_MS)
         };
-        let (s1, i1) = fire(EdgeState::default(), RawEdge::Pressed, { t += 100; t });
+        let (s1, i1) = fire(EdgeState::default(), RawEdge::Pressed, {
+            t += 100;
+            t
+        });
         assert_eq!(i1, Some(DictationIntent::Start));
-        let (s2, i2) = fire(s1, RawEdge::Released, { t += 100; t });
+        let (s2, i2) = fire(s1, RawEdge::Released, {
+            t += 100;
+            t
+        });
         assert_eq!(i2, None); // release ignored in toggle mode
-        let (s3, i3) = fire(s2, RawEdge::Pressed, { t += 100; t });
+        let (s3, i3) = fire(s2, RawEdge::Pressed, {
+            t += 100;
+            t
+        });
         assert_eq!(i3, Some(DictationIntent::Stop));
-        let (s4, i4) = fire(s3, RawEdge::Pressed, { t += 100; t });
+        let (s4, i4) = fire(s3, RawEdge::Pressed, {
+            t += 100;
+            t
+        });
         assert_eq!(i4, Some(DictationIntent::Start));
         assert!(s4.active);
     }
@@ -752,10 +1268,22 @@ mod tests {
     #[test]
     fn debounce_collapses_edges_within_window() {
         let s0 = EdgeState::default();
-        let (s1, i1) = reduce(s0, RawEdge::Pressed, ActivationMode::PressToToggle, 100, DEBOUNCE_MS);
+        let (s1, i1) = reduce(
+            s0,
+            RawEdge::Pressed,
+            ActivationMode::PressToToggle,
+            100,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i1, Some(DictationIntent::Start));
         // Second press 20 ms later (< 40 ms debounce) is dropped.
-        let (s2, i2) = reduce(s1, RawEdge::Pressed, ActivationMode::PressToToggle, 120, DEBOUNCE_MS);
+        let (s2, i2) = reduce(
+            s1,
+            RawEdge::Pressed,
+            ActivationMode::PressToToggle,
+            120,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i2, None);
         assert!(s2.active); // unchanged
     }
@@ -763,7 +1291,13 @@ mod tests {
     #[test]
     fn re_entry_guard_no_stop_while_inactive() {
         let s0 = EdgeState::default();
-        let (_s, i) = reduce(s0, RawEdge::Released, ActivationMode::PushToHold, 100, DEBOUNCE_MS);
+        let (_s, i) = reduce(
+            s0,
+            RawEdge::Released,
+            ActivationMode::PushToHold,
+            100,
+            DEBOUNCE_MS,
+        );
         assert_eq!(i, None);
     }
 
@@ -782,7 +1316,14 @@ mod tests {
         assert!(to_shortcut(&accel("Ctrl+Space")).is_ok());
         assert!(to_shortcut(&accel("Ctrl+Shift+D")).is_ok());
         // A modifier-only chord has no key → not registrable.
-        let mods_only = Accel { mods: Mods { ctrl: true, sup: true, ..Default::default() }, key: None };
+        let mods_only = Accel {
+            mods: Mods {
+                ctrl: true,
+                sup: true,
+                ..Default::default()
+            },
+            key: None,
+        };
         assert!(to_shortcut(&mods_only).is_err());
     }
 
