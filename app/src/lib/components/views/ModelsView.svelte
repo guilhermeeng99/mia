@@ -74,6 +74,11 @@
     return models.find((model) => model.id === activeModel)?.label ?? activeModel;
   }
 
+  function warmLabel() {
+    if (warm?.warming) return `aquecendo · ${warm.targetModel ?? activeModel}`;
+    return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
+  }
+
   function fail(e: unknown) {
     error = String(e);
   }
@@ -255,8 +260,8 @@
   <Card>
     <h2 class="font-display text-title">Aceleração</h2>
     <div class="mt-3 flex flex-wrap gap-3">
-      <Pill tone={warm?.loaded ? "success" : "neutral"}>
-        {warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)"}
+      <Pill tone={warm?.loaded ? "success" : warm?.warming ? "accent" : "neutral"}>
+        {warmLabel()}
       </Pill>
       <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
       {#if gpu?.gpuPresent}

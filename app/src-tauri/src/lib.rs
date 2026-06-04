@@ -133,6 +133,7 @@ pub fn run() {
             let loaded = settings::load_settings(app.handle());
             let hk_cfg = loaded.hotkey.clone();
             let launch_at_login = loaded.general.launch_at_login;
+            let startup_model = loaded.model.model.clone();
             app.state::<settings::SettingsState>().hydrate(loaded);
             // Sync the OS autostart entry to the saved preference (best-effort).
             {
@@ -172,6 +173,7 @@ pub fn run() {
             // Dock the floating, click-through, always-on-top mic HUD overlay window
             // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
             hud::setup_hud(app.handle());
+            stt::warm_model_in_background(app.handle().clone(), startup_model);
             Ok(())
         })
         // Close-to-tray: closing the Hub hides it instead of quitting — MIA keeps
@@ -184,9 +186,6 @@ pub fn run() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    if let Some(stt) = window.app_handle().try_state::<stt::SttState>() {
-                        let _ = stt::unload(&stt);
-                    }
                     let _ = window.hide();
                 }
                 // Returning to the Hub is a cheap, natural moment to re-claim the PTT

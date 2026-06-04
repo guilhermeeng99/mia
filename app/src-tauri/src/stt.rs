@@ -80,6 +80,8 @@ pub struct GpuStatus {
 pub struct WarmStatus {
     loaded: bool,
     model: Option<String>,
+    warming: bool,
+    target_model: Option<String>,
     backend: String,
     gpu: bool,
 }
@@ -112,6 +114,8 @@ impl Drop for WarmServer {
 #[derive(Default)]
 pub struct SttState {
     server: Mutex<Option<WarmServer>>,
+    loading: Mutex<()>,
+    warm_target: Mutex<Option<String>>,
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
@@ -423,6 +427,7 @@ pub fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModel>, String> 
 pub async fn download_whisper_model(
     app: AppHandle,
     stt: State<'_, SttState>,
+    settings: State<'_, crate::settings::SettingsState>,
     model: String,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<String, String> {
@@ -476,6 +481,10 @@ pub async fn download_whisper_model(
     }
 
     result?;
+
+    if settings.snapshot()?.model.model == model {
+        warm_model_in_background(app.clone(), model);
+    }
 
     Ok(dest_str)
 }
@@ -629,6 +638,7 @@ pub fn gpu_engine_status(app: AppHandle) -> Result<GpuStatus, String> {
 pub async fn download_gpu_engine(
     app: AppHandle,
     stt: State<'_, SttState>,
+    settings: State<'_, crate::settings::SettingsState>,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<(), String> {
     if gpu_dir(&app)?.join("whisper-server.exe").exists() {
@@ -641,6 +651,7 @@ pub async fn download_gpu_engine(
     // Drop any warm CPU server so the next dictation re-warms on the GPU build
     // (server_exe now prefers engine-cuda/whisper-server.exe).
     let _ = unload(&stt);
+    warm_model_in_background(app.clone(), settings.snapshot()?.model.model);
     Ok(())
 }
 
@@ -708,9 +719,7 @@ fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
     cmd.spawn().map_err(|e| format!("failed to start whisper-server: {e}"))
 }
 
-/// Load a model into a warm whisper-server (idempotent if already warm with the
-/// same model). Spawns the server and waits for it to accept connections.
-pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
+fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
     {
         let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
         if let Some(s) = guard.as_ref() {
@@ -739,6 +748,50 @@ pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), 
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
     *guard = Some(WarmServer { child, port, model: model.to_string(), gpu });
     Ok(())
+}
+
+/// Load a model into a warm whisper-server (idempotent if already warm with the
+/// same model). Spawns the server and waits for it to accept connections.
+pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
+    let _loading = state.loading.lock().map_err(|_| "stt state poisoned".to_string())?;
+    warm_model_inner(app, state, model)
+}
+
+/// Warm the selected model without blocking Tauri startup or settings IPC.
+pub fn warm_model_in_background(app: AppHandle, model: String) {
+    if let Some(state) = app.try_state::<SttState>() {
+        if let Ok(mut target) = state.warm_target.lock() {
+            *target = Some(model.clone());
+        }
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(state) = app.try_state::<SttState>() else {
+            return;
+        };
+        let Ok(_loading) = state.loading.lock() else {
+            crate::dlog!("[stt] background warm skipped: stt state poisoned");
+            return;
+        };
+        let still_target = state
+            .warm_target
+            .lock()
+            .map(|target| target.as_deref() == Some(model.as_str()))
+            .unwrap_or(false);
+        if !still_target {
+            return;
+        }
+
+        let result = warm_model_inner(&app, &state, &model);
+        if let Ok(mut target) = state.warm_target.lock() {
+            if target.as_deref() == Some(model.as_str()) {
+                *target = None;
+            }
+        }
+        if let Err(e) = result {
+            crate::dlog!("[stt] background warm skipped: {e}");
+        }
+    });
 }
 
 /// Transcribe one endpointed utterance (16 kHz mono f32 PCM) against the warm
@@ -777,6 +830,9 @@ pub fn transcribe_chunk(
 
 /// Stop the warm server and free its RAM (also runs on app exit via `Drop`).
 pub fn unload(state: &SttState) -> Result<(), String> {
+    if let Ok(mut target) = state.warm_target.lock() {
+        *target = None;
+    }
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
     *guard = None; // Drop kills the child
     Ok(())
@@ -785,17 +841,27 @@ pub fn unload(state: &SttState) -> Result<(), String> {
 /// Current warm-engine status for the UI.
 #[tauri::command]
 pub fn warm_status(state: tauri::State<'_, SttState>) -> Result<WarmStatus, String> {
+    let target_model = state
+        .warm_target
+        .lock()
+        .map_err(|_| "stt state poisoned".to_string())?
+        .clone();
     let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
+    let warming = target_model.is_some();
     Ok(match guard.as_ref() {
         Some(s) => WarmStatus {
             loaded: true,
             model: Some(s.model.clone()),
+            warming,
+            target_model,
             backend: "whisperServer".into(),
             gpu: s.gpu,
         },
         None => WarmStatus {
             loaded: false,
             model: None,
+            warming,
+            target_model,
             backend: "whisperServer".into(),
             gpu: false,
         },

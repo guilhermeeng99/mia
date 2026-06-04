@@ -19,6 +19,8 @@ export interface GpuStatus {
 export interface WarmStatus {
   loaded: boolean;
   model: string | null;
+  warming: boolean;
+  targetModel: string | null;
   backend: string;
   gpu: boolean;
 }

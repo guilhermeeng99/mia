@@ -95,7 +95,7 @@ pub struct ModelSettings {
 
 impl Default for ModelSettings {
     fn default() -> Self {
-        Self { model: DEFAULT_MODEL_ID.to_string(), engine: Engine::Cpu, unload_on_idle: true }
+        Self { model: DEFAULT_MODEL_ID.to_string(), engine: Engine::Cpu, unload_on_idle: false }
     }
 }
 
@@ -411,9 +411,10 @@ pub fn update_settings(
     }
     state.set(next.clone())?;
     // Side effect: any model-setting change invalidates the warm engine after the
-    // new setting is durable. The next dictation warms the chosen model lazily.
+    // new setting is durable, then warms the chosen model off the IPC path.
     if next.model != current.model {
         let _ = crate::stt::unload(&stt);
+        crate::stt::warm_model_in_background(app.clone(), next.model.model.clone());
     }
     // Side effect: keep the OS autostart entry in sync with the toggle (best-effort).
     if next.general.launch_at_login != current.general.launch_at_login {
@@ -451,7 +452,7 @@ mod tests {
         assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);
-        assert!(s.model.unload_on_idle);
+        assert!(!s.model.unload_on_idle);
         assert_eq!(s.audio.input_device, "default");
         assert!(s.cleanup.filler_removal && s.cleanup.capitalization);
         assert_eq!(s.hud.position, HudPosition::Caret);

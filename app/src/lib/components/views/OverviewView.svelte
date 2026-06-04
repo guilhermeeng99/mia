@@ -22,6 +22,11 @@
     error = String(e);
   }
 
+  function warmLabel() {
+    if (warm?.warming) return `aquecendo · ${warm.targetModel ?? "modelo"}`;
+    return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
+  }
+
   onMount(() => {
     getStats().then((s) => (stats = s)).catch(fail);
     warmStatus().then((w) => (warm = w)).catch(fail);
@@ -78,8 +83,8 @@
     <h2 class="font-display text-title">Motor</h2>
     <p class="mt-1 text-body text-ink-soft">Locais — nada sai da máquina (ADR-001).</p>
     <div class="mt-4 flex flex-wrap gap-3">
-      <Pill tone={warm?.loaded ? "success" : "neutral"}>
-        {warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)"}
+      <Pill tone={warm?.loaded ? "success" : warm?.warming ? "accent" : "neutral"}>
+        {warmLabel()}
       </Pill>
       <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
       {#if gpu?.gpuPresent}
