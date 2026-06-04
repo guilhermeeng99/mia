@@ -3,7 +3,7 @@
 //! than quitting. See `docs/specs/tray-and-hud.md`. Runtime-validated on Windows.
 
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
 /// Build the tray icon + menu (Open / Quit). Called once from `setup`.
@@ -24,6 +24,18 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .icon(icon)
         .tooltip("MIA — ditado local")
         .menu(&menu)
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_main(tray.app_handle());
+            }
+        })
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "open" => show_main(app),
@@ -38,6 +50,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
 /// Show + focus the main Hub window (from the tray "Open" action).
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
