@@ -158,6 +158,12 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
 2. **Load once, serve from memory.** Settings are read into a managed `State` at startup;
    `get_settings` returns that in-memory copy. The file is only re-read after an external change is
    not assumed — the in-memory copy is authoritative for the process lifetime.
+   **Lazy-hydrate guard:** the state is *managed with defaults* on the builder and hydrated from
+   disk in `setup`, but the packaged webview can `invoke("get_settings")`/`update_settings` BEFORE
+   `setup` runs. A plain default read there makes the app re-run onboarding and treats every
+   preference as reset (then the next write persists defaults-plus-one-field, wiping the file). So
+   both commands `get_or_hydrate`: the first reader lazy-loads disk and claims hydration via an
+   `AtomicBool`; a later `setup` hydrate is then a no-op (first hydrator wins).
 3. **Patch, validate, persist atomically.** `update_settings` merges the patch, runs `validate`
    (clamping ranges, normalizing enums), writes to a temp file and **renames** over `settings.json`
    (crash-safe), then applies side effects. A write failure returns `Err` and leaves the prior file
