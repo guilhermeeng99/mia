@@ -496,6 +496,44 @@ pub fn cancel_whisper_model_download(
     Ok(())
 }
 
+#[tauri::command]
+pub fn delete_whisper_model(
+    app: AppHandle,
+    stt: State<'_, SttState>,
+    model: String,
+) -> Result<(), String> {
+    let filename = model_filename(&model).ok_or_else(|| format!("unknown model: {model}"))?;
+    {
+        let downloads = stt
+            .downloads
+            .lock()
+            .map_err(|_| "stt download state poisoned".to_string())?;
+        if downloads.contains_key(&model) {
+            return Err(format!("download in progress: {model}"));
+        }
+    }
+
+    {
+        let mut server = stt
+            .server
+            .lock()
+            .map_err(|_| "stt state poisoned".to_string())?;
+        if server.as_ref().is_some_and(|warm| warm.model == model) {
+            *server = None;
+        }
+    }
+
+    let path = models_dir(&app)?.join(filename);
+    let part = path.with_extension("part");
+    if part.exists() {
+        std::fs::remove_file(&part).map_err(|e| format!("failed to delete partial model: {e}"))?;
+    }
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("failed to delete model: {e}"))?;
+    }
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GPU engine (optional, NVIDIA) — reused from Toolzy
 // ─────────────────────────────────────────────────────────────────────────────

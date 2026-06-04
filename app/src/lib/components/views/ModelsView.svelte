@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import {
     cancelWhisperModelDownload,
+    deleteWhisperModel,
     downloadGpuEngine,
     downloadWhisperModel,
     gpuEngineStatus,
@@ -29,6 +30,7 @@
   let gpu = $state<GpuStatus | null>(null);
   let downloading = $state<string | null>(null);
   let cancellingDownload = $state<string | null>(null);
+  let deletingModel = $state<string | null>(null);
   let progress = $state(0);
   let gpuDownloading = $state(false);
   let gpuProgress = $state(0);
@@ -134,6 +136,25 @@
     }
   }
 
+  async function deleteModel(model: WhisperModel) {
+    const confirmed = window.confirm(
+      `Deletar o modelo ${model.label} baixado? Você poderá baixar novamente depois.`,
+    );
+    if (!confirmed) return;
+
+    deletingModel = model.id;
+    error = null;
+    try {
+      await deleteWhisperModel(model.id);
+      await loadModels();
+      warm = await warmStatus();
+    } catch (e) {
+      fail(e);
+    } finally {
+      deletingModel = null;
+    }
+  }
+
   // Download the optional NVIDIA CUDA whisper engine (~435 MB) into app-data; once
   // present, the warm engine spawns the GPU build instead of CPU (~7-10x faster).
   async function downloadGpu() {
@@ -186,18 +207,28 @@
           </div>
           <div class="shrink-0 pt-1">
             {#if model.downloaded}
-              {#if activeModel === model.id}
-                <Pill tone="success">✓ em uso</Pill>
-              {:else}
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                {#if activeModel === model.id}
+                  <Pill tone="success">✓ em uso</Pill>
+                {:else}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={downloading !== null || deletingModel !== null}
+                    onclick={() => selectModel(model.id)}
+                  >
+                    Selecionar
+                  </Button>
+                {/if}
                 <Button
-                  variant="secondary"
+                  variant="danger"
                   size="sm"
-                  disabled={downloading !== null}
-                  onclick={() => selectModel(model.id)}
+                  disabled={downloading !== null || deletingModel !== null}
+                  onclick={() => deleteModel(model)}
                 >
-                  Selecionar
+                  {deletingModel === model.id ? "Deletando" : "Deletar"}
                 </Button>
-              {/if}
+              </div>
             {:else if downloading === model.id}
               <div class="flex items-center gap-2">
                 <Pill tone="accent">baixando… {progress}%</Pill>

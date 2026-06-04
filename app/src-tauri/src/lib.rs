@@ -231,6 +231,7 @@ pub fn run() {
             stt::list_whisper_models,
             stt::download_whisper_model,
             stt::cancel_whisper_model_download,
+            stt::delete_whisper_model,
             stt::gpu_engine_status,
             stt::download_gpu_engine,
             stt::warm_status,

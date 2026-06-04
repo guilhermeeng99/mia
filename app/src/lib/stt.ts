@@ -48,6 +48,11 @@ export function cancelWhisperModelDownload(model: string): Promise<void> {
   return invoke<void>("cancel_whisper_model_download", { model });
 }
 
+/** Delete a downloaded Whisper model from app-data. */
+export function deleteWhisperModel(model: string): Promise<void> {
+  return invoke<void>("delete_whisper_model", { model });
+}
+
 /** Whether an NVIDIA GPU is present and whether the CUDA engine is already installed. */
 export function gpuEngineStatus(): Promise<GpuStatus> {
   return invoke<GpuStatus>("gpu_engine_status");
