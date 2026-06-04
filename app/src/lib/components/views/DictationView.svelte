@@ -269,7 +269,7 @@
     error = null;
     try {
       await injectText(testText);
-      injectMsg = "Texto enviado para a janela em foco.";
+      injectMsg = "Texto colado na janela em foco.";
     } catch (e) {
       fail(e);
     }
@@ -431,7 +431,7 @@
   <Card>
     <h2 class="font-display text-title">Testar injeção</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Digita o texto na janela em foco via SendInput (ADR-005).
+      Cola o texto na janela em foco via area de transferencia (ADR-005).
     </p>
     <div class="mt-4 flex flex-col gap-3">
       <input bind:value={testText} class={inputClass} />

@@ -1,8 +1,8 @@
 //! System-wide text injection on Windows (ADR-005) — the last dictation stage.
-//! Two backends behind one `TextInjector` trait, runtime-selected: `enigo`
-//! `SendInput` Unicode keystrokes (default; layout-independent, no clipboard) and
-//! `arboard` clipboard + simulated `Ctrl+V` (fallback / forced; **saves and
-//! restores** the user's prior clipboard). See `docs/specs/text-injection.md`.
+//! Two backends behind one `TextInjector` trait, runtime-selected: `arboard`
+//! clipboard + simulated `Ctrl+V` (default; **saves and restores** the user's
+//! prior clipboard) and `enigo` SendInput Unicode keystrokes (explicit override;
+//! layout-independent, no clipboard). See `docs/specs/text-injection.md`.
 //!
 //! Focused-target and elevated-window (UIPI) detection (spec Rules 6-7) are wired in the
 //! **dictation orchestrator** (`dictation.rs`), not here, via `win32.rs`: it forces the
@@ -46,7 +46,7 @@ pub struct InjectSettings {
 impl Default for InjectSettings {
     fn default() -> Self {
         Self {
-            force_clipboard_mode: false,
+            force_clipboard_mode: true,
             clipboard_threshold_chars: 1000,
             sendinput_chunk_chars: 64,
             restore_clipboard: true,
@@ -146,8 +146,9 @@ pub fn redact_for_log(text: &str) -> String {
 // Backends
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Default backend: `SendInput` with `KEYEVENTF_UNICODE` (via enigo), chunked with
-/// a small inter-chunk yield so long paragraphs don't overflow the input queue.
+/// Explicit typing backend: `SendInput` with `KEYEVENTF_UNICODE` (via enigo),
+/// chunked with a small inter-chunk yield so long paragraphs don't overflow the
+/// input queue.
 pub struct SendInputInjector {
     pub chunk: usize,
 }
@@ -260,16 +261,17 @@ mod tests {
     }
 
     #[test]
-    fn pick_backend_auto_threshold() {
+    fn pick_backend_auto_defaults_to_clipboard() {
         let s = InjectSettings::default();
-        assert_eq!(pick_backend(InjectMode::Auto, 10, &s), Backend::SendInput);
+        assert_eq!(pick_backend(InjectMode::Auto, 10, &s), Backend::Clipboard);
         assert_eq!(pick_backend(InjectMode::Auto, 1000, &s), Backend::Clipboard);
     }
 
     #[test]
-    fn pick_backend_force_clipboard() {
-        let s = InjectSettings { force_clipboard_mode: true, ..Default::default() };
-        assert_eq!(pick_backend(InjectMode::Auto, 1, &s), Backend::Clipboard);
+    fn pick_backend_threshold_when_clipboard_is_not_forced() {
+        let s = InjectSettings { force_clipboard_mode: false, ..Default::default() };
+        assert_eq!(pick_backend(InjectMode::Auto, 10, &s), Backend::SendInput);
+        assert_eq!(pick_backend(InjectMode::Auto, 1000, &s), Backend::Clipboard);
     }
 
     #[test]
@@ -330,7 +332,7 @@ mod tests {
     #[test]
     fn resolved_backend_names_the_path() {
         let s = InjectSettings::default();
-        assert_eq!(resolved_backend(InjectMode::Auto, 10, &s), "send_input");
+        assert_eq!(resolved_backend(InjectMode::Auto, 10, &s), "clipboard");
         assert_eq!(resolved_backend(InjectMode::Auto, 1000, &s), "clipboard");
         assert_eq!(resolved_backend(InjectMode::Clipboard, 1, &s), "clipboard");
     }
