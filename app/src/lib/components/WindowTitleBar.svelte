@@ -75,15 +75,21 @@
     </button>
   </div>
 </header>
+<div class="titlebar-divider"></div>
 
 <style>
+  .titlebar-divider {
+    height: 2px;
+    flex-shrink: 0;
+    background: var(--color-charcoal);
+  }
+
   .window-titlebar {
     display: flex;
     height: 34px;
     flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
-    overflow: hidden;
     background: var(--color-canvas-deep);
     color: var(--color-ink-soft);
     cursor: default;
