@@ -64,14 +64,22 @@
   --radius-pill: 999px; /* buttons, nav, fields, badges, HUD */
 }
 
-:root {
-  color-scheme: light;
+html {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-body);
+  color: var(--color-charcoal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-html,
 body {
   margin: 0;
   padding: 0;
+  min-height: 100vh;
+  overflow: hidden;
   background: var(--color-canvas);
   font-family: var(--font-body);
   color: var(--color-charcoal);

@@ -84,7 +84,6 @@
     align-items: center;
     justify-content: space-between;
     overflow: hidden;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-hairline) 72%, white);
     background: var(--color-canvas-deep);
     color: var(--color-ink-soft);
     cursor: default;

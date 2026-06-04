@@ -21,7 +21,9 @@
         "minHeight": 520,
         "resizable": true,
         "decorations": false,
-        "shadow": true,
+        "transparent": true,
+        "shadow": false,
+        "backgroundColor": "#00000000",
         "theme": "Light",
         "visible": true
       },

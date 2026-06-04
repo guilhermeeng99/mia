@@ -98,6 +98,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // `shadow: false` removes the Win11 DWM top-line artifact, so request
+            // rounded corners explicitly for the frameless main window.
+            win32::apply_main_window_rounded_corners(app.handle());
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             // Hydrate the already-managed (default) state from disk now that the
