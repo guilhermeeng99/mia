@@ -7,11 +7,15 @@
 //! The registry / download / GPU-engine code follows the proven file-transcription
 //! pattern documented in `docs/specs/speech-to-text.md`, adapted to MIA's warm live path.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -108,6 +112,7 @@ impl Drop for WarmServer {
 #[derive(Default)]
 pub struct SttState {
     server: Mutex<Option<WarmServer>>,
+    downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,6 +353,7 @@ fn download_file(
     dest: &Path,
     progress: Option<&Channel<DownloadProgress>>,
     expected_sha256: &str,
+    cancelled: &AtomicBool,
 ) -> Result<(), String> {
     let resp = ureq::get(url).call().map_err(|e| format!("download failed: {e}"))?;
     let total: Option<u64> = resp
@@ -363,9 +369,17 @@ fn download_file(
     let mut downloaded = 0u64;
 
     loop {
+        if cancelled.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&part);
+            return Err("download cancelled".into());
+        }
         let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&part);
+            return Err("download cancelled".into());
         }
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         downloaded += n as u64;
@@ -379,6 +393,10 @@ fn download_file(
     }
 
     drop(file);
+    if cancelled.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(&part);
+        return Err("download cancelled".into());
+    }
     verify_file_sha256(&part, expected_sha256)?;
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
 }
@@ -404,6 +422,7 @@ pub fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModel>, String> 
 #[tauri::command]
 pub async fn download_whisper_model(
     app: AppHandle,
+    stt: State<'_, SttState>,
     model: String,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<String, String> {
@@ -417,21 +436,64 @@ pub async fn download_whisper_model(
     let dest = dir.join(&filename);
     let vad_path = dir.join(VAD_FILENAME);
     let dest_str = dest.to_string_lossy().into_owned();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+    let cancelled = {
+        let mut downloads = stt
+            .downloads
+            .lock()
+            .map_err(|_| "stt download state poisoned".to_string())?;
+        if downloads.contains_key(&model) {
+            return Err(format!("download already running: {model}"));
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        downloads.insert(model.clone(), cancelled.clone());
+        cancelled
+    };
+    let cleanup_model = model.clone();
+    let task_cancelled = cancelled.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let vad_ready = remove_invalid_file(&vad_path, VAD_SHA256)?;
         let model_ready = remove_invalid_file(&dest, expected_sha256)?;
         if !vad_ready {
-            download_file(VAD_URL, &vad_path, None, VAD_SHA256)?;
+            download_file(VAD_URL, &vad_path, None, VAD_SHA256, &task_cancelled)?;
         }
         if !model_ready {
-            download_file(&url, &dest, Some(&on_progress), expected_sha256)?;
+            download_file(
+                &url,
+                &dest,
+                Some(&on_progress),
+                expected_sha256,
+                &task_cancelled,
+            )?;
         }
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+
+    if let Ok(mut downloads) = stt.downloads.lock() {
+        downloads.remove(&cleanup_model);
+    }
+
+    result?;
 
     Ok(dest_str)
+}
+
+#[tauri::command]
+pub fn cancel_whisper_model_download(
+    stt: State<'_, SttState>,
+    model: String,
+) -> Result<(), String> {
+    let downloads = stt
+        .downloads
+        .lock()
+        .map_err(|_| "stt download state poisoned".to_string())?;
+    let Some(cancelled) = downloads.get(&model) else {
+        return Ok(());
+    };
+    cancelled.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -505,7 +567,8 @@ fn copy_engine_files(extracted: &Path, dest: &Path) -> Result<(), String> {
 fn install_gpu_engine(dir: &Path, on_progress: &Channel<DownloadProgress>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let zip = dir.join("engine.zip");
-    download_file(GPU_URL, &zip, Some(on_progress), GPU_SHA256)?;
+    let cancelled = AtomicBool::new(false);
+    download_file(GPU_URL, &zip, Some(on_progress), GPU_SHA256, &cancelled)?;
     let tmp = dir.join("extract");
     extract_zip(&zip, &tmp)?;
     copy_engine_files(&tmp, dir)?;

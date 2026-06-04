@@ -2,6 +2,7 @@
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import {
+    cancelWhisperModelDownload,
     downloadGpuEngine,
     downloadWhisperModel,
     gpuEngineStatus,
@@ -27,6 +28,7 @@
   let warm = $state<WarmStatus | null>(null);
   let gpu = $state<GpuStatus | null>(null);
   let downloading = $state<string | null>(null);
+  let cancellingDownload = $state<string | null>(null);
   let progress = $state(0);
   let gpuDownloading = $state(false);
   let gpuProgress = $state(0);
@@ -114,9 +116,21 @@
       await loadModels();
       warm = await warmStatus();
     } catch (e) {
-      fail(e);
+      if (!String(e).toLowerCase().includes("cancelled")) fail(e);
     } finally {
       downloading = null;
+      cancellingDownload = null;
+      await loadModels();
+    }
+  }
+
+  async function cancelDownload(id: string) {
+    cancellingDownload = id;
+    try {
+      await cancelWhisperModelDownload(id);
+    } catch (e) {
+      fail(e);
+      cancellingDownload = null;
     }
   }
 
@@ -185,7 +199,17 @@
                 </Button>
               {/if}
             {:else if downloading === model.id}
-              <Pill tone="accent">baixando… {progress}%</Pill>
+              <div class="flex items-center gap-2">
+                <Pill tone="accent">baixando… {progress}%</Pill>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancellingDownload === model.id}
+                  onclick={() => cancelDownload(model.id)}
+                >
+                  {cancellingDownload === model.id ? "Cancelando" : "Cancelar"}
+                </Button>
+              </div>
             {:else}
               <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
                 Baixar

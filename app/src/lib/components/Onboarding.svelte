@@ -4,7 +4,13 @@
   import { isMicPermissionDenied, openMicPrivacy, testMicrophone } from "../audio";
   import { getHotkey } from "../hotkey";
   import { getSettings, updateSettings, type ModelSettings } from "../settings";
-  import { downloadWhisperModel, listWhisperModels, type DownloadProgress, type WhisperModel } from "../stt";
+  import {
+    cancelWhisperModelDownload,
+    downloadWhisperModel,
+    listWhisperModels,
+    type DownloadProgress,
+    type WhisperModel,
+  } from "../stt";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
   import LevelMeter from "./ui/LevelMeter.svelte";
@@ -28,6 +34,7 @@
   let modelSettings = $state<ModelSettings | null>(null);
   let selectedModel = $state("small");
   let downloading = $state<string | null>(null);
+  let cancellingDownload = $state<string | null>(null);
   let progress = $state(0);
   let error = $state<string | null>(null);
 
@@ -80,9 +87,21 @@
       await selectModel(id);
       await refreshModels();
     } catch (e) {
-      error = String(e);
+      if (!String(e).toLowerCase().includes("cancelled")) error = String(e);
     } finally {
       downloading = null;
+      cancellingDownload = null;
+      await refreshModels();
+    }
+  }
+
+  async function cancelDownload(id: string) {
+    cancellingDownload = id;
+    try {
+      await cancelWhisperModelDownload(id);
+    } catch (e) {
+      error = String(e);
+      cancellingDownload = null;
     }
   }
 
@@ -183,7 +202,17 @@
                     </Button>
                   {/if}
                 {:else if downloading === model.id}
-                  <Pill tone="accent">{progress}%</Pill>
+                  <div class="flex items-center gap-2">
+                    <Pill tone="accent">{progress}%</Pill>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={cancellingDownload === model.id}
+                      onclick={() => cancelDownload(model.id)}
+                    >
+                      {cancellingDownload === model.id ? "Cancelando" : "Cancelar"}
+                    </Button>
+                  </div>
                 {:else}
                   <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
                     Baixar

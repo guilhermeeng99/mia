@@ -230,6 +230,7 @@ pub fn run() {
             stats::reset_stats,
             stt::list_whisper_models,
             stt::download_whisper_model,
+            stt::cancel_whisper_model_download,
             stt::gpu_engine_status,
             stt::download_gpu_engine,
             stt::warm_status,
