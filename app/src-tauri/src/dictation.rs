@@ -8,7 +8,10 @@
 //! I/O (vad/hotkey pattern). The `start/stop/cancel_dictation` commands wire the real
 //! cpal capture + warm STT + injection end-to-end (validated on Windows with a mic).
 
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -16,6 +19,16 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::hotkey::ActivationMode;
 use crate::settings::{CleanupSettings, DefaultLanguage};
+
+static PIPELINE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+struct PipelineActiveGuard;
+
+impl Drop for PipelineActiveGuard {
+    fn drop(&mut self) {
+        PIPELINE_ACTIVE.store(false, Ordering::Release);
+    }
+}
 
 /// The focused app's executable name, captured at session **start** and read at injection
 /// time — so a per-app style applies to the app the user was dictating into even if focus
@@ -275,6 +288,9 @@ fn start_dictation_blocking(
     app: AppHandle,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    if PIPELINE_ACTIVE.load(Ordering::Acquire) {
+        return Err("transcricao em segundo plano em andamento".to_string());
+    }
     let capture = app.state::<crate::audio::CaptureState>();
     let settings = app.state::<crate::settings::SettingsState>();
     let focus = app.state::<FocusContext>();
@@ -313,43 +329,69 @@ fn start_dictation_blocking(
 pub async fn stop_dictation(
     app: AppHandle,
     events: Channel<DictationEvent>,
-) -> Result<DictationResult, String> {
+) -> Result<(), String> {
     run_blocking(move || stop_dictation_blocking(app, events)).await
 }
 
 fn stop_dictation_blocking(
     app: AppHandle,
     events: Channel<DictationEvent>,
-) -> Result<DictationResult, String> {
+) -> Result<(), String> {
     let capture = app.state::<crate::audio::CaptureState>();
-    let stt_state = app.state::<crate::stt::SttState>();
     let settings = app.state::<crate::settings::SettingsState>();
-    let dict = app.state::<crate::dictionary::DictState>();
-    let snips = app.state::<crate::snippets::SnippetState>();
-    let stats = app.state::<crate::stats::StatsState>();
-    let history = app.state::<crate::history::HistoryState>();
     let focus = app.state::<FocusContext>();
     let s = settings.snapshot()?;
     // Resolve the per-app style from the app captured at start (per-app-context.md). Holds
     // an immutable borrow of `s`; `s` is never mutated below so the borrow is safe.
     let exe = focus.take();
     let style = if s.per_app.enabled {
-        exe.as_deref().and_then(|e| crate::app_styles::match_style(&s.per_app.styles, e))
+        exe.as_deref().and_then(|e| crate::app_styles::match_style(&s.per_app.styles, e)).cloned()
     } else {
         None
     };
-    let lang_pref = crate::app_styles::resolve_language(s.general.default_language, style);
+    let lang_pref = crate::app_styles::resolve_language(s.general.default_language, style.as_ref());
     let samples = crate::audio::end_capture(&capture)?;
     crate::dlog!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
     if samples.is_empty() {
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
-        return Ok(empty_result());
+        return Ok(());
+    }
+    if PIPELINE_ACTIVE
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        let msg = "transcricao em segundo plano em andamento; audio descartado".to_string();
+        let _ = events.send(DictationEvent::Error { message: msg.clone() });
+        return Err(msg);
     }
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
     emit_hud(&app, Phase::Transcribing, None);
     let t0 = crate::persist::now_ms();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = PipelineActiveGuard;
+        if let Err(e) = run_dictation_tail(app, events, s, style, lang_pref, samples, t0) {
+            crate::dlog!("[dictation] background tail failed: {e}");
+        }
+    });
+    Ok(())
+}
+
+fn run_dictation_tail(
+    app: AppHandle,
+    events: Channel<DictationEvent>,
+    s: crate::settings::Settings,
+    style: Option<crate::app_styles::AppStyle>,
+    lang_pref: DefaultLanguage,
+    samples: Vec<f32>,
+    t0: u64,
+) -> Result<DictationResult, String> {
+    let stt_state = app.state::<crate::stt::SttState>();
+    let dict = app.state::<crate::dictionary::DictState>();
+    let snips = app.state::<crate::snippets::SnippetState>();
+    let stats = app.state::<crate::stats::StatsState>();
+    let history = app.state::<crate::history::HistoryState>();
     let app_for_err = app.clone();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
         crate::dlog!("[dictation] error: {e}");
@@ -378,7 +420,7 @@ fn stop_dictation_blocking(
     let stt_end = crate::persist::now_ms();
     crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
 
-    let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style);
+    let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style.as_ref());
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(lang_pref), &opts);
     let dicted = crate::dictionary::apply_dictionary(&cleaned, &entries, &dsettings);
     // Snippet expansion is gated by a master switch (settings.general.snippets_enabled).
@@ -412,7 +454,7 @@ fn stop_dictation_blocking(
     // Rule 6 (best-effort): with no detectable foreground window, prefer the clipboard over
     // synthesizing keystrokes into the void. Otherwise use the per-app override (else Auto).
     let mode = if crate::win32::has_foreground_window() {
-        crate::app_styles::resolve_inject_mode(style)
+        crate::app_styles::resolve_inject_mode(style.as_ref())
     } else {
         crate::inject::InjectMode::Clipboard
     };
