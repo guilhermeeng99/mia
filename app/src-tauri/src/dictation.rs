@@ -198,10 +198,10 @@ pub fn build_result(
 //
 // MVP shape: start_dictation opens capture and returns; stop_dictation runs the
 // whole tail (STT → cleanup → dictionary → snippets → inject) and returns the
-// summary. The live HUD waveform is driven directly by the capture thread over
-// `hud://level`; the DictationEvent::Level channel variant stays available for a
-// future main-window meter but is unused on this path. The anti-hallucination VAD is
-// applied by whisper-server at transcription time.
+// summary. The recording indicator is the tray icon (tray::reflect_phase), so this
+// path drives no live waveform; the DictationEvent::Level channel variant stays
+// available for a future main-window meter but is unused here. The anti-hallucination
+// VAD is applied by whisper-server at transcription time.
 
 fn today_days() -> i64 {
     (crate::persist::now_secs() / 86_400) as i64
@@ -263,8 +263,27 @@ struct HudState<'a> {
     message: Option<&'a str>,
 }
 
-fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
-    let _ = app.emit("hud://state", HudState { phase, message });
+/// Read the user's chosen recording indicator (overlay / tray / both). Best-effort:
+/// defaults to the overlay if settings can't be read, preserving the historical UX.
+fn indicator(app: &AppHandle) -> crate::settings::Indicator {
+    app.state::<crate::settings::SettingsState>()
+        .snapshot()
+        .map(|s| s.hud.indicator)
+        .unwrap_or_default()
+}
+
+/// Reflect the current phase on whichever indicator(s) the user enabled (tray-and-hud.md):
+/// the floating HUD overlay (`hud://state`), the tray icon badge, or both. The engine
+/// drives them directly so feedback shows even when the Hub window is hidden. `message`
+/// enriches the transient error (HUD label + tray tooltip).
+fn show_phase(app: &AppHandle, phase: Phase, message: Option<&str>) {
+    let ind = indicator(app);
+    if ind.shows_overlay() {
+        let _ = app.emit("hud://state", HudState { phase, message });
+    }
+    if ind.shows_tray() {
+        crate::tray::reflect_phase(app, phase, message);
+    }
 }
 
 async fn run_blocking<T, F>(f: F) -> Result<T, String>
@@ -295,31 +314,23 @@ fn start_dictation_blocking(
     let settings = app.state::<crate::settings::SettingsState>();
     let focus = app.state::<FocusContext>();
     let s = settings.snapshot()?;
-    if !s.general.dictation_enabled {
-        let msg = "ditado desativado nas configurações".to_string();
-        emit_hud(&app, Phase::Error, Some(&msg));
-        emit_then_idle(&events, DictationEvent::Error { message: msg.clone() });
-        return Err(msg);
-    }
     crate::dlog!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
     // Capture the focused app now (before the HUD or anything can shift focus) so the
     // per-app style targets the app the user is dictating into (per-app-context.md).
     focus.set(crate::win32::foreground_process_name());
-    // Pass the AppHandle so the capture thread streams live RMS to the HUD waveform
-    // over `hud://level`; the CaptureEvent channel stays unused on this path.
-    if let Err(e) = crate::audio::begin_capture(
-        &capture,
-        Some(&s.audio.input_device),
-        None,
-        Some(app.clone()),
-    ) {
+    // Stream live RMS to the HUD waveform over `hud://level` only when the overlay is the
+    // chosen indicator; tray-only dictation needs no waveform, so it gets no AppHandle.
+    let hud_app = s.hud.indicator.shows_overlay().then(|| app.clone());
+    if let Err(e) =
+        crate::audio::begin_capture(&capture, Some(&s.audio.input_device), None, hud_app)
+    {
         focus.take();
-        emit_hud(&app, Phase::Error, Some(&e));
+        show_phase(&app, Phase::Error, Some(&e));
         emit_then_idle(&events, DictationEvent::Error { message: e.clone() });
         return Err(e);
     }
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
-    emit_hud(&app, Phase::Listening, None);
+    show_phase(&app, Phase::Listening, None);
     Ok(())
 }
 
@@ -354,7 +365,7 @@ fn stop_dictation_blocking(
     crate::dlog!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
     if samples.is_empty() {
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
-        emit_hud(&app, Phase::Idle, None);
+        show_phase(&app, Phase::Idle, None);
         return Ok(());
     }
     if PIPELINE_ACTIVE
@@ -367,7 +378,7 @@ fn stop_dictation_blocking(
     }
 
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
-    emit_hud(&app, Phase::Transcribing, None);
+    show_phase(&app, Phase::Transcribing, None);
     let t0 = crate::persist::now_ms();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = PipelineActiveGuard;
@@ -395,7 +406,7 @@ fn run_dictation_tail(
     let app_for_err = app.clone();
     let fail = |events: &Channel<DictationEvent>, e: String| -> String {
         crate::dlog!("[dictation] error: {e}");
-        emit_hud(&app_for_err, Phase::Error, Some(&e));
+        show_phase(&app_for_err, Phase::Error, Some(&e));
         emit_then_idle(events, DictationEvent::Error { message: e.clone() });
         e
     };
@@ -434,7 +445,7 @@ fn run_dictation_tail(
     if final_text.trim().is_empty() {
         crate::dlog!("[dictation] nothing to inject (empty after cleanup)");
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
-        emit_hud(&app, Phase::Idle, None);
+        show_phase(&app, Phase::Idle, None);
         return Ok(empty_result());
     }
 
@@ -465,7 +476,7 @@ fn run_dictation_tail(
     let inj_settings = crate::inject::InjectSettings::default();
     let backend = crate::inject::resolved_backend(mode, final_text.chars().count(), &inj_settings);
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
-    emit_hud(&app, Phase::Inserting, None);
+    show_phase(&app, Phase::Inserting, None);
     if let Err(e) = crate::inject::inject(&final_text, mode, &inj_settings) {
         return Err(fail(&events, e));
     }
@@ -479,7 +490,7 @@ fn run_dictation_tail(
     }
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
-    emit_hud(&app, Phase::Idle, None);
+    show_phase(&app, Phase::Idle, None);
     Ok(build_result(chars, lang, t0, stt_start, stt_end, done, backend))
 }
 
@@ -498,7 +509,7 @@ fn cancel_dictation_blocking(
     focus.take(); // drop the captured focus target — this session injects nothing
     let _ = crate::audio::end_capture(&capture); // discard the buffer
     emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
-    emit_hud(&app, Phase::Idle, None);
+    show_phase(&app, Phase::Idle, None);
     Ok(())
 }
 

@@ -56,6 +56,30 @@ pub enum HudPosition {
     BottomRight,
 }
 
+/// Which recording indicator(s) the engine drives during a dictation session.
+/// `Overlay` = the floating mic HUD only (the historical default); `Tray` = a colored
+/// badge on the tray icon only; `Both` = both at once. Read per phase-change in
+/// `dictation.rs::show_phase`.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Indicator {
+    Overlay,
+    Tray,
+    #[default]
+    Both,
+}
+
+impl Indicator {
+    /// Whether the floating HUD overlay should receive `hud://state`/`hud://level`.
+    pub fn shows_overlay(self) -> bool {
+        matches!(self, Indicator::Overlay | Indicator::Both)
+    }
+    /// Whether the tray icon should reflect the phase (badge + tooltip).
+    pub fn shows_tray(self) -> bool {
+        matches!(self, Indicator::Tray | Indicator::Both)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GeneralSettings {
@@ -133,6 +157,8 @@ impl Default for CleanupSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct HudSettings {
     pub position: HudPosition,
+    /// Which recording indicator(s) to show during dictation (overlay / tray / both).
+    pub indicator: Indicator,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -455,9 +481,19 @@ mod tests {
         assert_eq!(s.audio.input_device, "default");
         assert!(s.cleanup.filler_removal && s.cleanup.capitalization);
         assert_eq!(s.hud.position, HudPosition::Caret);
+        // Default shows both indicators (floating HUD + tray badge).
+        assert_eq!(s.hud.indicator, Indicator::Both);
         assert!(s.updates.auto_check_updates);
         assert!(!s.per_app.enabled);
         assert!(s.per_app.styles.is_empty());
+    }
+
+    #[test]
+    fn indicator_dispatch_flags() {
+        // A swapped arm here would silently route phase events to the wrong surface.
+        assert!(Indicator::Overlay.shows_overlay() && !Indicator::Overlay.shows_tray());
+        assert!(Indicator::Tray.shows_tray() && !Indicator::Tray.shows_overlay());
+        assert!(Indicator::Both.shows_overlay() && Indicator::Both.shows_tray());
     }
 
     #[test]

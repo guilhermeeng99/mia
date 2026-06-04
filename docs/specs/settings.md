@@ -257,9 +257,10 @@ transcription fidelity.
 
 (All cleanup rules detailed in [text-cleanup.md](text-cleanup.md).)
 
-### HUD
+### HUD / Recording indicator
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
+| `indicator` | enum | `overlay` \| `tray` \| `both` | `both` | Which recording indicator(s) show the live phase during dictation: the floating HUD overlay, a colored badge on the tray icon, or both. Set in the **Ditado** view; read by `dictation.rs::show_phase` ([tray-and-hud.md](tray-and-hud.md)). |
 | `hudPosition` | enum | `caret` \| `bottom-center` \| `bottom-right` | `caret` | Where the floating HUD anchors ([design-system.md](design-system.md#8b-floating-mic-hud-dark-frameless-always-on-top), [tray-and-hud.md](tray-and-hud.md)). |
 
 ### AI (Phase 2 — inert until [ai-commands.md](ai-commands.md))

@@ -4,7 +4,7 @@
 //! file owns the Tauri bootstrap and the `#[tauri::command]` registry; see the
 //! `invoke_handler!` block in `run()` for the live command set spanning the full
 //! pipeline (audio, dictation, hotkey, stt, settings, dictionary, snippets, stats,
-//! inject) plus the tray and the floating HUD window.
+//! inject) plus the tray (which doubles as the recording indicator).
 
 pub mod app_styles;
 pub mod audio;
@@ -144,7 +144,9 @@ pub fn run() {
             // Voice-triggered snippets — loaded from snippets.json.
             let snips = snippets::load_snippets(app.handle());
             app.state::<snippets::SnippetState>().hydrate(snips);
-            // System tray (Open / Quit). MIA runs in the tray.
+            // System tray (Open / Quit). MIA runs in the tray; the tray icon can also
+            // serve as the dictation recording indicator (tray::reflect_phase, driven by
+            // dictation.rs) when the user picks the "tray"/"both" indicator option.
             tray::init(app.handle())?;
             // Restore the Hub window's last normal bounds/maximized state after
             // settings and tray setup, before long-running background warmup.

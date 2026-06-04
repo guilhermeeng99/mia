@@ -1,17 +1,27 @@
-# Tray & Floating Mic HUD Feature Spec
+# Tray & Recording Indicator Feature Spec
 
+> **⚠️ DESIGN CHANGE (2026-06-04): the recording indicator is now USER-SELECTABLE.** A new setting
+> `hud.indicator` (enum `overlay` | `tray` | `both`, **default `both`**) chooses which surface
+> shows the live phase, exposed in the **Ditado** view. Both surfaces are live:
+> - **Overlay** — the floating mic HUD window (`hud.rs`, `HudWindow.svelte`, `MicHud.svelte`, the
+>   `"hud"` window in `tauri.conf.json`), driven by the engine's `hud://state` + `hud://level` events
+>   (unchanged from the original design — Sections 3/6/7/8 still apply to it).
+> - **Tray** — `tray::reflect_phase` paints a colored corner badge (red = listening, pumpkin/amber =
+>   transcribing/inserting) onto the brand icon and updates the tooltip per phase.
+>
+> The engine's `dictation.rs::show_phase` reads the setting per phase-change and drives the overlay
+> (`hud://state`), the tray badge, or both. The capture thread streams the HUD waveform (`hud://level`)
+> only when the overlay is active (tray-only dictation needs no waveform).
+>
 > **Status**: Phase 1 — **tray + HUD window both implemented and validated on Windows**. The tray
-> (`app/src-tauri/src/tray.rs`: Open Settings/Hub + Reativar atalho + Quit) is live, and the floating mic HUD now
-> lives in a **dedicated transparent, always-on-top, click-through window** (`app/src-tauri/src/hud.rs`
-> docks it + makes it click-through; `HudWindow.svelte` mounts `MicHud.svelte` on `?win=hud`), driven
-> directly by the engine's `hud://state` + `hud://level` events. **Close-to-tray is wired**: closing
-> the Hub hides it to the tray (`lib.rs` `on_window_event` → `prevent_close` + `hide`) instead of
-> quitting; only the tray "Sair" exits. The richer tray menu (checkable "Dictation enabled" + a
-> "pick model" submenu) and the stuck-HUD watchdog remain the documented Phase-1 backlog.
-> **Last updated**: 2026-05-30
-> **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces). Tray + HUD window are
-> live; §2's exact command set is partially superseded by the event-driven `hud.rs` + `dictation.rs`
-> implementation (state pushed via `hud://state`/`hud://level`, no `show_hud`/`hide_hud` commands).
+> (`app/src-tauri/src/tray.rs`: Open Settings/Hub + Reativar atalho + Quit) is live and now doubles as
+> a selectable recording indicator. **Close-to-tray is wired**: closing the Hub hides it to the tray
+> (`lib.rs` `on_window_event` → `prevent_close` + `hide`) instead of quitting; only the tray "Sair"
+> exits. The richer tray menu (a "pick model" submenu) remains the documented Phase-1 backlog.
+> **Last updated**: 2026-06-04
+> **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces). §2's exact command set
+> is partially superseded by the event-driven `hud.rs` + `dictation.rs` implementation, plus the new
+> `tray::reflect_phase` tray-badge path gated by `hud.indicator`.
 > **Environment**: desktop (Windows, native)
 
 MIA has **no main window** — it lives in the **system tray** and surfaces a tiny **floating mic
@@ -69,7 +79,7 @@ model, open Hub, quit).
 | **Trigger** | Tray icon click / tray menu selection; **state events** from the dictation orchestrator ([dictation.md](dictation.md)) that drive the tray icon art and the HUD state. The HUD itself never *starts* dictation — the global PTT hotkey does ([hotkeys.md](hotkeys.md)). |
 | **Audio in** | N/A directly. Receives a **derived RMS/level value** (a single `f32` per frame, already computed off the cpal callback — see [audio-capture.md](audio-capture.md)) to animate the waveform. Raw PCM never reaches this module. |
 | **Text in** | N/A. The HUD shows fixed per-state labels ("Listening…", "Transcribing…", "Inserted", error text), never the transcript itself in V1. |
-| **Text out** | N/A. No injection here. Emits **intents**: `dictationEnabled` toggle, active-model selection, "open Hub", "quit" — persisted via [settings.md](settings.md). |
+| **Text out** | N/A. No injection here. Emits **intents**: active-model selection, "open Hub", "quit" — persisted via [settings.md](settings.md). |
 | **Target** | The OS tray notification area; the dedicated frameless HUD window (always-on-top overlay); the Hub window (shown/hidden). |
 | **Language** | UI labels are localized (pt-BR / English, first-class — see [design-system.md](design-system.md)); the feature itself is language-agnostic. |
 
@@ -84,8 +94,35 @@ scalar level.
 
 ## 2. Engine Contract (Rust)
 
-> ⚠️ **PHASE-PENDING — richer commands not yet wired.** The commands in this section
-> (`show_hud` / `hide_hud` / `set_dictation_enabled` / `set_active_model` / `open_hub`) are the
+> ✅ **CURRENT (2026-06-04) — selectable indicator: overlay, tray, or both.** The engine reflects the
+> dictation phase on whichever surface(s) the user chose (`hud.indicator`). The HUD overlay is driven
+> by the global `hud://state`/`hud://level` events (as originally designed); the tray badge is driven
+> by a single internal helper (no `#[tauri::command]`, no IPC — engine and tray are both in-process):
+>
+> ```rust
+> // app/src-tauri/src/dictation.rs — the dispatcher, called on every phase change
+> fn show_phase(app: &AppHandle, phase: Phase, message: Option<&str>);  // overlay and/or tray
+>
+> // app/src-tauri/src/tray.rs — the tray-badge half
+> pub fn reflect_phase(app: &AppHandle, phase: Phase, message: Option<&str>);
+> // Pure, cargo-tested helpers behind it:
+> fn phase_tooltip(phase: Phase, message: Option<&str>) -> String;  // pt-BR tooltip per phase
+> fn phase_badge(phase: Phase) -> Option<[u8; 3]>;                  // badge color, None = plain icon
+> fn overlay_badge(rgba: &mut [u8], w: u32, h: u32, rgb: [u8; 3]);  // paint a corner dot in place
+> ```
+>
+> Tray icon (the brand icon with a dot painted over it at runtime — `overlay_dot`, no asset):
+> **Listening** → a **big red ball** (`#E53E3E`) with a soft red glow halo in the top-right corner
+> + "MIA — ouvindo…";
+> **Transcribing/Inserting** → a smaller amber (`#F2A033`) dot, bottom-right + "MIA —
+> transcrevendo…/inserindo…"; **Idle** → plain icon + "MIA — ditado local"; **Error** (transient) →
+> plain icon + message in the tooltip ("MIA — erro: …").
+>
+> The `show_hud`/`hide_hud`/`open_hub` commands below remain the **unimplemented** original design,
+> kept for history; the overlay is wired via events, not those commands.
+
+> ⚠️ **HISTORICAL / PARTIALLY-SUPERSEDED — richer commands not wired.** The commands in this section
+> (`show_hud` / `hide_hud` / `set_active_model` / `open_hub`) are the
 > **planned target** and are **not yet implemented** — none are registered in `lib.rs`'s
 > `invoke_handler`. **What exists today:** `app/src-tauri/src/tray.rs` implements the system tray
 > via Tauri's built-in tray-icon feature, with **Open Settings/Hub**, **Reativar atalho**, and **Quit** menu items; and
@@ -93,7 +130,7 @@ scalar level.
 > native window plumbing — click-through (`set_ignore_cursor_events`) + bottom-center docking
 > (`dock_bottom_center`). The mic HUD is a **dedicated Tauri window** labeled `"hud"` rendering
 > `HudWindow.svelte`, driven by `hud://state` events emitted from `dictation.rs`. The richer tray
-> menu (checkable "Dictation enabled", "Pick model" submenu) and the richer HUD commands above
+> menu ("Pick model" submenu) and the richer HUD commands above
 > remain on the Phase-1 backlog. Treat those signatures as the design contract to build against, not
 > as the live IPC surface.
 
@@ -128,8 +165,6 @@ async fn hide_hud(app: AppHandle) -> Result<(), String>;
 // HudWindow.svelte) listens for them. The level meter uses a throttled event, NOT a command.
 
 // ---- Tray-driven intents (also reachable from the Hub) ----
-#[tauri::command]
-async fn set_dictation_enabled(state: State<'_, AppState>, enabled: bool) -> Result<bool, String>;
 #[tauri::command]
 async fn set_active_model(state: State<'_, AppState>, model_id: String) -> Result<(), String>;
 #[tauri::command]
@@ -184,13 +219,9 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
    state ([dictation.md](dictation.md)); the HUD derives nothing on its own and shows whatever
    `hud://state` last said. A late/dropped event must never leave the HUD stuck visible — a hide is
    idempotent and a watchdog hides it if no event arrives within a timeout (see Rule 12).
-5. **Tray icon reflects state.** Three visuals: **idle** (MIA enabled, not dictating),
-   **listening** (an utterance is active — accent dot/ring), **disabled** (dictation toggled off —
-   muted/struck icon). The icon updates on every enable-toggle and on enter/leave of an utterance.
-6. **Dictation-enabled toggle is global and authoritative.** Toggling "Dictation enabled" off in
-   the tray makes the PTT hotkey a no-op ([hotkeys.md](hotkeys.md)) and sets the disabled icon;
-   `set_dictation_enabled` returns the new value and persists it ([settings.md](settings.md)). A
-   hotkey press while disabled shows **no** HUD.
+5. **Tray icon reflects state.** Two visuals: **idle** (MIA enabled, not dictating) and
+   **listening** (an utterance is active — accent dot/ring). The icon updates on enter/leave of an
+   utterance.
 7. **"Pick model" reflects and changes the active model.** The tray model submenu lists downloaded
    models with the active one checkmarked; selecting another calls `set_active_model`, which
    triggers a **warm-model swap** (ADR-004) — the tray shows a transient "loading model" hint and
@@ -233,7 +264,6 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
 
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `dictationEnabled` | bool | on / off | `true` | Master gate; off = PTT no-op, disabled tray icon, no HUD. |
 | `hudEnabled` | bool | on / off | `true` | If off, dictation still works but no HUD is shown (tray icon still reflects state). |
 | `hudAnchor` | enum | `caret` · `bottomCenter` · `bottomRight` · `topCenter` | `caret` | Position strategy; `caret` falls back to `bottomCenter` when the caret point is unknown (Rule 11). |
 | `hudClickThrough` | bool | on / off | `true` | Make the pill mouse-transparent where the OS allows (Rule 2). Off keeps no-activate but lets the pill be hovered. |
@@ -286,7 +316,7 @@ blush canvas) is shown/hidden by the tray.
 HUD state machine (mirrors dictation orchestrator — see dictation.md):
 
   Idle(window hidden)
-     │  hotkey down  &&  dictationEnabled  &&  hudEnabled   → show_hud (no-activate, positioned)
+     │  hotkey down  &&  hudEnabled   → show_hud (no-activate, positioned)
      ▼
   Listening(pumpkin waveform reacting to the level meter, on the white pill)
      │  endpoint / hotkey release

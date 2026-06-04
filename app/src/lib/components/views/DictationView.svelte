@@ -20,6 +20,8 @@
     type AudioSettings,
     type CleanupSettings,
     type GeneralSettings,
+    type HudSettings,
+    type Indicator,
   } from "../../settings";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
@@ -41,6 +43,7 @@
   let micLevel = $state(0);
   let micDenied = $state(false);
   let general = $state<GeneralSettings | null>(null);
+  let hud = $state<HudSettings | null>(null);
   let audio = $state<AudioSettings | null>(null);
   let cleanup = $state<CleanupSettings | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
@@ -197,6 +200,18 @@
     }
   }
 
+  // The indicator choice (overlay / tray / both) is read by the engine per phase-change,
+  // so persisting it here is all that's needed — no warm-engine restart.
+  async function setIndicator(value: Indicator) {
+    if (!hud) return;
+    try {
+      const s = await updateSettings({ hud: { ...hud, indicator: value } });
+      hud = s.hud;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function setCleanup<K extends keyof CleanupSettings>(key: K, value: CleanupSettings[K]) {
     if (!cleanup) return;
     try {
@@ -215,6 +230,7 @@
         audio = s.audio;
         cleanup = s.cleanup;
         hotkey = s.hotkey;
+        hud = s.hud;
         selectedDevice = s.audio.inputDevice === "default" ? "" : s.audio.inputDevice;
       })
       .catch(fail);
@@ -349,6 +365,28 @@
           <option value="auto">Automático</option>
           <option value="pt">Português (pt-BR)</option>
           <option value="en">English</option>
+        </select>
+      </Field>
+    </div>
+  </Card>
+
+  <Card>
+    <h2 class="font-display text-title">Indicador de gravação</h2>
+    <p class="mt-1 text-body text-ink-soft">
+      Como o MIA mostra que está ouvindo: o balão flutuante sobre o app, um ponto no
+      ícone da bandeja, ou os dois.
+    </p>
+    <div class="mt-4">
+      <Field label="Indicador">
+        <select
+          value={hud?.indicator ?? "both"}
+          disabled={!hud}
+          onchange={(e) => setIndicator((e.currentTarget as HTMLSelectElement).value as Indicator)}
+          class={selectClass}
+        >
+          <option value="overlay">Balão flutuante (overlay)</option>
+          <option value="tray">Ícone da bandeja</option>
+          <option value="both">Ambos</option>
         </select>
       </Field>
     </div>
