@@ -254,6 +254,12 @@ fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
     let _ = app.emit("hud://state", HudState { phase, message });
 }
 
+fn unload_model_if_idle(stt_state: &crate::stt::SttState, settings: &crate::settings::Settings) {
+    if settings.model.unload_on_idle {
+        let _ = crate::stt::unload(stt_state);
+    }
+}
+
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
 /// Returns immediately; `stop_dictation` runs the tail. A session ends only on an
 /// explicit user action — hotkey release (push-to-hold) or a second press
@@ -348,8 +354,18 @@ pub fn stop_dictation(
     // (spelling nudge) AND the post-STT replacement set (custom-dictionary.md).
     let (entries, dsettings) = dict.snapshot()?;
     let bias = crate::dictionary::build_bias_prompt(&entries, &dsettings);
-    let raw = crate::stt::transcribe_chunk(&stt_state, &samples, lang.as_deref(), (!bias.is_empty()).then_some(bias.as_str()))
-        .map_err(|e| fail(&events, e))?;
+    let raw = match crate::stt::transcribe_chunk(
+        &stt_state,
+        &samples,
+        lang.as_deref(),
+        (!bias.is_empty()).then_some(bias.as_str()),
+    ) {
+        Ok(raw) => raw,
+        Err(e) => {
+            unload_model_if_idle(&stt_state, &s);
+            return Err(fail(&events, e));
+        }
+    };
     let stt_end = crate::persist::now_ms();
     crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
 
@@ -366,6 +382,7 @@ pub fn stop_dictation(
 
     if final_text.trim().is_empty() {
         crate::dlog!("[dictation] nothing to inject (empty after cleanup)");
+        unload_model_if_idle(&stt_state, &s);
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
@@ -378,6 +395,7 @@ pub fn stop_dictation(
     // Rule 7: a higher-integrity (elevated/UAC) foreground window silently eats SendInput;
     // detecting it lets us tell the user instead of dropping their text into a black hole.
     if crate::win32::is_foreground_elevated() {
+        unload_model_if_idle(&stt_state, &s);
         return Err(fail(
             &events,
             "janela em foco é elevada (UAC) — execute o MIA como administrador para digitar nela"
@@ -399,7 +417,10 @@ pub fn stop_dictation(
     let backend = crate::inject::resolved_backend(mode, final_text.chars().count(), &inj_settings);
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
     emit_hud(&app, Phase::Inserting, None);
-    crate::inject::inject(&final_text, mode, &inj_settings).map_err(|e| fail(&events, e))?;
+    if let Err(e) = crate::inject::inject(&final_text, mode, &inj_settings) {
+        unload_model_if_idle(&stt_state, &s);
+        return Err(fail(&events, e));
+    }
     let done = crate::persist::now_ms();
     crate::dlog!("[dictation] injected {} chars", final_text.chars().count());
 
@@ -411,6 +432,7 @@ pub fn stop_dictation(
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     emit_hud(&app, Phase::Idle, None);
+    unload_model_if_idle(&stt_state, &s);
     Ok(build_result(chars, lang, t0, stt_start, stt_end, done, backend))
 }
 

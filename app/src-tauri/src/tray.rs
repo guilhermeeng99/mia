@@ -37,7 +37,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             }
         })
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "quit" => app.exit(0),
+            "quit" => quit_app(app),
             "open" => show_main(app),
             "reregister" => crate::hotkey::request_reregister(app),
             _ => {}
@@ -54,4 +54,11 @@ fn show_main(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn quit_app(app: &AppHandle) {
+    if let Some(stt) = app.try_state::<crate::stt::SttState>() {
+        let _ = crate::stt::unload(&stt);
+    }
+    app.exit(0);
 }

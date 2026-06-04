@@ -156,6 +156,9 @@ pub fn run() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
+                    if let Some(stt) = window.app_handle().try_state::<stt::SttState>() {
+                        let _ = stt::unload(&stt);
+                    }
                     let _ = window.hide();
                 }
                 // Returning to the Hub is a cheap, natural moment to re-claim the PTT

@@ -100,6 +100,7 @@ struct WarmServer {
 impl Drop for WarmServer {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -625,6 +626,12 @@ pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), 
     let gpu = exe.starts_with(gpu_dir(app)?);
     let port = free_port()?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    {
+        let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
+        if guard.as_ref().is_some_and(|s| s.model != model) {
+            *guard = None;
+        }
+    }
     let child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
     wait_for_server(port, Duration::from_secs(60))?;
 

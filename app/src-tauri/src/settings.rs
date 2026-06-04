@@ -410,9 +410,9 @@ pub fn update_settings(
         return Err(e);
     }
     state.set(next.clone())?;
-    // Side effect: a model change invalidates the warm engine after the new setting is
-    // durable. The next dictation warms the chosen model lazily.
-    if next.model.model != current.model.model {
+    // Side effect: any model-setting change invalidates the warm engine after the
+    // new setting is durable. The next dictation warms the chosen model lazily.
+    if next.model != current.model {
         let _ = crate::stt::unload(&stt);
     }
     // Side effect: keep the OS autostart entry in sync with the toggle (best-effort).
