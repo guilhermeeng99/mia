@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::hotkey::ActivationMode;
 use crate::settings::{CleanupSettings, DefaultLanguage};
@@ -254,10 +254,12 @@ fn emit_hud(app: &AppHandle, phase: Phase, message: Option<&str>) {
     let _ = app.emit("hud://state", HudState { phase, message });
 }
 
-fn unload_model_if_idle(stt_state: &crate::stt::SttState, settings: &crate::settings::Settings) {
-    if settings.model.unload_on_idle {
-        let _ = crate::stt::unload(stt_state);
-    }
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
@@ -265,13 +267,17 @@ fn unload_model_if_idle(stt_state: &crate::stt::SttState, settings: &crate::sett
 /// explicit user action — hotkey release (push-to-hold) or a second press
 /// (press-to-toggle) — never automatically on a pause in speech.
 #[tauri::command]
-pub fn start_dictation(
+pub async fn start_dictation(app: AppHandle, events: Channel<DictationEvent>) -> Result<(), String> {
+    run_blocking(move || start_dictation_blocking(app, events)).await
+}
+
+fn start_dictation_blocking(
     app: AppHandle,
-    capture: State<'_, crate::audio::CaptureState>,
-    settings: State<'_, crate::settings::SettingsState>,
-    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    let capture = app.state::<crate::audio::CaptureState>();
+    let settings = app.state::<crate::settings::SettingsState>();
+    let focus = app.state::<FocusContext>();
     let s = settings.snapshot()?;
     if !s.general.dictation_enabled {
         let msg = "ditado desativado nas configurações".to_string();
@@ -304,19 +310,25 @@ pub fn start_dictation(
 /// End capture and run the pipeline: STT → cleanup → dictionary → snippets →
 /// inject, emitting HUD events and returning the summary (Rules 2, 5-10, 14).
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // each managed State is a distinct collaborator
-pub fn stop_dictation(
+pub async fn stop_dictation(
     app: AppHandle,
-    capture: State<'_, crate::audio::CaptureState>,
-    stt_state: State<'_, crate::stt::SttState>,
-    settings: State<'_, crate::settings::SettingsState>,
-    dict: State<'_, crate::dictionary::DictState>,
-    snips: State<'_, crate::snippets::SnippetState>,
-    stats: State<'_, crate::stats::StatsState>,
-    history: State<'_, crate::history::HistoryState>,
-    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<DictationResult, String> {
+    run_blocking(move || stop_dictation_blocking(app, events)).await
+}
+
+fn stop_dictation_blocking(
+    app: AppHandle,
+    events: Channel<DictationEvent>,
+) -> Result<DictationResult, String> {
+    let capture = app.state::<crate::audio::CaptureState>();
+    let stt_state = app.state::<crate::stt::SttState>();
+    let settings = app.state::<crate::settings::SettingsState>();
+    let dict = app.state::<crate::dictionary::DictState>();
+    let snips = app.state::<crate::snippets::SnippetState>();
+    let stats = app.state::<crate::stats::StatsState>();
+    let history = app.state::<crate::history::HistoryState>();
+    let focus = app.state::<FocusContext>();
     let s = settings.snapshot()?;
     // Resolve the per-app style from the app captured at start (per-app-context.md). Holds
     // an immutable borrow of `s`; `s` is never mutated below so the borrow is safe.
@@ -361,10 +373,7 @@ pub fn stop_dictation(
         (!bias.is_empty()).then_some(bias.as_str()),
     ) {
         Ok(raw) => raw,
-        Err(e) => {
-            unload_model_if_idle(&stt_state, &s);
-            return Err(fail(&events, e));
-        }
+        Err(e) => return Err(fail(&events, e)),
     };
     let stt_end = crate::persist::now_ms();
     crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
@@ -382,7 +391,6 @@ pub fn stop_dictation(
 
     if final_text.trim().is_empty() {
         crate::dlog!("[dictation] nothing to inject (empty after cleanup)");
-        unload_model_if_idle(&stt_state, &s);
         emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
         emit_hud(&app, Phase::Idle, None);
         return Ok(empty_result());
@@ -395,7 +403,6 @@ pub fn stop_dictation(
     // Rule 7: a higher-integrity (elevated/UAC) foreground window silently eats SendInput;
     // detecting it lets us tell the user instead of dropping their text into a black hole.
     if crate::win32::is_foreground_elevated() {
-        unload_model_if_idle(&stt_state, &s);
         return Err(fail(
             &events,
             "janela em foco é elevada (UAC) — execute o MIA como administrador para digitar nela"
@@ -418,7 +425,6 @@ pub fn stop_dictation(
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
     emit_hud(&app, Phase::Inserting, None);
     if let Err(e) = crate::inject::inject(&final_text, mode, &inj_settings) {
-        unload_model_if_idle(&stt_state, &s);
         return Err(fail(&events, e));
     }
     let done = crate::persist::now_ms();
@@ -432,18 +438,21 @@ pub fn stop_dictation(
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     emit_hud(&app, Phase::Idle, None);
-    unload_model_if_idle(&stt_state, &s);
     Ok(build_result(chars, lang, t0, stt_start, stt_end, done, backend))
 }
 
 /// Abort: discard the in-flight session, inject nothing, HUD → Idle (Rule 8).
 #[tauri::command]
-pub fn cancel_dictation(
+pub async fn cancel_dictation(app: AppHandle, events: Channel<DictationEvent>) -> Result<(), String> {
+    run_blocking(move || cancel_dictation_blocking(app, events)).await
+}
+
+fn cancel_dictation_blocking(
     app: AppHandle,
-    capture: State<'_, crate::audio::CaptureState>,
-    focus: State<'_, FocusContext>,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    let capture = app.state::<crate::audio::CaptureState>();
+    let focus = app.state::<FocusContext>();
     focus.take(); // drop the captured focus target — this session injects nothing
     let _ = crate::audio::end_capture(&capture); // discard the buffer
     emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
