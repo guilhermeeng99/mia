@@ -35,6 +35,7 @@
   let gpuDownloading = $state(false);
   let gpuProgress = $state(0);
   let error = $state<string | null>(null);
+  let warmPoll: ReturnType<typeof setTimeout> | null = null;
 
   const MODEL_DETAILS: Record<
     string,
@@ -83,6 +84,26 @@
     error = String(e);
   }
 
+  function clearWarmPoll() {
+    if (warmPoll !== null) {
+      clearTimeout(warmPoll);
+      warmPoll = null;
+    }
+  }
+
+  async function refreshWarmStatus() {
+    clearWarmPoll();
+    const next = await warmStatus();
+    warm = next;
+    if (next.warming) {
+      warmPoll = setTimeout(() => {
+        warmPoll = null;
+        refreshWarmStatus().catch(fail);
+      }, 1000);
+    }
+    return next;
+  }
+
   async function loadModels() {
     models = await listWhisperModels();
   }
@@ -95,8 +116,9 @@
         activeModel = s.model.model;
       })
       .catch(fail);
-    warmStatus().then((w) => (warm = w)).catch(fail);
+    refreshWarmStatus().catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
+    return clearWarmPoll;
   });
 
   async function selectModel(id: string) {
@@ -106,7 +128,7 @@
       const s = await updateSettings({ model: { ...base, model: id } });
       modelSettings = s.model;
       activeModel = s.model.model;
-      warm = await warmStatus();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     }
@@ -121,7 +143,7 @@
       channel.onmessage = (p) => (progress = Math.round(p.percent));
       await downloadWhisperModel(id, channel);
       await loadModels();
-      warm = await warmStatus();
+      await refreshWarmStatus();
     } catch (e) {
       if (!String(e).toLowerCase().includes("cancelled")) fail(e);
     } finally {
@@ -152,7 +174,7 @@
     try {
       await deleteWhisperModel(model.id);
       await loadModels();
-      warm = await warmStatus();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     } finally {
@@ -171,6 +193,7 @@
       channel.onmessage = (p) => (gpuProgress = Math.round(p.percent));
       await downloadGpuEngine(channel);
       gpu = await gpuEngineStatus();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     } finally {
@@ -260,10 +283,10 @@
   <Card>
     <h2 class="font-display text-title">Aceleração</h2>
     <div class="mt-3 flex flex-wrap gap-3">
-      <Pill tone={warm?.loaded ? "success" : warm?.warming ? "accent" : "neutral"}>
+      <Pill tone={warm?.warming ? "accent" : warm?.loaded ? "success" : "neutral"}>
         {warmLabel()}
       </Pill>
-      <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
+      <Pill tone={warm?.gpu ? "success" : "neutral"}>motor: {warm?.gpu ? "GPU" : "CPU"}</Pill>
       {#if gpu?.gpuPresent}
         <Pill tone={gpu.downloaded ? "success" : "accent"}>
           GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}

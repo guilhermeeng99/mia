@@ -17,6 +17,7 @@
   let gpu = $state<GpuStatus | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
   let error = $state<string | null>(null);
+  let warmPoll: ReturnType<typeof setTimeout> | null = null;
 
   function fail(e: unknown) {
     error = String(e);
@@ -27,11 +28,31 @@
     return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
   }
 
+  function clearWarmPoll() {
+    if (warmPoll !== null) {
+      clearTimeout(warmPoll);
+      warmPoll = null;
+    }
+  }
+
+  async function refreshWarmStatus() {
+    clearWarmPoll();
+    const next = await warmStatus();
+    warm = next;
+    if (next.warming) {
+      warmPoll = setTimeout(() => {
+        warmPoll = null;
+        refreshWarmStatus().catch(fail);
+      }, 1000);
+    }
+  }
+
   onMount(() => {
     getStats().then((s) => (stats = s)).catch(fail);
-    warmStatus().then((w) => (warm = w)).catch(fail);
+    refreshWarmStatus().catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
     getHotkey().then((h) => (hotkey = h)).catch(fail);
+    return clearWarmPoll;
   });
 
   // Local-only usage stats — never uploaded (ADR-001). Clear + refetch.
@@ -83,10 +104,10 @@
     <h2 class="font-display text-title">Motor</h2>
     <p class="mt-1 text-body text-ink-soft">Locais — nada sai da máquina (ADR-001).</p>
     <div class="mt-4 flex flex-wrap gap-3">
-      <Pill tone={warm?.loaded ? "success" : warm?.warming ? "accent" : "neutral"}>
+      <Pill tone={warm?.warming ? "accent" : warm?.loaded ? "success" : "neutral"}>
         {warmLabel()}
       </Pill>
-      <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
+      <Pill tone={warm?.gpu ? "success" : "neutral"}>motor: {warm?.gpu ? "GPU" : "CPU"}</Pill>
       {#if gpu?.gpuPresent}
         <Pill tone={gpu.downloaded ? "success" : "accent"}>
           GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}

@@ -642,6 +642,7 @@ pub async fn download_gpu_engine(
     on_progress: Channel<DownloadProgress>,
 ) -> Result<(), String> {
     if gpu_dir(&app)?.join("whisper-server.exe").exists() {
+        warm_model_in_background(app.clone(), settings.snapshot()?.model.model);
         return Ok(());
     }
     let dir = gpu_dir(&app)?;
@@ -708,6 +709,14 @@ fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
     Err("whisper-server did not become ready in time".into())
 }
 
+fn warm_timeout(model: &str) -> Duration {
+    match model {
+        "large-v3" => Duration::from_secs(300),
+        "large-v3-turbo" | "medium" => Duration::from_secs(180),
+        _ => Duration::from_secs(90),
+    }
+}
+
 fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
     let mut cmd = std::process::Command::new(exe);
     cmd.args(args);
@@ -742,8 +751,12 @@ fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<()
             *guard = None;
         }
     }
-    let child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
-    wait_for_server(port, Duration::from_secs(60))?;
+    let mut child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
+    if let Err(e) = wait_for_server(port, warm_timeout(model)) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(e);
+    }
 
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
     *guard = Some(WarmServer { child, port, model: model.to_string(), gpu });
