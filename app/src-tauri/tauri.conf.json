@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "MIA",
-        "width": 920,
-        "height": 680,
+        "width": 1070,
+        "height": 850,
         "minWidth": 720,
         "minHeight": 520,
         "resizable": true,
