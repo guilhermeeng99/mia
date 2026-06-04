@@ -7,7 +7,6 @@
     testMicrophone,
     type AudioDevice,
   } from "../../audio";
-  import { injectText } from "../../inject";
   import {
     sampleHotkeyRecording,
     unregisterHotkey,
@@ -30,15 +29,13 @@
   import Toggle from "../ui/Toggle.svelte";
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import LevelMeter from "../ui/LevelMeter.svelte";
-  import { inputClass, selectClass } from "../ui/inputClass";
+  import { selectClass } from "../ui/inputClass";
 
   // The core dictation settings view — mic input, push-to-talk binding, language,
-  // startup, and the injection self-test. Presentation only; all logic goes through
+  // and startup. Presentation only; all logic goes through
   // the typed invoke() wrappers (architecture rule), never invoke() directly.
   let devices = $state<AudioDevice[]>([]);
   let selectedDevice = $state("");
-  let testText = $state("Olá do MIA — teste de injeção. 🎤");
-  let injectMsg = $state<string | null>(null);
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
   let micLevel = $state(0);
@@ -264,16 +261,6 @@
     openMicPrivacy().catch(fail);
   }
 
-  async function runInjectTest() {
-    injectMsg = null;
-    error = null;
-    try {
-      await injectText(testText);
-      injectMsg = "Texto colado na janela em foco.";
-    } catch (e) {
-      fail(e);
-    }
-  }
 </script>
 
 <PageHeader title="Ditado" subtitle="Como o MIA escuta e onde o texto aparece." />
@@ -425,22 +412,6 @@
           onchange={setLaunchAtLogin}
         />
       {/if}
-    </div>
-  </Card>
-
-  <Card>
-    <h2 class="font-display text-title">Testar injeção</h2>
-    <p class="mt-1 text-body text-ink-soft">
-      Cola o texto na janela em foco via area de transferencia (ADR-005).
-    </p>
-    <div class="mt-4 flex flex-col gap-3">
-      <input bind:value={testText} class={inputClass} />
-      <div class="flex items-center gap-3">
-        <Button onclick={runInjectTest}>Testar injeção</Button>
-        {#if injectMsg}
-          <span class="text-body text-success">{injectMsg}</span>
-        {/if}
-      </div>
     </div>
   </Card>
 </div>

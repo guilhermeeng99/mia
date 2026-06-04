@@ -189,7 +189,6 @@ pub fn run() {
             history::copy_history_entry,
             history::delete_history_entry,
             history::clear_history,
-            inject::inject_text,
             settings::get_settings,
             settings::update_settings,
             settings::reset_settings,

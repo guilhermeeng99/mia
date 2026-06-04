@@ -227,8 +227,7 @@ fn paste_shortcut() -> Result<(), String> {
 }
 
 /// Inject cleaned text into the focused window. Empty/whitespace → no-op (Rule 8).
-/// Called in-process by the dictation orchestrator (the hot path) and by the Hub's
-/// test command below.
+/// Called in-process by the dictation orchestrator (the hot path).
 pub fn inject(text: &str, mode: InjectMode, settings: &InjectSettings) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -237,13 +236,6 @@ pub fn inject(text: &str, mode: InjectMode, settings: &InjectSettings) -> Result
         Backend::SendInput => SendInputInjector { chunk: settings.sendinput_chunk_chars }.inject(text),
         Backend::Clipboard => ClipboardInjector.inject(text),
     }
-}
-
-/// Hub "test injection" command (and manual mode-forcing). Live dictation calls
-/// `inject` directly in Rust and never round-trips through the webview.
-#[tauri::command]
-pub fn inject_text(text: String, mode: Option<InjectMode>) -> Result<(), String> {
-    inject(&text, mode.unwrap_or(InjectMode::Auto), &InjectSettings::default())
 }
 
 #[cfg(test)]

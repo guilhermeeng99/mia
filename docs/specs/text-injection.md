@@ -1,6 +1,6 @@
 # Text Injection Feature Spec
 
-> **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the `inject_text` command (registered in `lib.rs`), all cargo-tested. **Rules 6–7 now wired** in the orchestrator via `win32.rs`: an elevated/UAC target (token-elevation probe) returns the run-as-administrator error (Rule 7), and no detectable foreground window falls back to the clipboard backend (Rule 6, best-effort — full editable-target/UIAutomation detection stays out of scope). On-device UAC validation is owner-gated.
+> **Status**: Phase 1 — implemented & wired: both backends (`SendInput` + clipboard save/restore), the `pick_backend` / `chunk_for_sendinput` / `should_use_clipboard` / `redact_for_log` pure helpers, and the in-process orchestrator injection path, all cargo-tested. **Rules 6–7 now wired** in the orchestrator via `win32.rs`: an elevated/UAC target (token-elevation probe) returns the run-as-administrator error (Rule 7), and no detectable foreground window falls back to the clipboard backend (Rule 6, best-effort — full editable-target/UIAutomation detection stays out of scope). On-device UAC validation is owner-gated.
 > **Last updated**: 2026-05-30
 > **Coverage**: Sections 1-9 drafted
 > **Environment**: desktop (Windows, native)
@@ -41,7 +41,7 @@ Hub ([settings.md](settings.md)).
 
 | Aspect | This feature |
 |---|---|
-| **Trigger** | Called by the dictation orchestrator after cleanup (utterance-end → cleaned text ready); also a UI "test injection" action in the Hub |
+| **Trigger** | Called by the dictation orchestrator after cleanup (utterance-end → cleaned text ready) |
 | **Audio in** | N/A — this stage is past STT |
 | **Text in** | Cleaned UTF-8 `String` from the text-cleanup module ([text-cleanup.md](text-cleanup.md)); plus a `mode` selector and the active settings |
 | **Text out** | Keystrokes / paste delivered to the OS-focused window via `SendInput`; **no** value returned on success (`Ok(())`) |
@@ -57,11 +57,8 @@ content is **never** read, stored, or logged (see Edge Cases).
 
 ## 2. Engine Contract (Rust)
 
-Rust is the **engine**; the Svelte UI is a thin webview that calls one typed `invoke()` wrapper and
-holds no injection logic (see [architecture.md](architecture.md)). All commands return
-`Result<T, String>` — no panics across the IPC boundary (ADR-006). In normal dictation the
-orchestrator calls the injector **directly in Rust**; the `#[tauri::command]` exists for the Hub's
-"test injection" button and for forcing a mode.
+Rust is the **engine**; the Svelte UI holds no injection logic (see [architecture.md](architecture.md)).
+The orchestrator calls the injector **directly in Rust** on the dictation hot path.
 
 **Module**: `app/src-tauri/src/inject.rs`
 
@@ -80,14 +77,14 @@ pub trait TextInjector: Send + Sync {
 pub struct SendInputInjector { /* enigo handle */ }
 pub struct ClipboardInjector { /* arboard handle + chunk size */ }
 
-#[tauri::command]
-fn inject_text(
-    text: String,
-    mode: Option<InjectMode>,    // None → Auto (the Option encodes the default)
+pub fn inject(
+    text: &str,
+    mode: InjectMode,
+    settings: &InjectSettings,
 ) -> Result<(), String>;
 ```
 
-- **`inject_text(text, mode)`** — entry point. `Auto` picks `SendInput` unless settings force
+- **`inject(text, mode, settings)`** — entry point. `Auto` picks `SendInput` unless settings force
   clipboard, the text exceeds `clipboard_threshold_chars`, or `SendInput` reports failure;
   `Clipboard`/`SendInput` force the named backend. Empty/whitespace-only `text` → `Ok(())` no-op.
 - **`SendInputInjector::inject`** — feeds `text` to `enigo` as `KEYEVENTF_UNICODE` events,
@@ -108,8 +105,6 @@ fn inject_text(
   - `should_use_clipboard(len, threshold) -> bool`.
   - `redact_for_log(text: &str) -> &'static str` — returns a length-only placeholder; injection text
     is **never** logged verbatim.
-- **UI wrapper**: `app/src/lib/inject.ts` → `invoke<void>("inject_text", { text, mode })`. Used only
-  by the Hub test action; live dictation never round-trips through the webview.
 
 ---
 
@@ -164,7 +159,7 @@ fn inject_text(
 
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
-| `inject_mode` | enum | `auto` / `sendInput` / `clipboard` | `auto` | Backend selection passed to `inject_text` |
+| `inject_mode` | enum | `auto` / `sendInput` / `clipboard` | `auto` | Backend selection passed to `inject` |
 | `force_clipboard_mode` | bool | true/false | `false` | When on, always use clipboard backend (Rule 11) |
 | `clipboard_threshold_chars` | int | 200–5000 | `1000` | At/over this length, `Auto` uses the clipboard backend (Rule 2b) |
 | `sendinput_chunk_chars` | int | 16–512 | `64` | Chars per `SendInput` chunk (Rule 9) |
@@ -218,8 +213,7 @@ Transitions: cleaned text ready → Inserting; inject Ok(()) → brief check →
   error state with a one-line message ("Window is elevated — run MIA as admin", "Copied to clipboard
   — no field focused"). Single action color; ≥40px hit targets on any actionable toast; never rely on
   color alone (icon + text).
-- **Settings/Hub** (light theme): exposes the Section 4 options plus a **"Test injection"** button
-  (types a sample string into a focus-following target / shows the result), and a clear note about the
+- **Settings/Hub** (light theme): exposes the Section 4 options and a clear note about the
   elevated-window limitation (ADR-005).
 
 ---
