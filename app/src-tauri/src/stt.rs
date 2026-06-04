@@ -269,12 +269,12 @@ fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
-    let filename = model_filename(model).ok_or_else(|| format!("unknown model: {model}"))?;
+    let def = model_def(model).ok_or_else(|| format!("unknown model: {model}"))?;
+    let filename = format!("ggml-{}.bin", def.id);
     let path = models_dir(app)?.join(filename);
-    if path.exists() {
-        if let Some(expected) = model_sha256(model) {
-            verify_file_sha256(&path, expected)?;
-        }
+    // The download path verifies SHA-256 before publishing the final file. The warm
+    // path must start immediately at app startup, so avoid hashing multi-GB models here.
+    if file_matches_size(&path, def.size_bytes) {
         Ok(path)
     } else {
         Err(format!("model not downloaded: {model}"))
