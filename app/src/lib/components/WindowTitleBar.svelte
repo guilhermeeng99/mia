@@ -22,11 +22,6 @@
     await win.close();
   }
 
-  function startDrag(event: MouseEvent) {
-    if (event.button !== 0 || event.detail > 1) return;
-    void win.startDragging();
-  }
-
   function stopControlEvent(event: MouseEvent) {
     event.stopPropagation();
   }
@@ -40,7 +35,6 @@
   class="window-titlebar"
   role="presentation"
   data-tauri-drag-region
-  onmousedown={startDrag}
   ondblclick={toggleMaximize}
 >
   <div class="window-title" data-tauri-drag-region>

@@ -47,33 +47,6 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[cfg(windows)]
-fn apply_main_window_rounded_corners<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use windows_sys::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-    };
-
-    let Some(win) = app.get_webview_window("main") else {
-        return;
-    };
-    let Ok(handle) = win.hwnd() else {
-        return;
-    };
-    let pref = DWMWCP_ROUND;
-
-    unsafe {
-        let _ = DwmSetWindowAttribute(
-            handle.0 as _,
-            DWMWA_WINDOW_CORNER_PREFERENCE as _,
-            &pref as *const _ as *const core::ffi::c_void,
-            std::mem::size_of_val(&pref) as u32,
-        );
-    }
-}
-
-#[cfg(not(windows))]
-fn apply_main_window_rounded_corners<R: tauri::Runtime>(_app: &tauri::AppHandle<R>) {}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -124,7 +97,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            apply_main_window_rounded_corners(app.handle());
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             // Hydrate the already-managed (default) state from disk now that the
