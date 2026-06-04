@@ -17,7 +17,6 @@ export interface GeneralSettings {
   launchAtLogin: boolean;
   dictationEnabled: boolean;
   defaultLanguage: DefaultLanguage;
-  playSounds: boolean;
   collectStats: boolean;
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;

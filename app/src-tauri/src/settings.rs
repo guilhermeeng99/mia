@@ -62,7 +62,6 @@ pub struct GeneralSettings {
     pub launch_at_login: bool,
     pub dictation_enabled: bool,
     pub default_language: DefaultLanguage,
-    pub play_sounds: bool,
     pub collect_stats: bool,
     /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
     pub snippets_enabled: bool,
@@ -77,7 +76,6 @@ impl Default for GeneralSettings {
             launch_at_login: false,
             dictation_enabled: true,
             default_language: DefaultLanguage::Auto,
-            play_sounds: false,
             collect_stats: true,
             snippets_enabled: true,
             onboarding_completed: false,
@@ -502,7 +500,7 @@ mod tests {
 
     #[test]
     fn migrate_inserts_missing_schema_version() {
-        let v = serde_json::json!({ "general": { "playSounds": true } });
+        let v = serde_json::json!({ "general": {} });
         let migrated = migrate(v);
         assert_eq!(migrated.get("schemaVersion").and_then(|x| x.as_u64()), Some(1));
     }
@@ -522,9 +520,8 @@ mod tests {
 
     #[test]
     fn parse_tolerates_missing_schema_version() {
-        let s = parse_settings(r#"{ "general": { "playSounds": true } }"#).unwrap();
+        let s = parse_settings(r#"{ "general": {} }"#).unwrap();
         assert_eq!(s.schema_version, SCHEMA_VERSION);
-        assert!(s.general.play_sounds);
     }
 
     #[test]
