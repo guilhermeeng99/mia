@@ -22,11 +22,6 @@
     await win.close();
   }
 
-  function startDrag(event: MouseEvent) {
-    if (event.button !== 0 || event.detail > 1) return;
-    void win.startDragging();
-  }
-
   function stopControlEvent(event: MouseEvent) {
     event.stopPropagation();
   }
@@ -40,7 +35,6 @@
   class="window-titlebar"
   role="presentation"
   data-tauri-drag-region
-  onmousedown={startDrag}
   ondblclick={toggleMaximize}
 >
   <div class="window-title" data-tauri-drag-region>
@@ -81,16 +75,21 @@
     </button>
   </div>
 </header>
+<div class="titlebar-divider"></div>
 
 <style>
+  .titlebar-divider {
+    height: 2px;
+    flex-shrink: 0;
+    background: var(--color-charcoal);
+  }
+
   .window-titlebar {
     display: flex;
     height: 34px;
     flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
-    overflow: hidden;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-hairline) 72%, white);
     background: var(--color-canvas-deep);
     color: var(--color-ink-soft);
     cursor: default;

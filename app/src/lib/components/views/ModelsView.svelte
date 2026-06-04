@@ -2,6 +2,8 @@
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import {
+    cancelWhisperModelDownload,
+    deleteWhisperModel,
     downloadGpuEngine,
     downloadWhisperModel,
     gpuEngineStatus,
@@ -27,10 +29,13 @@
   let warm = $state<WarmStatus | null>(null);
   let gpu = $state<GpuStatus | null>(null);
   let downloading = $state<string | null>(null);
+  let cancellingDownload = $state<string | null>(null);
+  let deletingModel = $state<string | null>(null);
   let progress = $state(0);
   let gpuDownloading = $state(false);
   let gpuProgress = $state(0);
   let error = $state<string | null>(null);
+  let warmPoll: ReturnType<typeof setTimeout> | null = null;
 
   const MODEL_DETAILS: Record<
     string,
@@ -70,8 +75,33 @@
     return models.find((model) => model.id === activeModel)?.label ?? activeModel;
   }
 
+  function warmLabel() {
+    if (warm?.warming) return `aquecendo · ${warm.targetModel ?? activeModel}`;
+    return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
+  }
+
   function fail(e: unknown) {
     error = String(e);
+  }
+
+  function clearWarmPoll() {
+    if (warmPoll !== null) {
+      clearTimeout(warmPoll);
+      warmPoll = null;
+    }
+  }
+
+  async function refreshWarmStatus() {
+    clearWarmPoll();
+    const next = await warmStatus();
+    warm = next;
+    if (next.warming) {
+      warmPoll = setTimeout(() => {
+        warmPoll = null;
+        refreshWarmStatus().catch(fail);
+      }, 1000);
+    }
+    return next;
   }
 
   async function loadModels() {
@@ -86,8 +116,9 @@
         activeModel = s.model.model;
       })
       .catch(fail);
-    warmStatus().then((w) => (warm = w)).catch(fail);
+    refreshWarmStatus().catch(fail);
     gpuEngineStatus().then((g) => (gpu = g)).catch(fail);
+    return clearWarmPoll;
   });
 
   async function selectModel(id: string) {
@@ -97,7 +128,7 @@
       const s = await updateSettings({ model: { ...base, model: id } });
       modelSettings = s.model;
       activeModel = s.model.model;
-      warm = await warmStatus();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     }
@@ -112,11 +143,42 @@
       channel.onmessage = (p) => (progress = Math.round(p.percent));
       await downloadWhisperModel(id, channel);
       await loadModels();
-      warm = await warmStatus();
+      await refreshWarmStatus();
+    } catch (e) {
+      if (!String(e).toLowerCase().includes("cancelled")) fail(e);
+    } finally {
+      downloading = null;
+      cancellingDownload = null;
+      await loadModels();
+    }
+  }
+
+  async function cancelDownload(id: string) {
+    cancellingDownload = id;
+    try {
+      await cancelWhisperModelDownload(id);
+    } catch (e) {
+      fail(e);
+      cancellingDownload = null;
+    }
+  }
+
+  async function deleteModel(model: WhisperModel) {
+    const confirmed = window.confirm(
+      `Deletar o modelo ${model.label} baixado? Você poderá baixar novamente depois.`,
+    );
+    if (!confirmed) return;
+
+    deletingModel = model.id;
+    error = null;
+    try {
+      await deleteWhisperModel(model.id);
+      await loadModels();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     } finally {
-      downloading = null;
+      deletingModel = null;
     }
   }
 
@@ -131,6 +193,7 @@
       channel.onmessage = (p) => (gpuProgress = Math.round(p.percent));
       await downloadGpuEngine(channel);
       gpu = await gpuEngineStatus();
+      await refreshWarmStatus();
     } catch (e) {
       fail(e);
     } finally {
@@ -172,20 +235,40 @@
           </div>
           <div class="shrink-0 pt-1">
             {#if model.downloaded}
-              {#if activeModel === model.id}
-                <Pill tone="success">✓ em uso</Pill>
-              {:else}
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                {#if activeModel === model.id}
+                  <Pill tone="success">✓ em uso</Pill>
+                {:else}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={downloading !== null || deletingModel !== null}
+                    onclick={() => selectModel(model.id)}
+                  >
+                    Selecionar
+                  </Button>
+                {/if}
                 <Button
-                  variant="secondary"
+                  variant="danger"
                   size="sm"
-                  disabled={downloading !== null}
-                  onclick={() => selectModel(model.id)}
+                  disabled={downloading !== null || deletingModel !== null}
+                  onclick={() => deleteModel(model)}
                 >
-                  Selecionar
+                  {deletingModel === model.id ? "Deletando" : "Deletar"}
                 </Button>
-              {/if}
+              </div>
             {:else if downloading === model.id}
-              <Pill tone="accent">baixando… {progress}%</Pill>
+              <div class="flex items-center gap-2">
+                <Pill tone="accent">baixando… {progress}%</Pill>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancellingDownload === model.id}
+                  onclick={() => cancelDownload(model.id)}
+                >
+                  {cancellingDownload === model.id ? "Cancelando" : "Cancelar"}
+                </Button>
+              </div>
             {:else}
               <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
                 Baixar
@@ -200,10 +283,10 @@
   <Card>
     <h2 class="font-display text-title">Aceleração</h2>
     <div class="mt-3 flex flex-wrap gap-3">
-      <Pill tone={warm?.loaded ? "success" : "neutral"}>
-        {warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)"}
+      <Pill tone={warm?.warming ? "accent" : warm?.loaded ? "success" : "neutral"}>
+        {warmLabel()}
       </Pill>
-      <Pill tone="neutral">backend: {warm?.backend ?? "—"}</Pill>
+      <Pill tone={warm?.gpu ? "success" : "neutral"}>motor: {warm?.gpu ? "GPU" : "CPU"}</Pill>
       {#if gpu?.gpuPresent}
         <Pill tone={gpu.downloaded ? "success" : "accent"}>
           GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}

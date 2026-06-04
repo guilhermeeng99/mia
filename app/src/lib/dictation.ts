@@ -30,10 +30,29 @@ export function startDictation(onEvent: (e: DictationEvent) => void): Promise<vo
 }
 
 /** End capture and run STT → cleanup → dictionary → snippets → inject. */
-export function stopDictation(onEvent: (e: DictationEvent) => void): Promise<DictationResult> {
+export function stopDictation(onEvent: (e: DictationEvent) => void): Promise<void> {
   const events = new Channel<DictationEvent>();
-  events.onmessage = onEvent;
-  return invoke<DictationResult>("stop_dictation", { events });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = () => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    };
+    events.onmessage = (event) => {
+      onEvent(event);
+      if (event.kind === "injected" || event.kind === "cancelled" || event.kind === "error") {
+        settle();
+      }
+    };
+    invoke<void>("stop_dictation", { events }).catch((error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+  });
 }
 
 /** Abort the in-flight session; inject nothing, HUD → idle. */

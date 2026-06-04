@@ -12,7 +12,11 @@
 /// style key derivation is unit-tested without the unsafe Win32 FFI wrapped around it.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn exe_stem(path: &str) -> String {
-    let file = path.rsplit(['\\', '/']).next().unwrap_or(path).to_lowercase();
+    let file = path
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(path)
+        .to_lowercase();
     file.strip_suffix(".exe").unwrap_or(&file).to_string()
 }
 
@@ -20,7 +24,11 @@ fn exe_stem(path: &str) -> String {
 mod imp {
     use std::ffi::c_void;
 
+    use tauri::{AppHandle, Manager};
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
     use windows_sys::Win32::Security::{
         GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
     };
@@ -115,6 +123,26 @@ mod imp {
     pub fn has_foreground_window() -> bool {
         unsafe { !GetForegroundWindow().is_null() }
     }
+
+    /// Re-apply Win11 rounded corners after disabling the native shadow. Best-effort:
+    /// failure just falls back to CSS clipping, and must never block app startup.
+    pub fn apply_main_window_rounded_corners(app: &AppHandle) {
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        let Ok(hwnd) = window.hwnd() else {
+            return;
+        };
+        let corner_preference = DWMWCP_ROUND;
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd.0 as _,
+                DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                &corner_preference as *const _ as *const c_void,
+                std::mem::size_of_val(&corner_preference) as u32,
+            );
+        }
+    }
 }
 
 #[cfg(not(windows))]
@@ -128,9 +156,13 @@ mod imp {
     pub fn has_foreground_window() -> bool {
         true
     }
+    pub fn apply_main_window_rounded_corners(_app: &tauri::AppHandle) {}
 }
 
-pub use imp::{foreground_process_name, has_foreground_window, is_foreground_elevated};
+pub use imp::{
+    apply_main_window_rounded_corners, foreground_process_name, has_foreground_window,
+    is_foreground_elevated,
+};
 
 #[cfg(test)]
 mod tests {
@@ -138,7 +170,10 @@ mod tests {
 
     #[test]
     fn exe_stem_takes_lowercased_last_segment_without_exe() {
-        assert_eq!(exe_stem("C:\\Program Files\\Microsoft VS Code\\Code.exe"), "code");
+        assert_eq!(
+            exe_stem("C:\\Program Files\\Microsoft VS Code\\Code.exe"),
+            "code"
+        );
         assert_eq!(exe_stem("WINWORD.EXE"), "winword");
         assert_eq!(exe_stem("/usr/bin/Foo"), "foo"); // forward slashes too
         assert_eq!(exe_stem("C:\\app\\noext"), "noext"); // no extension to strip

@@ -7,14 +7,21 @@
     testMicrophone,
     type AudioDevice,
   } from "../../audio";
-  import { injectText } from "../../inject";
-  import type { ActivationMode, HotkeyConfig } from "../../hotkey";
+  import {
+    sampleHotkeyRecording,
+    unregisterHotkey,
+    updateHotkey,
+    type ActivationMode,
+    type HotkeyConfig,
+  } from "../../hotkey";
   import {
     getSettings,
     updateSettings,
     type AudioSettings,
     type CleanupSettings,
     type GeneralSettings,
+    type HudSettings,
+    type Indicator,
   } from "../../settings";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
@@ -24,24 +31,27 @@
   import Toggle from "../ui/Toggle.svelte";
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import LevelMeter from "../ui/LevelMeter.svelte";
-  import { inputClass, selectClass } from "../ui/inputClass";
+  import { selectClass } from "../ui/inputClass";
 
   // The core dictation settings view — mic input, push-to-talk binding, language,
-  // startup, and the injection self-test. Presentation only; all logic goes through
+  // and startup. Presentation only; all logic goes through
   // the typed invoke() wrappers (architecture rule), never invoke() directly.
   let devices = $state<AudioDevice[]>([]);
   let selectedDevice = $state("");
-  let testText = $state("Olá do MIA — teste de injeção. 🎤");
-  let injectMsg = $state<string | null>(null);
   let micMsg = $state<string | null>(null);
   let micTesting = $state(false);
   let micLevel = $state(0);
   let micDenied = $state(false);
   let general = $state<GeneralSettings | null>(null);
+  let hud = $state<HudSettings | null>(null);
   let audio = $state<AudioSettings | null>(null);
   let cleanup = $state<CleanupSettings | null>(null);
   let hotkey = $state<HotkeyConfig | null>(null);
   let recording = $state(false);
+  let armingHotkeyRecorder = $state(false);
+  let hotkeySuspended = $state(false);
+  let recordingPoll = $state<number | null>(null);
+  let pendingHotkey = $state<string | null>(null);
   let hotkeyError = $state<string | null>(null);
   let error = $state<string | null>(null);
 
@@ -49,51 +59,60 @@
     error = String(e);
   }
 
-  // Map a KeyboardEvent.code to MIA's canonical key token (matches the Rust parser).
-  function keyFromCode(code: string): string | null {
-    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
-    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
-    const named: Record<string, string> = {
-      Space: "Space", Tab: "Tab", Enter: "Enter", Escape: "Escape", Delete: "Delete",
-      ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
-    };
-    return named[code] ?? null;
-  }
-
-  // Build a canonical accelerator (e.g. "Ctrl+Shift+D") or null while still waiting
-  // for a modifier+key chord (a bare key is rejected by the engine, Rule 5).
-  function accelFromEvent(e: KeyboardEvent): string | null {
-    const mods: string[] = [];
-    if (e.ctrlKey) mods.push("Ctrl");
-    if (e.altKey) mods.push("Alt");
-    if (e.shiftKey) mods.push("Shift");
-    if (e.metaKey) mods.push("Super");
-    const key = keyFromCode(e.code);
-    if (!key || mods.length === 0) return null;
-    return [...mods, key].join("+");
-  }
-
-  function onRecordKey(e: KeyboardEvent) {
+  async function pollHotkeyRecording() {
     if (!recording) return;
-    e.preventDefault();
-    if (e.code === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
-      stopRecording();
-      return;
+    try {
+      const sample = await sampleHotkeyRecording();
+      if (!recording) return;
+      if (sample.cancelled) {
+        await cancelRecording();
+        return;
+      }
+      if (sample.accelerator) pendingHotkey = sample.accelerator;
+      if (sample.released && pendingHotkey) {
+        await commitHotkey(pendingHotkey);
+      }
+    } catch (e) {
+      hotkeyError = String(e);
+      await cancelRecording();
     }
-    const accel = accelFromEvent(e);
-    if (accel) void commitHotkey(accel);
   }
 
-  function startRecording() {
+  async function startRecording() {
+    if (recording || armingHotkeyRecorder) return;
     hotkeyError = null;
-    recording = true;
-    window.addEventListener("keydown", onRecordKey, true);
+    pendingHotkey = null;
+    armingHotkeyRecorder = true;
+    try {
+      await unregisterHotkey();
+      hotkeySuspended = true;
+      recording = true;
+      recordingPoll = window.setInterval(() => void pollHotkeyRecording(), 30);
+      void pollHotkeyRecording();
+    } catch (e) {
+      hotkeyError = String(e);
+    } finally {
+      armingHotkeyRecorder = false;
+    }
   }
 
   function stopRecording() {
     recording = false;
-    window.removeEventListener("keydown", onRecordKey, true);
+    if (recordingPoll !== null) {
+      window.clearInterval(recordingPoll);
+      recordingPoll = null;
+    }
+  }
+
+  async function restoreCurrentHotkeyRuntime() {
+    if (!hotkeySuspended || !hotkey) return;
+    try {
+      await updateHotkey(hotkey);
+    } catch (e) {
+      hotkeyError = String(e);
+    } finally {
+      hotkeySuspended = false;
+    }
   }
 
   // Persist + re-register via settings; a conflicting chord rejects before disk write.
@@ -103,9 +122,24 @@
     try {
       const s = await updateSettings({ hotkey: { accelerator, mode } });
       hotkey = s.hotkey;
+      pendingHotkey = null;
+      hotkeySuspended = false;
     } catch (e) {
       hotkeyError = String(e);
+      await restoreCurrentHotkeyRuntime();
     }
+  }
+
+  async function cancelRecording() {
+    stopRecording();
+    pendingHotkey = null;
+    hotkeyError = null;
+    await restoreCurrentHotkeyRuntime();
+  }
+
+  function confirmPendingHotkey() {
+    if (!pendingHotkey) return;
+    void commitHotkey(pendingHotkey);
   }
 
   async function setMode(mode: ActivationMode) {
@@ -142,16 +176,6 @@
     }
   }
 
-  async function setDictationEnabled(value: boolean) {
-    if (!general) return;
-    try {
-      const s = await updateSettings({ general: { ...general, dictationEnabled: value } });
-      general = s.general;
-    } catch (e) {
-      fail(e);
-    }
-  }
-
   async function setCollectStats(value: boolean) {
     if (!general) return;
     try {
@@ -176,6 +200,18 @@
     }
   }
 
+  // The indicator choice (overlay / tray / both) is read by the engine per phase-change,
+  // so persisting it here is all that's needed — no warm-engine restart.
+  async function setIndicator(value: Indicator) {
+    if (!hud) return;
+    try {
+      const s = await updateSettings({ hud: { ...hud, indicator: value } });
+      hud = s.hud;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function setCleanup<K extends keyof CleanupSettings>(key: K, value: CleanupSettings[K]) {
     if (!cleanup) return;
     try {
@@ -194,13 +230,16 @@
         audio = s.audio;
         cleanup = s.cleanup;
         hotkey = s.hotkey;
+        hud = s.hud;
         selectedDevice = s.audio.inputDevice === "default" ? "" : s.audio.inputDevice;
       })
       .catch(fail);
     // Always drop the global capture-phase keydown listener if the view unmounts while
     // still recording a chord (switching sidebar views destroys this component) — else
     // it leaks and keeps capturing keys against a dead component.
-    return () => stopRecording();
+    return () => {
+      void cancelRecording();
+    };
   });
 
   async function runMicTest() {
@@ -228,16 +267,6 @@
     openMicPrivacy().catch(fail);
   }
 
-  async function runInjectTest() {
-    injectMsg = null;
-    error = null;
-    try {
-      await injectText(testText);
-      injectMsg = "Texto enviado para a janela em foco.";
-    } catch (e) {
-      fail(e);
-    }
-  }
 </script>
 
 <PageHeader title="Ditado" subtitle="Como o MIA escuta e onde o texto aparece." />
@@ -292,11 +321,17 @@
     {/if}
     <div class="mt-4 flex flex-wrap items-center gap-3">
       <Pill tone="accent">{hotkey?.accelerator ?? "—"}</Pill>
-      <Button variant="secondary" size="sm" disabled={recording} onclick={startRecording}>
-        {recording ? "Pressione a combinação…" : "Gravar atalho"}
+      {#if pendingHotkey}
+        <Pill tone="info">Novo: {pendingHotkey}</Pill>
+      {/if}
+      <Button variant="secondary" size="sm" disabled={recording || armingHotkeyRecorder || !!pendingHotkey} onclick={() => void startRecording()}>
+        {recording ? "Pressione a combinação…" : armingHotkeyRecorder ? "Preparando…" : "Gravar atalho"}
       </Button>
-      {#if recording}
-        <Button variant="ghost" size="sm" onclick={stopRecording}>Cancelar</Button>
+      {#if pendingHotkey}
+        <Button size="sm" onclick={confirmPendingHotkey}>Confirmar</Button>
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
+      {:else if recording}
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
       {/if}
     </div>
     <div class="mt-4">
@@ -336,6 +371,28 @@
   </Card>
 
   <Card>
+    <h2 class="font-display text-title">Indicador de gravação</h2>
+    <p class="mt-1 text-body text-ink-soft">
+      Como o MIA mostra que está ouvindo: o balão flutuante sobre o app, um ponto no
+      ícone da bandeja, ou os dois.
+    </p>
+    <div class="mt-4">
+      <Field label="Indicador">
+        <select
+          value={hud?.indicator ?? "both"}
+          disabled={!hud}
+          onchange={(e) => setIndicator((e.currentTarget as HTMLSelectElement).value as Indicator)}
+          class={selectClass}
+        >
+          <option value="overlay">Balão flutuante (overlay)</option>
+          <option value="tray">Ícone da bandeja</option>
+          <option value="both">Ambos</option>
+        </select>
+      </Field>
+    </div>
+  </Card>
+
+  <Card>
     <h2 class="font-display text-title">Limpeza de texto</h2>
     <div class="mt-4 grid gap-3 sm:grid-cols-2">
       {#if cleanup}
@@ -368,11 +425,6 @@
     <div class="mt-3 flex flex-col gap-3">
       {#if general}
         <Toggle
-          checked={general.dictationEnabled}
-          label="Ditado ativado"
-          onchange={setDictationEnabled}
-        />
-        <Toggle
           checked={general.collectStats}
           label="Coletar estatísticas locais"
           onchange={setCollectStats}
@@ -383,22 +435,6 @@
           onchange={setLaunchAtLogin}
         />
       {/if}
-    </div>
-  </Card>
-
-  <Card>
-    <h2 class="font-display text-title">Testar injeção</h2>
-    <p class="mt-1 text-body text-ink-soft">
-      Digita o texto na janela em foco via SendInput (ADR-005).
-    </p>
-    <div class="mt-4 flex flex-col gap-3">
-      <input bind:value={testText} class={inputClass} />
-      <div class="flex items-center gap-3">
-        <Button onclick={runInjectTest}>Testar injeção</Button>
-        {#if injectMsg}
-          <span class="text-body text-success">{injectMsg}</span>
-        {/if}
-      </div>
     </div>
   </Card>
 </div>

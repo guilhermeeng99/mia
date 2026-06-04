@@ -56,13 +56,36 @@ pub enum HudPosition {
     BottomRight,
 }
 
+/// Which recording indicator(s) the engine drives during a dictation session.
+/// `Overlay` = the floating mic HUD only (the historical default); `Tray` = a colored
+/// badge on the tray icon only; `Both` = both at once. Read per phase-change in
+/// `dictation.rs::show_phase`.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Indicator {
+    Overlay,
+    Tray,
+    #[default]
+    Both,
+}
+
+impl Indicator {
+    /// Whether the floating HUD overlay should receive `hud://state`/`hud://level`.
+    pub fn shows_overlay(self) -> bool {
+        matches!(self, Indicator::Overlay | Indicator::Both)
+    }
+    /// Whether the tray icon should reflect the phase (badge + tooltip).
+    pub fn shows_tray(self) -> bool {
+        matches!(self, Indicator::Tray | Indicator::Both)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GeneralSettings {
     pub launch_at_login: bool,
     pub dictation_enabled: bool,
     pub default_language: DefaultLanguage,
-    pub play_sounds: bool,
     pub collect_stats: bool,
     /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
     pub snippets_enabled: bool,
@@ -77,7 +100,6 @@ impl Default for GeneralSettings {
             launch_at_login: false,
             dictation_enabled: true,
             default_language: DefaultLanguage::Auto,
-            play_sounds: false,
             collect_stats: true,
             snippets_enabled: true,
             onboarding_completed: false,
@@ -95,7 +117,7 @@ pub struct ModelSettings {
 
 impl Default for ModelSettings {
     fn default() -> Self {
-        Self { model: DEFAULT_MODEL_ID.to_string(), engine: Engine::Cpu, unload_on_idle: true }
+        Self { model: DEFAULT_MODEL_ID.to_string(), engine: Engine::Cpu, unload_on_idle: false }
     }
 }
 
@@ -135,6 +157,8 @@ impl Default for CleanupSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct HudSettings {
     pub position: HudPosition,
+    /// Which recording indicator(s) to show during dictation (overlay / tray / both).
+    pub indicator: Indicator,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -253,6 +277,7 @@ pub fn apply_patch(base: &Settings, patch: &SettingsPatch) -> Settings {
 /// unparseable hotkey or empty device/model falls back to its default.
 pub fn validate(mut s: Settings) -> Settings {
     s.schema_version = SCHEMA_VERSION;
+    s.general.dictation_enabled = true;
     if crate::hotkey::parse_accelerator(&s.hotkey.accelerator).is_err() {
         s.hotkey.accelerator = crate::hotkey::DEFAULT_ACCEL.to_string();
     }
@@ -410,10 +435,11 @@ pub fn update_settings(
         return Err(e);
     }
     state.set(next.clone())?;
-    // Side effect: a model change invalidates the warm engine after the new setting is
-    // durable. The next dictation warms the chosen model lazily.
-    if next.model.model != current.model.model {
+    // Side effect: any model-setting change invalidates the warm engine after the
+    // new setting is durable, then warms the chosen model off the IPC path.
+    if next.model != current.model {
         let _ = crate::stt::unload(&stt);
+        crate::stt::warm_model_in_background(app.clone(), next.model.model.clone());
     }
     // Side effect: keep the OS autostart entry in sync with the toggle (best-effort).
     if next.general.launch_at_login != current.general.launch_at_login {
@@ -451,13 +477,23 @@ mod tests {
         assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);
-        assert!(s.model.unload_on_idle);
+        assert!(!s.model.unload_on_idle);
         assert_eq!(s.audio.input_device, "default");
         assert!(s.cleanup.filler_removal && s.cleanup.capitalization);
         assert_eq!(s.hud.position, HudPosition::Caret);
+        // Default shows both indicators (floating HUD + tray badge).
+        assert_eq!(s.hud.indicator, Indicator::Both);
         assert!(s.updates.auto_check_updates);
         assert!(!s.per_app.enabled);
         assert!(s.per_app.styles.is_empty());
+    }
+
+    #[test]
+    fn indicator_dispatch_flags() {
+        // A swapped arm here would silently route phase events to the wrong surface.
+        assert!(Indicator::Overlay.shows_overlay() && !Indicator::Overlay.shows_tray());
+        assert!(Indicator::Tray.shows_tray() && !Indicator::Tray.shows_overlay());
+        assert!(Indicator::Both.shows_overlay() && Indicator::Both.shows_tray());
     }
 
     #[test]
@@ -501,7 +537,7 @@ mod tests {
 
     #[test]
     fn migrate_inserts_missing_schema_version() {
-        let v = serde_json::json!({ "general": { "playSounds": true } });
+        let v = serde_json::json!({ "general": {} });
         let migrated = migrate(v);
         assert_eq!(migrated.get("schemaVersion").and_then(|x| x.as_u64()), Some(1));
     }
@@ -521,9 +557,8 @@ mod tests {
 
     #[test]
     fn parse_tolerates_missing_schema_version() {
-        let s = parse_settings(r#"{ "general": { "playSounds": true } }"#).unwrap();
+        let s = parse_settings(r#"{ "general": {} }"#).unwrap();
         assert_eq!(s.schema_version, SCHEMA_VERSION);
-        assert!(s.general.play_sounds);
     }
 
     #[test]

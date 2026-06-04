@@ -19,6 +19,8 @@ node_modules/
 .vite/
 *.tsbuildinfo
 
+.codegraph/
+
 # Bun
 .bun/
 

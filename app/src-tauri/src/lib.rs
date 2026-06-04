@@ -4,7 +4,7 @@
 //! file owns the Tauri bootstrap and the `#[tauri::command]` registry; see the
 //! `invoke_handler!` block in `run()` for the live command set spanning the full
 //! pipeline (audio, dictation, hotkey, stt, settings, dictionary, snippets, stats,
-//! inject) plus the tray and the floating HUD window.
+//! inject) plus the tray (which doubles as the recording indicator).
 
 pub mod app_styles;
 pub mod audio;
@@ -25,6 +25,7 @@ pub mod text_match;
 pub mod tray;
 pub mod vad;
 pub mod win32;
+pub mod window_state;
 
 use tauri::{Manager, WindowEvent};
 
@@ -64,7 +65,10 @@ pub fn run() {
         .manage(settings::SettingsState::new(settings::Settings::default()))
         .manage(hotkey::HotkeyRuntime::new(hotkey::HotkeyConfig::default()))
         .manage(stats::StatsState::new(stats::UsageStats::default()))
-        .manage(dictionary::DictState::new(Vec::new(), dictionary::DictSettings::default()))
+        .manage(dictionary::DictState::new(
+            Vec::new(),
+            dictionary::DictSettings::default(),
+        ))
         .manage(history::HistoryState::new(Vec::new()))
         .manage(snippets::SnippetState::new(Vec::new()))
         // Global push-to-talk: the plugin delivers key edges; the handler runs the
@@ -75,7 +79,10 @@ pub fn run() {
                     hotkey::on_shortcut(
                         app,
                         shortcut,
-                        matches!(event.state, tauri_plugin_global_shortcut::ShortcutState::Pressed),
+                        matches!(
+                            event.state,
+                            tauri_plugin_global_shortcut::ShortcutState::Pressed
+                        ),
                     );
                 })
                 .build(),
@@ -91,6 +98,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // `shadow: false` removes the Win11 DWM top-line artifact, so request
+            // rounded corners explicitly for the frameless main window.
+            win32::apply_main_window_rounded_corners(app.handle());
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             // Hydrate the already-managed (default) state from disk now that the
@@ -99,12 +109,17 @@ pub fn run() {
             let loaded = settings::load_settings(app.handle());
             let hk_cfg = loaded.hotkey.clone();
             let launch_at_login = loaded.general.launch_at_login;
+            let startup_model = loaded.model.model.clone();
             app.state::<settings::SettingsState>().hydrate(loaded);
             // Sync the OS autostart entry to the saved preference (best-effort).
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let mgr = app.autolaunch();
-                let _ = if launch_at_login { mgr.enable() } else { mgr.disable() };
+                let _ = if launch_at_login {
+                    mgr.enable()
+                } else {
+                    mgr.disable()
+                };
             }
             // Global PTT hotkey runtime + best-effort startup registration (Rule 14).
             app.state::<hotkey::HotkeyRuntime>().hydrate(hk_cfg.clone());
@@ -115,23 +130,31 @@ pub fn run() {
             // without recovery the hotkey stays dead until restart. An idle tick re-claims
             // the chord periodically, and a resume/unlock watcher re-claims it immediately.
             hotkey::start_self_heal(app.handle());
+            hotkey::start_windows_key_polling(app.handle());
             power_resume::start(app.handle());
             // Local-only usage stats (never uploaded, ADR-001).
             let stats = stats::load_stats(app.handle());
             app.state::<stats::StatsState>().hydrate(stats);
             // Custom dictionary (personal vocabulary) — loaded from dictionary.json.
             let (dict_entries, dict_settings) = dictionary::load_dictionary(app.handle());
-            app.state::<dictionary::DictState>().hydrate(dict_entries, dict_settings);
+            app.state::<dictionary::DictState>()
+                .hydrate(dict_entries, dict_settings);
             let history = history::load_history(app.handle());
             app.state::<history::HistoryState>().hydrate(history);
             // Voice-triggered snippets — loaded from snippets.json.
             let snips = snippets::load_snippets(app.handle());
             app.state::<snippets::SnippetState>().hydrate(snips);
-            // System tray (Open / Quit). MIA runs in the tray.
+            // System tray (Open / Quit). MIA runs in the tray; the tray icon can also
+            // serve as the dictation recording indicator (tray::reflect_phase, driven by
+            // dictation.rs) when the user picks the "tray"/"both" indicator option.
             tray::init(app.handle())?;
+            // Restore the Hub window's last normal bounds/maximized state after
+            // settings and tray setup, before long-running background warmup.
+            window_state::restore_main_window(app.handle());
             // Dock the floating, click-through, always-on-top mic HUD overlay window
             // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
             hud::setup_hud(app.handle());
+            stt::warm_model_in_background(app.handle().clone(), startup_model);
             Ok(())
         })
         // Close-to-tray: closing the Hub hides it instead of quitting — MIA keeps
@@ -143,8 +166,12 @@ pub fn run() {
             }
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
+                    let _ = window_state::save_main_window_bounds(window);
                     api.prevent_close();
                     let _ = window.hide();
+                }
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                    let _ = window_state::save_main_window_bounds(window);
                 }
                 // Returning to the Hub is a cheap, natural moment to re-claim the PTT
                 // chord if its OS routing was silently dropped (hotkeys.md Rule 15).
@@ -164,6 +191,7 @@ pub fn run() {
             hotkey::unregister_hotkey,
             hotkey::update_hotkey,
             hotkey::get_hotkey,
+            hotkey::sample_hotkey_recording,
             dictionary::dict_list,
             dictionary::dict_add,
             dictionary::dict_update,
@@ -174,7 +202,6 @@ pub fn run() {
             history::copy_history_entry,
             history::delete_history_entry,
             history::clear_history,
-            inject::inject_text,
             settings::get_settings,
             settings::update_settings,
             settings::reset_settings,
@@ -186,6 +213,8 @@ pub fn run() {
             stats::reset_stats,
             stt::list_whisper_models,
             stt::download_whisper_model,
+            stt::cancel_whisper_model_download,
+            stt::delete_whisper_model,
             stt::gpu_engine_status,
             stt::download_gpu_engine,
             stt::warm_status,

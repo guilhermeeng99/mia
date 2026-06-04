@@ -7,11 +7,15 @@
 //! The registry / download / GPU-engine code follows the proven file-transcription
 //! pattern documented in `docs/specs/speech-to-text.md`, adapted to MIA's warm live path.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -76,6 +80,8 @@ pub struct GpuStatus {
 pub struct WarmStatus {
     loaded: bool,
     model: Option<String>,
+    warming: bool,
+    target_model: Option<String>,
     backend: String,
     gpu: bool,
 }
@@ -100,6 +106,7 @@ struct WarmServer {
 impl Drop for WarmServer {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -107,6 +114,9 @@ impl Drop for WarmServer {
 #[derive(Default)]
 pub struct SttState {
     server: Mutex<Option<WarmServer>>,
+    loading: Mutex<()>,
+    warm_target: Mutex<Option<String>>,
+    downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,12 +269,12 @@ fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn require_model(app: &AppHandle, model: &str) -> Result<PathBuf, String> {
-    let filename = model_filename(model).ok_or_else(|| format!("unknown model: {model}"))?;
+    let def = model_def(model).ok_or_else(|| format!("unknown model: {model}"))?;
+    let filename = format!("ggml-{}.bin", def.id);
     let path = models_dir(app)?.join(filename);
-    if path.exists() {
-        if let Some(expected) = model_sha256(model) {
-            verify_file_sha256(&path, expected)?;
-        }
+    // The download path verifies SHA-256 before publishing the final file. The warm
+    // path must start immediately at app startup, so avoid hashing multi-GB models here.
+    if file_matches_size(&path, def.size_bytes) {
         Ok(path)
     } else {
         Err(format!("model not downloaded: {model}"))
@@ -347,6 +357,7 @@ fn download_file(
     dest: &Path,
     progress: Option<&Channel<DownloadProgress>>,
     expected_sha256: &str,
+    cancelled: &AtomicBool,
 ) -> Result<(), String> {
     let resp = ureq::get(url).call().map_err(|e| format!("download failed: {e}"))?;
     let total: Option<u64> = resp
@@ -362,9 +373,17 @@ fn download_file(
     let mut downloaded = 0u64;
 
     loop {
+        if cancelled.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&part);
+            return Err("download cancelled".into());
+        }
         let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&part);
+            return Err("download cancelled".into());
         }
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         downloaded += n as u64;
@@ -378,6 +397,10 @@ fn download_file(
     }
 
     drop(file);
+    if cancelled.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(&part);
+        return Err("download cancelled".into());
+    }
     verify_file_sha256(&part, expected_sha256)?;
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
 }
@@ -403,6 +426,8 @@ pub fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModel>, String> 
 #[tauri::command]
 pub async fn download_whisper_model(
     app: AppHandle,
+    stt: State<'_, SttState>,
+    settings: State<'_, crate::settings::SettingsState>,
     model: String,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<String, String> {
@@ -416,21 +441,106 @@ pub async fn download_whisper_model(
     let dest = dir.join(&filename);
     let vad_path = dir.join(VAD_FILENAME);
     let dest_str = dest.to_string_lossy().into_owned();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+    let cancelled = {
+        let mut downloads = stt
+            .downloads
+            .lock()
+            .map_err(|_| "stt download state poisoned".to_string())?;
+        if downloads.contains_key(&model) {
+            return Err(format!("download already running: {model}"));
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        downloads.insert(model.clone(), cancelled.clone());
+        cancelled
+    };
+    let cleanup_model = model.clone();
+    let task_cancelled = cancelled.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let vad_ready = remove_invalid_file(&vad_path, VAD_SHA256)?;
         let model_ready = remove_invalid_file(&dest, expected_sha256)?;
         if !vad_ready {
-            download_file(VAD_URL, &vad_path, None, VAD_SHA256)?;
+            download_file(VAD_URL, &vad_path, None, VAD_SHA256, &task_cancelled)?;
         }
         if !model_ready {
-            download_file(&url, &dest, Some(&on_progress), expected_sha256)?;
+            download_file(
+                &url,
+                &dest,
+                Some(&on_progress),
+                expected_sha256,
+                &task_cancelled,
+            )?;
         }
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+
+    if let Ok(mut downloads) = stt.downloads.lock() {
+        downloads.remove(&cleanup_model);
+    }
+
+    result?;
+
+    if settings.snapshot()?.model.model == model {
+        warm_model_in_background(app.clone(), model);
+    }
 
     Ok(dest_str)
+}
+
+#[tauri::command]
+pub fn cancel_whisper_model_download(
+    stt: State<'_, SttState>,
+    model: String,
+) -> Result<(), String> {
+    let downloads = stt
+        .downloads
+        .lock()
+        .map_err(|_| "stt download state poisoned".to_string())?;
+    let Some(cancelled) = downloads.get(&model) else {
+        return Ok(());
+    };
+    cancelled.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_whisper_model(
+    app: AppHandle,
+    stt: State<'_, SttState>,
+    model: String,
+) -> Result<(), String> {
+    let filename = model_filename(&model).ok_or_else(|| format!("unknown model: {model}"))?;
+    {
+        let downloads = stt
+            .downloads
+            .lock()
+            .map_err(|_| "stt download state poisoned".to_string())?;
+        if downloads.contains_key(&model) {
+            return Err(format!("download in progress: {model}"));
+        }
+    }
+
+    {
+        let mut server = stt
+            .server
+            .lock()
+            .map_err(|_| "stt state poisoned".to_string())?;
+        if server.as_ref().is_some_and(|warm| warm.model == model) {
+            *server = None;
+        }
+    }
+
+    let path = models_dir(&app)?.join(filename);
+    let part = path.with_extension("part");
+    if part.exists() {
+        std::fs::remove_file(&part).map_err(|e| format!("failed to delete partial model: {e}"))?;
+    }
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("failed to delete model: {e}"))?;
+    }
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -504,7 +614,8 @@ fn copy_engine_files(extracted: &Path, dest: &Path) -> Result<(), String> {
 fn install_gpu_engine(dir: &Path, on_progress: &Channel<DownloadProgress>) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let zip = dir.join("engine.zip");
-    download_file(GPU_URL, &zip, Some(on_progress), GPU_SHA256)?;
+    let cancelled = AtomicBool::new(false);
+    download_file(GPU_URL, &zip, Some(on_progress), GPU_SHA256, &cancelled)?;
     let tmp = dir.join("extract");
     extract_zip(&zip, &tmp)?;
     copy_engine_files(&tmp, dir)?;
@@ -527,9 +638,11 @@ pub fn gpu_engine_status(app: AppHandle) -> Result<GpuStatus, String> {
 pub async fn download_gpu_engine(
     app: AppHandle,
     stt: State<'_, SttState>,
+    settings: State<'_, crate::settings::SettingsState>,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<(), String> {
     if gpu_dir(&app)?.join("whisper-server.exe").exists() {
+        warm_model_in_background(app.clone(), settings.snapshot()?.model.model);
         return Ok(());
     }
     let dir = gpu_dir(&app)?;
@@ -539,6 +652,7 @@ pub async fn download_gpu_engine(
     // Drop any warm CPU server so the next dictation re-warms on the GPU build
     // (server_exe now prefers engine-cuda/whisper-server.exe).
     let _ = unload(&stt);
+    warm_model_in_background(app.clone(), settings.snapshot()?.model.model);
     Ok(())
 }
 
@@ -595,6 +709,14 @@ fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
     Err("whisper-server did not become ready in time".into())
 }
 
+fn warm_timeout(model: &str) -> Duration {
+    match model {
+        "large-v3" => Duration::from_secs(300),
+        "large-v3-turbo" | "medium" => Duration::from_secs(180),
+        _ => Duration::from_secs(90),
+    }
+}
+
 fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
     let mut cmd = std::process::Command::new(exe);
     cmd.args(args);
@@ -606,9 +728,7 @@ fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
     cmd.spawn().map_err(|e| format!("failed to start whisper-server: {e}"))
 }
 
-/// Load a model into a warm whisper-server (idempotent if already warm with the
-/// same model). Spawns the server and waits for it to accept connections.
-pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
+fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
     {
         let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
         if let Some(s) = guard.as_ref() {
@@ -625,12 +745,66 @@ pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), 
     let gpu = exe.starts_with(gpu_dir(app)?);
     let port = free_port()?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-    let child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
-    wait_for_server(port, Duration::from_secs(60))?;
+    {
+        let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
+        if guard.as_ref().is_some_and(|s| s.model != model) {
+            *guard = None;
+        }
+    }
+    let mut child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
+    if let Err(e) = wait_for_server(port, warm_timeout(model)) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(e);
+    }
 
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
     *guard = Some(WarmServer { child, port, model: model.to_string(), gpu });
     Ok(())
+}
+
+/// Load a model into a warm whisper-server (idempotent if already warm with the
+/// same model). Spawns the server and waits for it to accept connections.
+pub fn warm_model(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {
+    let _loading = state.loading.lock().map_err(|_| "stt state poisoned".to_string())?;
+    warm_model_inner(app, state, model)
+}
+
+/// Warm the selected model without blocking Tauri startup or settings IPC.
+pub fn warm_model_in_background(app: AppHandle, model: String) {
+    if let Some(state) = app.try_state::<SttState>() {
+        if let Ok(mut target) = state.warm_target.lock() {
+            *target = Some(model.clone());
+        }
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(state) = app.try_state::<SttState>() else {
+            return;
+        };
+        let Ok(_loading) = state.loading.lock() else {
+            crate::dlog!("[stt] background warm skipped: stt state poisoned");
+            return;
+        };
+        let still_target = state
+            .warm_target
+            .lock()
+            .map(|target| target.as_deref() == Some(model.as_str()))
+            .unwrap_or(false);
+        if !still_target {
+            return;
+        }
+
+        let result = warm_model_inner(&app, &state, &model);
+        if let Ok(mut target) = state.warm_target.lock() {
+            if target.as_deref() == Some(model.as_str()) {
+                *target = None;
+            }
+        }
+        if let Err(e) = result {
+            crate::dlog!("[stt] background warm skipped: {e}");
+        }
+    });
 }
 
 /// Transcribe one endpointed utterance (16 kHz mono f32 PCM) against the warm
@@ -669,6 +843,9 @@ pub fn transcribe_chunk(
 
 /// Stop the warm server and free its RAM (also runs on app exit via `Drop`).
 pub fn unload(state: &SttState) -> Result<(), String> {
+    if let Ok(mut target) = state.warm_target.lock() {
+        *target = None;
+    }
     let mut guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
     *guard = None; // Drop kills the child
     Ok(())
@@ -677,17 +854,27 @@ pub fn unload(state: &SttState) -> Result<(), String> {
 /// Current warm-engine status for the UI.
 #[tauri::command]
 pub fn warm_status(state: tauri::State<'_, SttState>) -> Result<WarmStatus, String> {
+    let target_model = state
+        .warm_target
+        .lock()
+        .map_err(|_| "stt state poisoned".to_string())?
+        .clone();
     let guard = state.server.lock().map_err(|_| "stt state poisoned".to_string())?;
+    let warming = target_model.is_some();
     Ok(match guard.as_ref() {
         Some(s) => WarmStatus {
             loaded: true,
             model: Some(s.model.clone()),
+            warming,
+            target_model,
             backend: "whisperServer".into(),
             gpu: s.gpu,
         },
         None => WarmStatus {
             loaded: false,
             model: None,
+            warming,
+            target_model,
             backend: "whisperServer".into(),
             gpu: false,
         },

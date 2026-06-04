@@ -16,6 +16,7 @@
   const isHud = new URLSearchParams(location.search).get("win") === "hud";
 
   let version = $state("…");
+  let booted = $state(isHud);
   let showOnboarding = $state(false);
   let general = $state<GeneralSettings | null>(null);
 
@@ -28,12 +29,17 @@
   // Finish onboarding: persist the flag so MIA boots to the tray next time, then
   // close the wizard (onboarding.md Rule 1/14).
   async function finishOnboarding() {
-    showOnboarding = false;
-    if (!general) return;
+    if (!general) {
+      showOnboarding = false;
+      return;
+    }
     try {
-      await updateSettings({ general: { ...general, onboardingCompleted: true } });
+      const s = await updateSettings({ general: { ...general, onboardingCompleted: true } });
+      general = s.general;
     } catch {
       /* a persistence hiccup must not trap the user in the wizard */
+    } finally {
+      showOnboarding = false;
     }
   }
 
@@ -47,13 +53,29 @@
     // Show the wizard only until it's been completed once. A pre-existing install
     // (a model already on disk) is treated as completed so it boots straight to the
     // Hub instead of re-prompting (onboarding.md Rule 1).
-    Promise.all([getSettings(), listWhisperModels()])
-      .then(([s, models]) => {
+    async function boot() {
+      try {
+        const [s, models] = await Promise.all([getSettings(), listWhisperModels()]);
         general = s.general;
-        showOnboarding =
-          !s.general.onboardingCompleted && !models.some((m) => m.id === s.model.model && m.downloaded);
-      })
-      .catch(() => {});
+        const activeModelDownloaded = models.some((m) => m.id === s.model.model && m.downloaded);
+        showOnboarding = !s.general.onboardingCompleted && !activeModelDownloaded;
+        if (!s.general.onboardingCompleted && activeModelDownloaded) {
+          try {
+            const next = await updateSettings({
+              general: { ...s.general, onboardingCompleted: true },
+            });
+            general = next.general;
+          } catch {
+            /* best-effort repair for existing installs */
+          }
+        }
+      } catch {
+        showOnboarding = false;
+      } finally {
+        booted = true;
+      }
+    }
+    void boot();
     const pending = installPtt(onDictationEvent);
     return () => {
       void pending.then((un) => un());
@@ -63,6 +85,11 @@
 
 {#if isHud}
   <HudWindow />
+{:else if !booted}
+  <div class="flex h-screen flex-col overflow-hidden bg-canvas">
+    <WindowTitleBar />
+    <div class="min-h-0 flex-1"></div>
+  </div>
 {:else if showOnboarding}
   <div class="flex h-screen flex-col overflow-hidden bg-canvas">
     <WindowTitleBar />

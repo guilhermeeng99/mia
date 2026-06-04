@@ -80,21 +80,27 @@
 
   <main class="flex-1 overflow-y-auto">
     <div class="mx-auto max-w-[820px] px-10 py-9">
-      {#if active === "overview"}
+      <section hidden={active !== "overview"}>
         <OverviewView />
-      {:else if active === "dictation"}
+      </section>
+      <section hidden={active !== "dictation"}>
         <DictationView />
-      {:else if active === "models"}
+      </section>
+      <section hidden={active !== "models"}>
         <ModelsView />
-      {:else if active === "history"}
+      </section>
+      <section hidden={active !== "history"}>
         <HistoryView />
-      {:else if active === "dictionary"}
+      </section>
+      <section hidden={active !== "dictionary"}>
         <DictionarySection />
-      {:else if active === "snippets"}
+      </section>
+      <section hidden={active !== "snippets"}>
         <SnippetsSection />
-      {:else if active === "perapp"}
+      </section>
+      <section hidden={active !== "perapp"}>
         <PerAppSection />
-      {/if}
+      </section>
     </div>
   </main>
 </div>

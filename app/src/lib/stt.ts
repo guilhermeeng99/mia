@@ -19,6 +19,8 @@ export interface GpuStatus {
 export interface WarmStatus {
   loaded: boolean;
   model: string | null;
+  warming: boolean;
+  targetModel: string | null;
   backend: string;
   gpu: boolean;
 }
@@ -41,6 +43,16 @@ export function downloadWhisperModel(
   onProgress: Channel<DownloadProgress>,
 ): Promise<string> {
   return invoke<string>("download_whisper_model", { model, onProgress });
+}
+
+/** Cancel an in-flight Whisper model download. */
+export function cancelWhisperModelDownload(model: string): Promise<void> {
+  return invoke<void>("cancel_whisper_model_download", { model });
+}
+
+/** Delete a downloaded Whisper model from app-data. */
+export function deleteWhisperModel(model: string): Promise<void> {
+  return invoke<void>("delete_whisper_model", { model });
 }
 
 /** Whether an NVIDIA GPU is present and whether the CUDA engine is already installed. */
