@@ -103,6 +103,9 @@ fn clamp_position_to_screen(
 }
 
 fn quit_app(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = crate::window_state::save_main_webview_window_bounds(&window);
+    }
     if let Some(stt) = app.try_state::<crate::stt::SttState>() {
         let _ = crate::stt::unload(&stt);
     }

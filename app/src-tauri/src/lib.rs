@@ -25,6 +25,7 @@ pub mod text_match;
 pub mod tray;
 pub mod vad;
 pub mod win32;
+pub mod window_state;
 
 use tauri::{Manager, WindowEvent};
 
@@ -142,6 +143,9 @@ pub fn run() {
             app.state::<snippets::SnippetState>().hydrate(snips);
             // System tray (Open / Quit). MIA runs in the tray.
             tray::init(app.handle())?;
+            // Restore the Hub window's last normal bounds/maximized state after
+            // settings and tray setup, before long-running background warmup.
+            window_state::restore_main_window(app.handle());
             // Dock the floating, click-through, always-on-top mic HUD overlay window
             // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
             hud::setup_hud(app.handle());
@@ -157,8 +161,12 @@ pub fn run() {
             }
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
+                    let _ = window_state::save_main_window_bounds(window);
                     api.prevent_close();
                     let _ = window.hide();
+                }
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                    let _ = window_state::save_main_window_bounds(window);
                 }
                 // Returning to the Hub is a cheap, natural moment to re-claim the PTT
                 // chord if its OS routing was silently dropped (hotkeys.md Rule 15).
