@@ -10,6 +10,7 @@
 //! model change, and keeps the OS launch-at-login entry in sync (all best-effort).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -322,20 +323,47 @@ pub fn parse_settings(raw: &str) -> Result<Settings, String> {
 /// The in-memory authoritative copy, loaded once at startup (Rule 2).
 pub struct SettingsState {
     inner: Mutex<Settings>,
+    /// Whether the disk copy has been loaded into `inner` yet. The state is managed
+    /// with *defaults* on the builder (so commands never crash on an early invoke),
+    /// but the packaged webview can `invoke("get_settings")` BEFORE `setup` runs its
+    /// hydrate — and a plain default read there makes the app think onboarding is
+    /// unfinished and every preference is reset. This flag drives a one-shot
+    /// lazy-load so the first reader hydrates from disk no matter who wins the race.
+    hydrated: AtomicBool,
 }
 
 impl SettingsState {
     pub fn new(settings: Settings) -> Self {
-        Self { inner: Mutex::new(settings) }
+        Self { inner: Mutex::new(settings), hydrated: AtomicBool::new(false) }
     }
 
-    /// Replace the in-memory settings with the disk-loaded copy at startup. The
-    /// state is managed (defaults) on the builder so commands are race-proof
-    /// against an early frontend invoke; `setup` hydrates it once the handle exists.
+    /// Replace the in-memory settings with the disk-loaded copy at startup. First
+    /// hydrator wins: if a racing `get_settings`/`update_settings` already lazy-loaded
+    /// the same disk file, this is a no-op so `setup` can't clobber a fresher value.
     pub fn hydrate(&self, settings: Settings) {
+        if self.hydrated.swap(true, Ordering::AcqRel) {
+            return;
+        }
         if let Ok(mut guard) = self.inner.lock() {
             *guard = settings;
         }
+    }
+
+    /// Read the settings, lazy-loading from disk on the first access if `setup`'s
+    /// hydrate has not run yet (the packaged webview can invoke before it). Without
+    /// this, an early read returns defaults — re-running onboarding and "resetting"
+    /// every saved preference until the next write (settings.md Rule 2).
+    fn get_or_hydrate(&self, app: &AppHandle) -> Result<Settings, String> {
+        if !self.hydrated.load(Ordering::Acquire) {
+            let loaded = load_settings(app);
+            // Claim the hydration; only the winner writes the disk copy in.
+            if !self.hydrated.swap(true, Ordering::AcqRel) {
+                *self.inner.lock().map_err(|_| "settings state poisoned".to_string())? =
+                    loaded.clone();
+                return Ok(loaded);
+            }
+        }
+        self.get()
     }
 
     fn get(&self) -> Result<Settings, String> {
@@ -403,10 +431,14 @@ fn save_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     crate::persist::atomic_write_json(&path, settings).map_err(map_write_err)
 }
 
-/// Return the in-memory settings (loaded once at startup).
+/// Return the in-memory settings, lazy-loading from disk if the early webview beat
+/// `setup`'s hydrate (Rule 2) — otherwise onboarding re-runs and prefs look reset.
 #[tauri::command]
-pub fn get_settings(state: State<'_, SettingsState>) -> Result<Settings, String> {
-    state.get()
+pub fn get_settings(
+    app: AppHandle,
+    state: State<'_, SettingsState>,
+) -> Result<Settings, String> {
+    state.get_or_hydrate(&app)
 }
 
 /// Merge a patch, validate, persist atomically, update the in-memory copy, and apply
@@ -420,7 +452,9 @@ pub fn update_settings(
     stt: State<'_, crate::stt::SttState>,
     patch: SettingsPatch,
 ) -> Result<Settings, String> {
-    let current = state.get()?;
+    // Lazy-hydrate first: an early write before `setup`'s hydrate would otherwise read
+    // defaults as `current` and persist defaults-plus-this-field, wiping the disk file.
+    let current = state.get_or_hydrate(&app)?;
     let next = apply_patch(&current, &patch);
     // Probe/apply the PTT hotkey before persisting so a conflicting chord is rejected
     // and the old binding/config stays (Rule 8). If the disk write fails below, roll
@@ -564,6 +598,23 @@ mod tests {
     #[test]
     fn parse_rejects_garbage() {
         assert!(parse_settings("}{ not json").is_err());
+    }
+
+    #[test]
+    fn hydrate_is_first_writer_wins() {
+        // Regression: the packaged webview can `get_settings` before `setup` hydrates.
+        // The lazy path loads disk and claims hydration; a later `setup` hydrate must
+        // then be a no-op so it can't reset onboarding/prefs back to the older snapshot.
+        let state = SettingsState::new(Settings::default());
+        let mut loaded = Settings::default();
+        loaded.general.onboarding_completed = true;
+        state.hydrate(loaded); // first hydrator (stands in for the lazy-load winner)
+        assert!(state.get().unwrap().general.onboarding_completed);
+        state.hydrate(Settings::default()); // second (setup) — onboarding_completed = false
+        assert!(
+            state.get().unwrap().general.onboarding_completed,
+            "a second hydrate must not clobber the value the first hydrator installed",
+        );
     }
 
     #[test]
