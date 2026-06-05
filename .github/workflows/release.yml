@@ -137,7 +137,7 @@ jobs:
         with:
           projectPath: app
           tagName: v${{ steps.bump.outputs.next }}
-          releaseName: 'MIA v${{ steps.bump.outputs.next }}'
+          releaseName: "MIA v${{ steps.bump.outputs.next }}"
           releaseBody: |
             Auto-released from `main` @ ${{ github.sha }}.
 

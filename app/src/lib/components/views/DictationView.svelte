@@ -28,10 +28,10 @@
   import Field from "../ui/Field.svelte";
   import PageHeader from "../ui/PageHeader.svelte";
   import Pill from "../ui/Pill.svelte";
+  import Select from "../ui/Select.svelte";
   import Toggle from "../ui/Toggle.svelte";
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import LevelMeter from "../ui/LevelMeter.svelte";
-  import { selectClass } from "../ui/inputClass";
 
   // The core dictation settings view — mic input, push-to-talk binding, language,
   // and startup. Presentation only; all logic goes through
@@ -54,6 +54,12 @@
   let pendingHotkey = $state<string | null>(null);
   let hotkeyError = $state<string | null>(null);
   let error = $state<string | null>(null);
+
+  const deviceOptions = $derived([
+    { value: "", label: "Padrão do sistema" },
+    ...devices.map((d) => ({ value: d.id, label: d.name + (d.isDefault ? " · padrão" : "") })),
+  ]);
+
 
   function fail(e: unknown) {
     error = String(e);
@@ -176,10 +182,10 @@
     }
   }
 
-  async function setCollectStats(value: boolean) {
+  async function setDictationSounds(value: boolean) {
     if (!general) return;
     try {
-      const s = await updateSettings({ general: { ...general, collectStats: value } });
+      const s = await updateSettings({ general: { ...general, dictationSounds: value } });
       general = s.general;
     } catch (e) {
       fail(e);
@@ -200,12 +206,12 @@
     }
   }
 
-  // The indicator choice (overlay / tray / both) is read by the engine per phase-change,
-  // so persisting it here is all that's needed — no warm-engine restart.
-  async function setIndicator(value: Indicator) {
+  // The indicator choice is read by the engine per phase-change, so persisting is all that's
+  // needed — no warm-engine restart.
+  async function setIndicatorField(key: keyof Indicator, value: boolean) {
     if (!hud) return;
     try {
-      const s = await updateSettings({ hud: { ...hud, indicator: value } });
+      const s = await updateSettings({ hud: { ...hud, indicator: { ...hud.indicator, [key]: value } } });
       hud = s.hud;
     } catch (e) {
       fail(e);
@@ -279,16 +285,7 @@
     <p class="mt-1 text-body text-ink-soft">Escolha a entrada de áudio para o ditado.</p>
     <div class="mt-4">
       <Field label="Dispositivo de entrada" hint="Usado no teste e no ditado ao vivo.">
-        <select
-          value={selectedDevice}
-          onchange={(e) => setInputDevice((e.currentTarget as HTMLSelectElement).value)}
-          class={selectClass}
-        >
-          <option value="">Padrão do sistema</option>
-          {#each devices as device (device.id)}
-            <option value={device.id}>{device.name}{device.isDefault ? " · padrão" : ""}</option>
-          {/each}
-        </select>
+        <Select options={deviceOptions} value={selectedDevice} onchange={setInputDevice} />
       </Field>
     </div>
     <div class="mt-4 flex items-center gap-3">
@@ -336,15 +333,15 @@
     </div>
     <div class="mt-4">
       <Field label="Modo de ativação">
-        <select
+        <Select
+          options={[
+            { value: "pushToHold", label: "Segurar para falar" },
+            { value: "pressToToggle", label: "Pressionar para ligar/desligar" },
+          ]}
           value={hotkey?.mode ?? "pushToHold"}
           disabled={!hotkey}
-          onchange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as ActivationMode)}
-          class={selectClass}
-        >
-          <option value="pushToHold">Segurar para falar</option>
-          <option value="pressToToggle">Pressionar para ligar/desligar</option>
-        </select>
+          onchange={(v) => setMode(v as ActivationMode)}
+        />
       </Field>
     </div>
   </Card>
@@ -356,16 +353,16 @@
     </p>
     <div class="mt-4">
       <Field label="Idioma">
-        <select
+        <Select
+          options={[
+            { value: "auto", label: "Automático" },
+            { value: "pt", label: "Português (pt-BR)" },
+            { value: "en", label: "English" },
+          ]}
           value={general?.defaultLanguage ?? "auto"}
           disabled={!general}
-          onchange={(e) => setLanguage((e.currentTarget as HTMLSelectElement).value)}
-          class={selectClass}
-        >
-          <option value="auto">Automático</option>
-          <option value="pt">Português (pt-BR)</option>
-          <option value="en">English</option>
-        </select>
+          onchange={setLanguage}
+        />
       </Field>
     </div>
   </Card>
@@ -373,22 +370,22 @@
   <Card>
     <h2 class="font-display text-title">Indicador de gravação</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Como o MIA mostra que está ouvindo: o balão flutuante sobre o app, um ponto no
-      ícone da bandeja, ou os dois.
+      Como o MIA mostra que está ouvindo: o balão flutuante sobre o app ou um ponto no
+      ícone da bandeja.
     </p>
-    <div class="mt-4">
-      <Field label="Indicador">
-        <select
-          value={hud?.indicator ?? "both"}
-          disabled={!hud}
-          onchange={(e) => setIndicator((e.currentTarget as HTMLSelectElement).value as Indicator)}
-          class={selectClass}
-        >
-          <option value="overlay">Balão flutuante (overlay)</option>
-          <option value="tray">Ícone da bandeja</option>
-          <option value="both">Ambos</option>
-        </select>
-      </Field>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      {#if hud}
+        <Toggle
+          checked={hud.indicator.overlay}
+          label="Balão flutuante"
+          onchange={(value) => setIndicatorField("overlay", value)}
+        />
+        <Toggle
+          checked={hud.indicator.tray}
+          label="Bandeja"
+          onchange={(value) => setIndicatorField("tray", value)}
+        />
+      {/if}
     </div>
   </Card>
 
@@ -425,14 +422,14 @@
     <div class="mt-3 flex flex-col gap-3">
       {#if general}
         <Toggle
-          checked={general.collectStats}
-          label="Coletar estatísticas locais"
-          onchange={setCollectStats}
-        />
-        <Toggle
           checked={general.launchAtLogin}
           label="Abrir o MIA ao iniciar o Windows"
           onchange={setLaunchAtLogin}
+        />
+        <Toggle
+          checked={general.dictationSounds}
+          label="Sons de ditado"
+          onchange={setDictationSounds}
         />
       {/if}
     </div>

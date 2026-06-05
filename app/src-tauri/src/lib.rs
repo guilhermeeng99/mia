@@ -19,6 +19,7 @@ pub mod persist;
 pub mod power_resume;
 pub mod settings;
 pub mod snippets;
+pub mod sounds;
 pub mod stats;
 pub mod stt;
 pub mod text_match;
@@ -155,6 +156,9 @@ pub fn run() {
             // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
             hud::setup_hud(app.handle());
             stt::warm_model_in_background(app.handle().clone(), startup_model);
+            // Audio feedback thread — device opened once here so on_start/on_end
+            // are instant (no per-call device init latency).
+            sounds::init();
             Ok(())
         })
         // Close-to-tray: closing the Hub hides it instead of quitting — MIA keeps

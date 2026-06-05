@@ -11,8 +11,11 @@ export type { ActivationMode, HotkeyConfig };
 export type DefaultLanguage = "auto" | "pt" | "en";
 export type Engine = "cpu" | "cuda";
 export type HudPosition = "caret" | "bottomCenter" | "bottomRight";
-/** Which recording indicator(s) to show during dictation; mirrors Rust `settings::Indicator`. */
-export type Indicator = "overlay" | "tray" | "both";
+/** Which recording indicator(s) to show; mirrors Rust `settings::Indicator`. Each surface is independent. */
+export interface Indicator {
+  overlay: boolean;
+  tray: boolean;
+}
 export type AiModel = "qwen2.5-3b" | "llama-3.2-3b";
 
 export interface GeneralSettings {
@@ -22,6 +25,7 @@ export interface GeneralSettings {
   collectStats: boolean;
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;
+  dictationSounds: boolean;
 }
 
 export interface ModelSettings {

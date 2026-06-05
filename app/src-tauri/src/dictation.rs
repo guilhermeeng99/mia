@@ -331,6 +331,7 @@ fn start_dictation_blocking(
     }
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
     show_phase(&app, Phase::Listening, None);
+    crate::sounds::on_start(s.general.dictation_sounds);
     Ok(())
 }
 
@@ -368,6 +369,9 @@ fn stop_dictation_blocking(
         show_phase(&app, Phase::Idle, None);
         return Ok(());
     }
+    // Play the "stopped listening" cue immediately on hotkey release — before the
+    // pipeline runs — so feedback is instant rather than delayed by STT + injection.
+    crate::sounds::on_end(s.general.dictation_sounds);
     if PIPELINE_ACTIVE
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
@@ -485,9 +489,7 @@ fn run_dictation_tail(
 
     let chars = final_text.chars().count();
     let elapsed = done.saturating_sub(t0);
-    if s.general.collect_stats {
-        let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
-    }
+    let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
     let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
     let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     show_phase(&app, Phase::Idle, None);

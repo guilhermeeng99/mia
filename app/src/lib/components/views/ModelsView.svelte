@@ -18,6 +18,7 @@
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import Button from "../ui/Button.svelte";
   import Card from "../ui/Card.svelte";
+  import ConfirmDialog from "../ui/ConfirmDialog.svelte";
   import PageHeader from "../ui/PageHeader.svelte";
   import Pill from "../ui/Pill.svelte";
 
@@ -36,6 +37,7 @@
   let gpuProgress = $state(0);
   let error = $state<string | null>(null);
   let warmPoll: ReturnType<typeof setTimeout> | null = null;
+  let confirmDeleteModel = $state<WhisperModel | null>(null);
 
   const MODEL_DETAILS: Record<
     string,
@@ -163,11 +165,10 @@
     }
   }
 
-  async function deleteModel(model: WhisperModel) {
-    const confirmed = window.confirm(
-      `Deletar o modelo ${model.label} baixado? Você poderá baixar novamente depois.`,
-    );
-    if (!confirmed) return;
+  async function confirmDelete() {
+    const model = confirmDeleteModel;
+    confirmDeleteModel = null;
+    if (!model) return;
 
     deletingModel = model.id;
     error = null;
@@ -220,42 +221,50 @@
       {#each models as model (model.id)}
         {@const details = detailsFor(model.id)}
         <li
-          class="flex items-start gap-3 rounded-card border-2 border-charcoal px-4 py-3
-                 {activeModel === model.id ? 'bg-surface' : 'bg-canvas'}"
+          class="group flex items-start gap-3 rounded-card border-2 px-4 py-3
+                 {activeModel === model.id
+                   ? 'border-spring-mid bg-spring-light'
+                   : 'border-charcoal bg-canvas'}"
         >
           <div class="flex min-w-0 flex-1 flex-col gap-2">
             <div class="flex flex-wrap items-center gap-2">
-            <span class="text-body-lg font-bold">{model.label}</span>
-            <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
+              <span class="text-body-lg font-bold {activeModel === model.id ? 'text-success' : ''}">
+                {activeModel === model.id ? '✓ ' : ''}{model.label}
+              </span>
+              <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
               <Pill tone={details.tone}>{details.fidelity}</Pill>
               <Pill tone="neutral">{details.latency}</Pill>
-            {#if model.recommended}<Pill tone="accent">Padrao</Pill>{/if}
+              {#if model.recommended}<Pill tone="accent">Padrao</Pill>{/if}
             </div>
             <p class="text-body text-ink-soft">{details.note}</p>
           </div>
           <div class="shrink-0 pt-1">
             {#if model.downloaded}
               <div class="flex flex-wrap items-center justify-end gap-2">
-                {#if activeModel === model.id}
-                  <Pill tone="success">✓ em uso</Pill>
-                {:else}
+                <div class="opacity-0 transition-opacity group-hover:opacity-100">
                   <Button
-                    variant="secondary"
+                    variant="danger"
                     size="sm"
                     disabled={downloading !== null || deletingModel !== null}
-                    onclick={() => selectModel(model.id)}
+                    onclick={() => (confirmDeleteModel = model)}
                   >
-                    Selecionar
+                    {deletingModel === model.id ? "Deletando" : "Deletar"}
                   </Button>
+                </div>
+                {#if activeModel === model.id}
+                  <Pill tone="success">Selecionado</Pill>
+                {:else}
+                  <div class="opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={downloading !== null || deletingModel !== null}
+                      onclick={() => selectModel(model.id)}
+                    >
+                      Selecionar
+                    </Button>
+                  </div>
                 {/if}
-                <Button
-                  variant="danger"
-                  size="sm"
-                  disabled={downloading !== null || deletingModel !== null}
-                  onclick={() => deleteModel(model)}
-                >
-                  {deletingModel === model.id ? "Deletando" : "Deletar"}
-                </Button>
               </div>
             {:else if downloading === model.id}
               <div class="flex items-center gap-2">
@@ -270,9 +279,16 @@
                 </Button>
               </div>
             {:else}
-              <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
-                Baixar
-              </Button>
+              <div class="opacity-0 transition-opacity group-hover:opacity-100">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={downloading !== null}
+                  onclick={() => download(model.id)}
+                >
+                  Baixar
+                </Button>
+              </div>
             {/if}
           </div>
         </li>
@@ -307,3 +323,13 @@
     {/if}
   </Card>
 </div>
+
+<ConfirmDialog
+  open={confirmDeleteModel !== null}
+  title="Deletar modelo"
+  message="Deletar o modelo {confirmDeleteModel?.label ?? ''}? Você poderá baixar novamente depois."
+  confirmLabel="Deletar"
+  confirmVariant="danger"
+  onconfirm={confirmDelete}
+  oncancel={() => (confirmDeleteModel = null)}
+/>

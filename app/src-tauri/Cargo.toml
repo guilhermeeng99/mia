@@ -27,6 +27,7 @@ arboard = "3"
 unicode-segmentation = "1"
 unicode-normalization = "0.1"
 cpal = "0.15"
+rodio = { version = "0.17", default-features = false }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 # Signed in-app auto-update (GitHub Releases + minisign latest.json, ADR-009).
