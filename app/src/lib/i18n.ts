@@ -98,7 +98,8 @@ const en = {
     welcomeBody: "100% local voice dictation for Windows. Your voice never leaves your machine.",
     start: "Start",
     shortcutTitle: "Your shortcut",
-    shortcutBody: (chord: string) => `Hold ${chord} and speak; release to insert text where the cursor is.`,
+    shortcutBody: (chord: string) =>
+      `Hold ${chord} and speak; release to insert text where the cursor is.`,
     micTitle: "Test microphone",
     micBody: "Say something and confirm we can hear you.",
     micHeard: "We can hear you.",
@@ -117,7 +118,8 @@ const en = {
     readyTitle: "Ready to dictate",
     readyWithHotkey: (hotkey: string) =>
       `Hold ${hotkey} in any app, speak, and MIA types the text at the cursor.`,
-    readyWithoutHotkey: "Hold your shortcut in any app, speak, and MIA types the text at the cursor.",
+    readyWithoutHotkey:
+      "Hold your shortcut in any app, speak, and MIA types the text at the cursor.",
     usageTitle: "Your usage",
     resetStats: "Reset stats",
     wordsDictated: "words dictated",
@@ -157,7 +159,8 @@ const en = {
     micBlocked: "Microphone access is blocked by Windows.",
     openMicSettings: "Open microphone settings",
     hotkeyTitle: "Shortcut (push-to-talk)",
-    hotkeySubtitle: "Hold the shortcut and speak; release to insert. Record a combination with a modifier.",
+    hotkeySubtitle:
+      "Hold the shortcut and speak; release to insert. Record a combination with a modifier.",
     newHotkey: (hotkey: string) => `New: ${hotkey}`,
     recordHotkey: "Record shortcut",
     pressCombination: "Press the combination...",
@@ -169,7 +172,8 @@ const en = {
     languageSubtitle: "Automatic detects speech. Pinning a language can improve recognition.",
     languageField: "Language",
     indicatorTitle: "Recording indicator",
-    indicatorSubtitle: "How MIA shows that it is listening: floating bubble over the app, tray icon badge, or both.",
+    indicatorSubtitle:
+      "How MIA shows that it is listening: floating bubble over the app, tray icon badge, or both.",
     overlay: "Floating bubble",
     tray: "Tray",
     cleanupTitle: "Text cleanup",
@@ -186,7 +190,8 @@ const en = {
     subtitle: "Download a Whisper model once, then stay 100% offline.",
     whisperTitle: "Whisper model",
     whisperSubtitle: "Downloaded on demand from Hugging Face. This is MIA's only network access.",
-    activeModel: (model: string) => `Active model: ${model}. Download models once and choose which one to use for future speech.`,
+    activeModel: (model: string) =>
+      `Active model: ${model}. Download models once and choose which one to use for future speech.`,
     details: {
       small: {
         fidelity: "Basic fidelity",
@@ -365,7 +370,8 @@ const pt: Messages = {
     welcomeBody: "Ditado por voz 100% local para Windows. Sua voz nunca sai da máquina.",
     start: "Começar",
     shortcutTitle: "Seu atalho",
-    shortcutBody: (chord: string) => `Segure ${chord} e fale; solte para inserir o texto onde o cursor estiver.`,
+    shortcutBody: (chord: string) =>
+      `Segure ${chord} e fale; solte para inserir o texto onde o cursor estiver.`,
     micTitle: "Testar microfone",
     micBody: "Fale algo e confirme que estamos ouvindo.",
     micHeard: "Ouvimos você.",
@@ -384,7 +390,8 @@ const pt: Messages = {
     readyTitle: "Pronto para ditar",
     readyWithHotkey: (hotkey: string) =>
       `Segure ${hotkey} em qualquer app, fale, e o MIA digita o texto no cursor.`,
-    readyWithoutHotkey: "Segure seu atalho em qualquer app, fale, e o MIA digita o texto no cursor.",
+    readyWithoutHotkey:
+      "Segure seu atalho em qualquer app, fale, e o MIA digita o texto no cursor.",
     usageTitle: "Seu uso",
     resetStats: "Zerar estatísticas",
     wordsDictated: "palavras ditadas",
@@ -424,7 +431,8 @@ const pt: Messages = {
     micBlocked: "Acesso ao microfone bloqueado pelo Windows.",
     openMicSettings: "Abrir configurações de microfone",
     hotkeyTitle: "Atalho (push-to-talk)",
-    hotkeySubtitle: "Segure o atalho e fale; solte para inserir. Grave uma combinação com modificador.",
+    hotkeySubtitle:
+      "Segure o atalho e fale; solte para inserir. Grave uma combinação com modificador.",
     newHotkey: (hotkey: string) => `Novo: ${hotkey}`,
     recordHotkey: "Gravar atalho",
     pressCombination: "Pressione a combinação...",
@@ -436,7 +444,8 @@ const pt: Messages = {
     languageSubtitle: "Automático detecta a fala. Fixar um idioma pode melhorar o reconhecimento.",
     languageField: "Idioma",
     indicatorTitle: "Indicador de gravação",
-    indicatorSubtitle: "Como o MIA mostra que está ouvindo: balão flutuante sobre o app, bandeja ou ambos.",
+    indicatorSubtitle:
+      "Como o MIA mostra que está ouvindo: balão flutuante sobre o app, bandeja ou ambos.",
     overlay: "Balão flutuante",
     tray: "Bandeja",
     cleanupTitle: "Limpeza de texto",
@@ -485,7 +494,8 @@ const pt: Messages = {
     downloadGpu: "Baixar engine GPU (~435 MB)",
     gpuHint: "~7-10x mais rápido; troca de motor na próxima fala.",
     deleteTitle: "Deletar modelo",
-    deleteMessage: (label: string) => `Deletar o modelo ${label}? Você poderá baixar novamente depois.`,
+    deleteMessage: (label: string) =>
+      `Deletar o modelo ${label}? Você poderá baixar novamente depois.`,
   },
   dictionary: {
     title: "Dicionário pessoal",
@@ -512,7 +522,8 @@ const pt: Messages = {
   },
   perApp: {
     title: "Estilos por app",
-    subtitle: "Regras por aplicativo em foco: fixar idioma, forçar área de transferência ou ponto final.",
+    subtitle:
+      "Regras por aplicativo em foco: fixar idioma, forçar área de transferência ou ponto final.",
     description: "Use parte do nome do executável (ex.:",
     empty: "Nenhuma regra ainda.",
     executable: "Executável (parte do nome)",
@@ -634,7 +645,8 @@ const es: Messages = {
     welcomeBody: "Dictado por voz 100% local para Windows. Tu voz nunca sale de tu máquina.",
     start: "Empezar",
     shortcutTitle: "Tu atajo",
-    shortcutBody: (chord: string) => `Mantén ${chord} y habla; suelta para insertar el texto donde esté el cursor.`,
+    shortcutBody: (chord: string) =>
+      `Mantén ${chord} y habla; suelta para insertar el texto donde esté el cursor.`,
     micTitle: "Probar micrófono",
     micBody: "Di algo y confirma que podemos oírte.",
     micHeard: "Te oímos.",
@@ -654,7 +666,8 @@ const es: Messages = {
     readyTitle: "Listo para dictar",
     readyWithHotkey: (hotkey: string) =>
       `Mantén ${hotkey} en cualquier app, habla, y MIA escribe el texto en el cursor.`,
-    readyWithoutHotkey: "Mantén tu atajo en cualquier app, habla, y MIA escribe el texto en el cursor.",
+    readyWithoutHotkey:
+      "Mantén tu atajo en cualquier app, habla, y MIA escribe el texto en el cursor.",
     usageTitle: "Tu uso",
     resetStats: "Restablecer estadísticas",
     wordsDictated: "palabras dictadas",
@@ -695,7 +708,8 @@ const es: Messages = {
     micBlocked: "Windows bloqueó el acceso al micrófono.",
     openMicSettings: "Abrir configuración del micrófono",
     hotkeyTitle: "Atajo (push-to-talk)",
-    hotkeySubtitle: "Mantén el atajo y habla; suelta para insertar. Graba una combinación con modificador.",
+    hotkeySubtitle:
+      "Mantén el atajo y habla; suelta para insertar. Graba una combinación con modificador.",
     newHotkey: (hotkey: string) => `Nuevo: ${hotkey}`,
     recordHotkey: "Grabar atajo",
     pressCombination: "Pulsa la combinación...",
@@ -704,7 +718,8 @@ const es: Messages = {
     pushToHold: "Mantener para hablar",
     pressToToggle: "Pulsar para activar/desactivar",
     languageTitle: "Idioma del dictado",
-    languageSubtitle: "Automático detecta el habla. Fijar un idioma puede mejorar el reconocimiento.",
+    languageSubtitle:
+      "Automático detecta el habla. Fijar un idioma puede mejorar el reconocimiento.",
     languageField: "Idioma",
     indicatorTitle: "Indicador de grabación",
     indicatorSubtitle: "Cómo MIA muestra que está escuchando: burbuja flotante, bandeja o ambos.",
@@ -724,7 +739,8 @@ const es: Messages = {
     title: "Modelos y motor",
     subtitle: "Descarga un modelo Whisper una vez. Después, 100% offline.",
     whisperTitle: "Modelo Whisper",
-    whisperSubtitle: "Descargado bajo demanda desde Hugging Face. Es la única salida de red de MIA.",
+    whisperSubtitle:
+      "Descargado bajo demanda desde Hugging Face. Es la única salida de red de MIA.",
     activeModel: (model: string) =>
       `Modelo activo: ${model}. Descarga modelos una vez y elige cuál usar en próximas frases.`,
     details: {
@@ -756,7 +772,8 @@ const es: Messages = {
     downloadGpu: "Descargar motor GPU (~435 MB)",
     gpuHint: "~7-10x más rápido; el motor cambia en la próxima frase.",
     deleteTitle: "Eliminar modelo",
-    deleteMessage: (label: string) => `¿Eliminar el modelo ${label}? Podrás descargarlo de nuevo después.`,
+    deleteMessage: (label: string) =>
+      `¿Eliminar el modelo ${label}? Podrás descargarlo de nuevo después.`,
   },
   dictionary: {
     ...pt.dictionary,
@@ -902,10 +919,12 @@ const fr: Messages = {
     ...es.onboarding,
     steps: ["Bienvenue", "Raccourci", "Microphone", "Modèle"],
     welcomeTitle: "Bienvenue dans MIA",
-    welcomeBody: "Dictée vocale 100% locale pour Windows. Votre voix ne quitte jamais votre machine.",
+    welcomeBody:
+      "Dictée vocale 100% locale pour Windows. Votre voix ne quitte jamais votre machine.",
     start: "Commencer",
     shortcutTitle: "Votre raccourci",
-    shortcutBody: (chord: string) => `Maintenez ${chord} et parlez; relâchez pour insérer le texte au curseur.`,
+    shortcutBody: (chord: string) =>
+      `Maintenez ${chord} et parlez; relâchez pour insérer le texte au curseur.`,
     micTitle: "Tester le micro",
     micBody: "Dites quelque chose pour confirmer que nous vous entendons.",
     micHeard: "Nous vous entendons.",
@@ -925,7 +944,8 @@ const fr: Messages = {
     readyTitle: "Prêt à dicter",
     readyWithHotkey: (hotkey: string) =>
       `Maintenez ${hotkey} dans n'importe quelle app, parlez, et MIA écrit au curseur.`,
-    readyWithoutHotkey: "Maintenez votre raccourci dans n'importe quelle app, parlez, et MIA écrit au curseur.",
+    readyWithoutHotkey:
+      "Maintenez votre raccourci dans n'importe quelle app, parlez, et MIA écrit au curseur.",
     usageTitle: "Votre usage",
     resetStats: "Réinitialiser les stats",
     wordsDictated: "mots dictés",
@@ -966,7 +986,8 @@ const fr: Messages = {
     micBlocked: "Windows bloque l'accès au micro.",
     openMicSettings: "Ouvrir les paramètres du micro",
     hotkeyTitle: "Raccourci (push-to-talk)",
-    hotkeySubtitle: "Maintenez le raccourci et parlez; relâchez pour insérer. Enregistrez une combinaison avec modificateur.",
+    hotkeySubtitle:
+      "Maintenez le raccourci et parlez; relâchez pour insérer. Enregistrez une combinaison avec modificateur.",
     newHotkey: (hotkey: string) => `Nouveau: ${hotkey}`,
     recordHotkey: "Enregistrer le raccourci",
     pressCombination: "Appuyez sur la combinaison...",
@@ -975,10 +996,12 @@ const fr: Messages = {
     pushToHold: "Maintenir pour parler",
     pressToToggle: "Appuyer pour activer/désactiver",
     languageTitle: "Langue de dictée",
-    languageSubtitle: "Automatique détecte la parole. Fixer une langue peut améliorer la reconnaissance.",
+    languageSubtitle:
+      "Automatique détecte la parole. Fixer une langue peut améliorer la reconnaissance.",
     languageField: "Langue",
     indicatorTitle: "Indicateur d'enregistrement",
-    indicatorSubtitle: "Comment MIA montre qu'il écoute: bulle flottante, zone de notification ou les deux.",
+    indicatorSubtitle:
+      "Comment MIA montre qu'il écoute: bulle flottante, zone de notification ou les deux.",
     overlay: "Bulle flottante",
     tray: "Zone de notification",
     cleanupTitle: "Nettoyage du texte",
@@ -995,7 +1018,8 @@ const fr: Messages = {
     title: "Modèles et moteur",
     subtitle: "Téléchargez un modèle Whisper une fois. Ensuite, 100% offline.",
     whisperTitle: "Modèle Whisper",
-    whisperSubtitle: "Téléchargé à la demande depuis Hugging Face. C'est le seul accès réseau de MIA.",
+    whisperSubtitle:
+      "Téléchargé à la demande depuis Hugging Face. C'est le seul accès réseau de MIA.",
     activeModel: (model: string) =>
       `Modèle actif: ${model}. Téléchargez les modèles une fois et choisissez celui des prochaines phrases.`,
     details: {
@@ -1027,7 +1051,8 @@ const fr: Messages = {
     downloadGpu: "Télécharger le moteur GPU (~435 MB)",
     gpuHint: "~7-10x plus rapide; le moteur change à la prochaine phrase.",
     deleteTitle: "Supprimer le modèle",
-    deleteMessage: (label: string) => `Supprimer le modèle ${label} ? Vous pourrez le retélécharger plus tard.`,
+    deleteMessage: (label: string) =>
+      `Supprimer le modèle ${label} ? Vous pourrez le retélécharger plus tard.`,
   },
   dictionary: {
     ...es.dictionary,
@@ -1057,7 +1082,8 @@ const fr: Messages = {
   perApp: {
     ...es.perApp,
     title: "Styles par app",
-    subtitle: "Règles pour l'app active: fixer la langue, forcer le presse-papiers ou ajouter un point final.",
+    subtitle:
+      "Règles pour l'app active: fixer la langue, forcer le presse-papiers ou ajouter un point final.",
     description: "Utilisez une partie du nom de l'exécutable (ex.:",
     empty: "Aucune règle pour le moment.",
     executable: "Exécutable (partie du nom)",
@@ -1180,7 +1206,8 @@ const de: Messages = {
     welcomeBody: "100% lokales Sprachdiktat für Windows. Ihre Stimme verlässt nie Ihren Rechner.",
     start: "Starten",
     shortcutTitle: "Ihr Kurzbefehl",
-    shortcutBody: (chord: string) => `Halten Sie ${chord} gedrückt und sprechen Sie; loslassen fügt den Text am Cursor ein.`,
+    shortcutBody: (chord: string) =>
+      `Halten Sie ${chord} gedrückt und sprechen Sie; loslassen fügt den Text am Cursor ein.`,
     micTitle: "Mikrofon testen",
     micBody: "Sagen Sie etwas und prüfen Sie, ob wir Sie hören.",
     micHeard: "Wir hören Sie.",
@@ -1200,7 +1227,8 @@ const de: Messages = {
     readyTitle: "Bereit zum Diktieren",
     readyWithHotkey: (hotkey: string) =>
       `Halten Sie ${hotkey} in einer App gedrückt, sprechen Sie, und MIA tippt am Cursor.`,
-    readyWithoutHotkey: "Halten Sie Ihren Kurzbefehl in einer App gedrückt, sprechen Sie, und MIA tippt am Cursor.",
+    readyWithoutHotkey:
+      "Halten Sie Ihren Kurzbefehl in einer App gedrückt, sprechen Sie, und MIA tippt am Cursor.",
     usageTitle: "Ihre Nutzung",
     resetStats: "Statistiken zurücksetzen",
     wordsDictated: "diktierten Wörter",
@@ -1236,7 +1264,8 @@ const de: Messages = {
     micBlocked: "Windows blockiert den Mikrofonzugriff.",
     openMicSettings: "Mikrofoneinstellungen öffnen",
     hotkeyTitle: "Kurzbefehl (Push-to-talk)",
-    hotkeySubtitle: "Halten Sie den Kurzbefehl gedrückt und sprechen Sie; loslassen fügt ein. Nehmen Sie eine Kombination mit Modifikatortaste auf.",
+    hotkeySubtitle:
+      "Halten Sie den Kurzbefehl gedrückt und sprechen Sie; loslassen fügt ein. Nehmen Sie eine Kombination mit Modifikatortaste auf.",
     newHotkey: (hotkey: string) => `Neu: ${hotkey}`,
     recordHotkey: "Kurzbefehl aufnehmen",
     pressCombination: "Kombination drücken...",
@@ -1245,7 +1274,8 @@ const de: Messages = {
     pushToHold: "Zum Sprechen halten",
     pressToToggle: "Zum Ein-/Ausschalten drücken",
     languageTitle: "Diktatsprache",
-    languageSubtitle: "Automatisch erkennt die Sprache. Eine feste Sprache kann die Erkennung verbessern.",
+    languageSubtitle:
+      "Automatisch erkennt die Sprache. Eine feste Sprache kann die Erkennung verbessern.",
     languageField: "Sprache",
     indicatorTitle: "Aufnahmeanzeige",
     indicatorSubtitle: "So zeigt MIA, dass es zuhört: schwebende Blase, Infobereich oder beides.",
@@ -1269,7 +1299,8 @@ const de: Messages = {
     title: "Modelle & Engine",
     subtitle: "Laden Sie ein Whisper-Modell einmal herunter. Danach 100% offline.",
     whisperTitle: "Whisper-Modell",
-    whisperSubtitle: "Wird bei Bedarf von Hugging Face geladen. Das ist MIAs einziger Netzwerkzugriff.",
+    whisperSubtitle:
+      "Wird bei Bedarf von Hugging Face geladen. Das ist MIAs einziger Netzwerkzugriff.",
     activeModel: (model: string) =>
       `Aktives Modell: ${model}. Laden Sie Modelle einmal herunter und wählen Sie, welches für die nächsten Diktate genutzt wird.`,
     details: {
@@ -1301,7 +1332,8 @@ const de: Messages = {
     downloadGpu: "GPU-Engine herunterladen (~435 MB)",
     gpuHint: "~7-10x schneller; Engine wechselt beim nächsten Diktat.",
     deleteTitle: "Modell löschen",
-    deleteMessage: (label: string) => `Modell ${label} löschen? Sie können es später erneut herunterladen.`,
+    deleteMessage: (label: string) =>
+      `Modell ${label} löschen? Sie können es später erneut herunterladen.`,
   },
   dictionary: {
     ...fr.dictionary,
@@ -1331,7 +1363,8 @@ const de: Messages = {
   perApp: {
     ...fr.perApp,
     title: "Stile pro App",
-    subtitle: "Regeln für die fokussierte App: Sprache festlegen, Zwischenablage erzwingen oder Punkt hinzufügen.",
+    subtitle:
+      "Regeln für die fokussierte App: Sprache festlegen, Zwischenablage erzwingen oder Punkt hinzufügen.",
     description: "Verwenden Sie einen Teil des ausführbaren Namens (z. B.:",
     empty: "Noch keine Regeln.",
     executable: "Ausführbare Datei (Teil des Namens)",
@@ -1443,10 +1476,12 @@ const it: Messages = {
     ...fr.onboarding,
     steps: ["Benvenuto", "Scorciatoia", "Microfono", "Modello"],
     welcomeTitle: "Benvenuto in MIA",
-    welcomeBody: "Dettatura vocale 100% locale per Windows. La tua voce non lascia mai il computer.",
+    welcomeBody:
+      "Dettatura vocale 100% locale per Windows. La tua voce non lascia mai il computer.",
     start: "Inizia",
     shortcutTitle: "La tua scorciatoia",
-    shortcutBody: (chord: string) => `Tieni premuto ${chord} e parla; rilascia per inserire il testo al cursore.`,
+    shortcutBody: (chord: string) =>
+      `Tieni premuto ${chord} e parla; rilascia per inserire il testo al cursore.`,
     micTitle: "Testa microfono",
     micBody: "Di qualcosa e conferma che ti sentiamo.",
     micHeard: "Ti sentiamo.",
@@ -1466,7 +1501,8 @@ const it: Messages = {
     readyTitle: "Pronto per dettare",
     readyWithHotkey: (hotkey: string) =>
       `Tieni premuto ${hotkey} in qualsiasi app, parla, e MIA scrive al cursore.`,
-    readyWithoutHotkey: "Tieni premuta la scorciatoia in qualsiasi app, parla, e MIA scrive al cursore.",
+    readyWithoutHotkey:
+      "Tieni premuta la scorciatoia in qualsiasi app, parla, e MIA scrive al cursore.",
     usageTitle: "Il tuo uso",
     resetStats: "Azzera statistiche",
     wordsDictated: "parole dettate",
@@ -1502,7 +1538,8 @@ const it: Messages = {
     micBlocked: "Windows ha bloccato l'accesso al microfono.",
     openMicSettings: "Apri impostazioni microfono",
     hotkeyTitle: "Scorciatoia (push-to-talk)",
-    hotkeySubtitle: "Tieni premuta la scorciatoia e parla; rilascia per inserire. Registra una combinazione con modificatore.",
+    hotkeySubtitle:
+      "Tieni premuta la scorciatoia e parla; rilascia per inserire. Registra una combinazione con modificatore.",
     newHotkey: (hotkey: string) => `Nuova: ${hotkey}`,
     recordHotkey: "Registra scorciatoia",
     pressCombination: "Premi la combinazione...",
@@ -1511,10 +1548,12 @@ const it: Messages = {
     pushToHold: "Tieni premuto per parlare",
     pressToToggle: "Premi per attivare/disattivare",
     languageTitle: "Lingua di dettatura",
-    languageSubtitle: "Automatico rileva la lingua parlata. Fissare una lingua può migliorare il riconoscimento.",
+    languageSubtitle:
+      "Automatico rileva la lingua parlata. Fissare una lingua può migliorare il riconoscimento.",
     languageField: "Lingua",
     indicatorTitle: "Indicatore di registrazione",
-    indicatorSubtitle: "Come MIA mostra che sta ascoltando: bolla flottante, area di notifica o entrambi.",
+    indicatorSubtitle:
+      "Come MIA mostra che sta ascoltando: bolla flottante, area di notifica o entrambi.",
     overlay: "Bolla flottante",
     tray: "Area di notifica",
     cleanupTitle: "Pulizia testo",
@@ -1567,7 +1606,8 @@ const it: Messages = {
     downloadGpu: "Scarica motore GPU (~435 MB)",
     gpuHint: "~7-10x più rapido; il motore cambia alla prossima dettatura.",
     deleteTitle: "Elimina modello",
-    deleteMessage: (label: string) => `Eliminare il modello ${label}? Potrai scaricarlo di nuovo più tardi.`,
+    deleteMessage: (label: string) =>
+      `Eliminare il modello ${label}? Potrai scaricarlo di nuovo più tardi.`,
   },
   dictionary: {
     ...fr.dictionary,
@@ -1597,7 +1637,8 @@ const it: Messages = {
   perApp: {
     ...fr.perApp,
     title: "Stili per app",
-    subtitle: "Regole per l'app in focus: fissare lingua, forzare appunti o aggiungere punto finale.",
+    subtitle:
+      "Regole per l'app in focus: fissare lingua, forzare appunti o aggiungere punto finale.",
     description: "Usa parte del nome dell'eseguibile (es.:",
     empty: "Ancora nessuna regola.",
     executable: "Eseguibile (parte del nome)",
@@ -1713,7 +1754,8 @@ const ja: Messages = {
     welcomeBody: "Windows 用の 100% ローカル音声入力です。音声はこの端末から出ません。",
     start: "開始",
     shortcutTitle: "ショートカット",
-    shortcutBody: (chord: string) => `${chord} を押したまま話し、離すとカーソル位置にテキストを挿入します。`,
+    shortcutBody: (chord: string) =>
+      `${chord} を押したまま話し、離すとカーソル位置にテキストを挿入します。`,
     micTitle: "マイクをテスト",
     micBody: "何か話して、音声が届いているか確認します。",
     micHeard: "音声を確認しました。",
@@ -1733,7 +1775,8 @@ const ja: Messages = {
     readyTitle: "音声入力できます",
     readyWithHotkey: (hotkey: string) =>
       `任意のアプリで ${hotkey} を押したまま話すと、MIA がカーソル位置に入力します。`,
-    readyWithoutHotkey: "任意のアプリでショートカットを押したまま話すと、MIA がカーソル位置に入力します。",
+    readyWithoutHotkey:
+      "任意のアプリでショートカットを押したまま話すと、MIA がカーソル位置に入力します。",
     usageTitle: "利用状況",
     resetStats: "統計をリセット",
     wordsDictated: "入力した単語",
@@ -1774,7 +1817,8 @@ const ja: Messages = {
     micBlocked: "Windows によりマイクアクセスがブロックされています。",
     openMicSettings: "マイク設定を開く",
     hotkeyTitle: "ショートカット (push-to-talk)",
-    hotkeySubtitle: "ショートカットを押したまま話し、離すと挿入します。修飾キーを含む組み合わせを登録します。",
+    hotkeySubtitle:
+      "ショートカットを押したまま話し、離すと挿入します。修飾キーを含む組み合わせを登録します。",
     newHotkey: (hotkey: string) => `新規: ${hotkey}`,
     recordHotkey: "ショートカットを登録",
     pressCombination: "組み合わせを押してください...",
@@ -1783,7 +1827,8 @@ const ja: Messages = {
     pushToHold: "押している間だけ話す",
     pressToToggle: "押して開始/停止",
     languageTitle: "音声入力の言語",
-    languageSubtitle: "自動では話している言語を検出します。言語を固定すると認識精度が上がる場合があります。",
+    languageSubtitle:
+      "自動では話している言語を検出します。言語を固定すると認識精度が上がる場合があります。",
     languageField: "言語",
     indicatorTitle: "録音インジケーター",
     overlay: "フローティング表示",
@@ -1798,7 +1843,8 @@ const ja: Messages = {
     title: "モデルとエンジン",
     subtitle: "Whisper モデルは一度だけダウンロードします。その後は 100% オフラインです。",
     whisperTitle: "Whisper モデル",
-    whisperSubtitle: "Hugging Face から必要時にダウンロードします。MIA の唯一のネットワークアクセスです。",
+    whisperSubtitle:
+      "Hugging Face から必要時にダウンロードします。MIA の唯一のネットワークアクセスです。",
     activeModel: (model: string) =>
       `有効なモデル: ${model}。モデルは一度ダウンロードし、次回以降の発話で使うものを選択します。`,
     details: {
@@ -2064,7 +2110,8 @@ const zh: Messages = {
     subtitle: "Whisper 模型下载一次即可，之后 100% 离线。",
     whisperTitle: "Whisper 模型",
     whisperSubtitle: "按需从 Hugging Face 下载。这是 MIA 唯一的网络访问。",
-    activeModel: (model: string) => `当前模型: ${model}。模型只需下载一次，可选择后续语音使用的模型。`,
+    activeModel: (model: string) =>
+      `当前模型: ${model}。模型只需下载一次，可选择后续语音使用的模型。`,
     details: {
       small: {
         fidelity: "基础准确度",
@@ -2163,10 +2210,14 @@ export function setUiLanguagePreference(preference: UiLanguagePreference) {
   uiLanguagePreference.set(preference);
 }
 
-export function resolveUiLocale(preference: UiLanguagePreference, languages?: readonly string[]): UiLocale {
+export function resolveUiLocale(
+  preference: UiLanguagePreference,
+  languages?: readonly string[],
+): UiLocale {
   if (preference !== "system") return preference;
   const candidates =
-    languages ?? (typeof navigator === "undefined" ? [] : [navigator.language, ...navigator.languages]);
+    languages ??
+    (typeof navigator === "undefined" ? [] : [navigator.language, ...navigator.languages]);
   for (const language of candidates) {
     const normalized = normalizeLocale(language);
     if (normalized) return normalized;
@@ -2225,5 +2276,8 @@ export function dictationLanguageOptions(messages: Messages) {
 }
 
 export function perAppLanguageOptions(messages: Messages) {
-  return [{ value: "inherit", label: messages.dictationLanguage.inherit }, ...dictationLanguageOptions(messages)];
+  return [
+    { value: "inherit", label: messages.dictationLanguage.inherit },
+    ...dictationLanguageOptions(messages),
+  ];
 }
