@@ -94,6 +94,7 @@ jobs:
           jq --arg v "$next" '.version = $v' app/src-tauri/tauri.conf.json > "$tmp"
           mv "$tmp" app/src-tauri/tauri.conf.json
           sed -i -E "0,/^version = \".*\"$/ s//version = \"$next\"/" app/src-tauri/Cargo.toml
+          NEXT_VERSION="$next" node -e 'const fs = require("node:fs"); const path = "app/src-tauri/Cargo.lock"; const next = process.env.NEXT_VERSION; const lock = fs.readFileSync(path, "utf8").replace(/(\[\[package\]\]\r?\nname = "mia"\r?\nversion = ")[^"]+(")/, `$1${next}$2`); fs.writeFileSync(path, lock);'
           # Keep the app manifest in lockstep (cosmetic, but avoids version drift).
           tmp=$(mktemp)
           jq --arg v "$next" '.version = $v' app/package.json > "$tmp"
@@ -105,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           next="${{ steps.bump.outputs.next }}"
-          git add app/src-tauri/tauri.conf.json app/src-tauri/Cargo.toml app/package.json
+          git add app/src-tauri/tauri.conf.json app/src-tauri/Cargo.toml app/src-tauri/Cargo.lock app/package.json
           git commit -m "chore(release): v${next} [skip ci]"
           git tag "v${next}"
           git push origin main
