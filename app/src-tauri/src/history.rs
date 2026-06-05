@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const MAX_HISTORY_ITEMS: usize = 100;
 
@@ -63,7 +63,9 @@ impl HistoryState {
             .map_err(|_| "history state poisoned".to_string())?;
         list.insert(0, entry);
         list.truncate(MAX_HISTORY_ITEMS);
-        save_history(app, &list)
+        save_history(app, &list)?;
+        let _ = app.emit("history://saved", ());
+        Ok(())
     }
 }
 

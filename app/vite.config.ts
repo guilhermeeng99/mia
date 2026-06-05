@@ -10,10 +10,10 @@ export default defineConfig({
   // Tauri owns the terminal; don't let Vite clear it.
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 1421,
     strictPort: true,
     host: host || false,
-    hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
+    hmr: host ? { protocol: "ws", host, port: 1422 } : undefined,
     // Don't watch the Rust side from Vite.
     watch: { ignored: ["**/src-tauri/**"] },
   },

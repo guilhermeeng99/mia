@@ -37,6 +37,8 @@
   --color-lavender: #e69dff; /* soft accent fill */
   --color-lemon: #e7db4c; /* highlight splash */
   --color-spring: #6ed311; /* positive / "on" accent */
+  --color-spring-light: #eaf7e4; /* selected-model card background */
+  --color-spring-mid: #4caf50; /* selected-model card border */
 
   /* ── Semantic status (palette doesn't carry reliable error/ok hues) ─────── */
   --color-success: #1a7f4b;

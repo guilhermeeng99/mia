@@ -7,7 +7,6 @@
   import OverviewView from "./views/OverviewView.svelte";
   import DictationView from "./views/DictationView.svelte";
   import ModelsView from "./views/ModelsView.svelte";
-  import HistoryView from "./views/HistoryView.svelte";
   import DictionarySection from "./DictionarySection.svelte";
   import SnippetsSection from "./SnippetsSection.svelte";
   import PerAppSection from "./PerAppSection.svelte";
@@ -18,7 +17,7 @@
   // affordance (ADR-009).
   let { version }: { version: string } = $props();
 
-  type ViewId = "overview" | "dictation" | "models" | "history" | "dictionary" | "snippets" | "perapp";
+  type ViewId = "overview" | "dictation" | "models" | "dictionary" | "snippets" | "perapp";
   const NAV: { id: ViewId; label: string; icon: string }[] = [
     { id: "overview", label: "Visão geral", icon: "🏠" },
     { id: "dictation", label: "Ditado", icon: "🎙️" },
@@ -26,7 +25,6 @@
     { id: "dictionary", label: "Dicionário", icon: "📖" },
     { id: "snippets", label: "Snippets", icon: "✂️" },
     { id: "perapp", label: "Por app", icon: "🪟" },
-    { id: "history", label: "Histórico", icon: "H" },
   ];
   let active = $state<ViewId>("overview");
 
@@ -88,9 +86,6 @@
       </section>
       <section hidden={active !== "models"}>
         <ModelsView />
-      </section>
-      <section hidden={active !== "history"}>
-        <HistoryView />
       </section>
       <section hidden={active !== "dictionary"}>
         <DictionarySection />

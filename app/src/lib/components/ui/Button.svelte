@@ -25,9 +25,9 @@
   const base =
     "inline-flex items-center justify-center gap-2 rounded-pill border-2 font-body font-bold " +
     "transition-[transform,background-color,color,border-color] outline-none " +
-    "hover:-translate-y-0.5 active:translate-y-0 " +
+    "hover:scale-[1.03] active:scale-100 " +
     "focus-visible:ring-4 focus-visible:ring-pumpkin/45 " +
-    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0";
+    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100";
   const sizes: Record<NonNullable<Props["size"]>, string> = {
     md: "px-5 min-h-[42px] text-body-lg",
     sm: "px-4 min-h-[40px] text-body",

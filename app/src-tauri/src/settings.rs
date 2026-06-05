@@ -58,26 +58,30 @@ pub enum HudPosition {
 }
 
 /// Which recording indicator(s) the engine drives during a dictation session.
-/// `Overlay` = the floating mic HUD only (the historical default); `Tray` = a colored
-/// badge on the tray icon only; `Both` = both at once. Read per phase-change in
-/// `dictation.rs::show_phase`.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum Indicator {
-    Overlay,
-    Tray,
-    #[default]
-    Both,
+/// Each surface is an independent boolean: `overlay` enables the floating mic HUD;
+/// `tray` enables the badge on the tray icon. Both default to `true`.
+/// Read per phase-change in `dictation.rs::show_phase`.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Indicator {
+    pub overlay: bool,
+    pub tray: bool,
+}
+
+impl Default for Indicator {
+    fn default() -> Self {
+        Self { overlay: true, tray: true }
+    }
 }
 
 impl Indicator {
     /// Whether the floating HUD overlay should receive `hud://state`/`hud://level`.
     pub fn shows_overlay(self) -> bool {
-        matches!(self, Indicator::Overlay | Indicator::Both)
+        self.overlay
     }
     /// Whether the tray icon should reflect the phase (badge + tooltip).
     pub fn shows_tray(self) -> bool {
-        matches!(self, Indicator::Tray | Indicator::Both)
+        self.tray
     }
 }
 
@@ -87,12 +91,13 @@ pub struct GeneralSettings {
     pub launch_at_login: bool,
     pub dictation_enabled: bool,
     pub default_language: DefaultLanguage,
-    pub collect_stats: bool,
     /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
     pub snippets_enabled: bool,
     /// First-run gate (onboarding.md Rule 1): once the wizard finishes, MIA boots
     /// straight to the tray instead of re-opening onboarding.
     pub onboarding_completed: bool,
+    /// Play a subtle sound when dictation starts and ends (start = listening, end = inserted).
+    pub dictation_sounds: bool,
 }
 
 impl Default for GeneralSettings {
@@ -101,9 +106,9 @@ impl Default for GeneralSettings {
             launch_at_login: false,
             dictation_enabled: true,
             default_language: DefaultLanguage::Auto,
-            collect_stats: true,
             snippets_enabled: true,
             onboarding_completed: false,
+            dictation_sounds: true,
         }
     }
 }
@@ -300,6 +305,19 @@ fn migrate(mut value: serde_json::Value) -> serde_json::Value {
         let ver = obj.get("schemaVersion").and_then(|v| v.as_u64()).unwrap_or(0);
         if ver < SCHEMA_VERSION as u64 {
             obj.insert("schemaVersion".to_string(), serde_json::json!(SCHEMA_VERSION));
+        }
+        // Migrate hud.indicator from the legacy string enum ("overlay" | "tray") to the
+        // independent-boolean struct ({overlay, tray}). A string value means an old file.
+        if let Some(hud) = obj.get_mut("hud").and_then(|h| h.as_object_mut()) {
+            if let Some(ind) = hud.get("indicator") {
+                if ind.is_string() {
+                    let new_ind = match ind.as_str().unwrap_or("") {
+                        "tray" => serde_json::json!({"overlay": false, "tray": true}),
+                        _ => serde_json::json!({"overlay": true, "tray": false}),
+                    };
+                    hud.insert("indicator".to_string(), new_ind);
+                }
+            }
         }
     }
     value
@@ -507,7 +525,6 @@ mod tests {
         assert_eq!(s.general.default_language, DefaultLanguage::Auto);
         assert!(s.general.dictation_enabled);
         assert!(!s.general.launch_at_login);
-        assert!(s.general.collect_stats);
         assert_eq!(s.hotkey.accelerator, "Ctrl+Space");
         assert_eq!(s.model.model, "small");
         assert_eq!(s.model.engine, Engine::Cpu);
@@ -515,8 +532,8 @@ mod tests {
         assert_eq!(s.audio.input_device, "default");
         assert!(s.cleanup.filler_removal && s.cleanup.capitalization);
         assert_eq!(s.hud.position, HudPosition::Caret);
-        // Default shows both indicators (floating HUD + tray badge).
-        assert_eq!(s.hud.indicator, Indicator::Both);
+        // Default indicator shows both surfaces.
+        assert!(s.hud.indicator.overlay && s.hud.indicator.tray);
         assert!(s.updates.auto_check_updates);
         assert!(!s.per_app.enabled);
         assert!(s.per_app.styles.is_empty());
@@ -524,10 +541,13 @@ mod tests {
 
     #[test]
     fn indicator_dispatch_flags() {
-        // A swapped arm here would silently route phase events to the wrong surface.
-        assert!(Indicator::Overlay.shows_overlay() && !Indicator::Overlay.shows_tray());
-        assert!(Indicator::Tray.shows_tray() && !Indicator::Tray.shows_overlay());
-        assert!(Indicator::Both.shows_overlay() && Indicator::Both.shows_tray());
+        // A swapped field here would silently route phase events to the wrong surface.
+        let overlay_only = Indicator { overlay: true, tray: false };
+        assert!(overlay_only.shows_overlay() && !overlay_only.shows_tray());
+        let tray_only = Indicator { overlay: false, tray: true };
+        assert!(tray_only.shows_tray() && !tray_only.shows_overlay());
+        let both = Indicator::default();
+        assert!(both.shows_overlay() && both.shows_tray());
     }
 
     #[test]

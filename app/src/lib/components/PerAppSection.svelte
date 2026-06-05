@@ -14,7 +14,8 @@
   import PageHeader from "./ui/PageHeader.svelte";
   import ErrorBanner from "./ui/ErrorBanner.svelte";
   import Toggle from "./ui/Toggle.svelte";
-  import { inputClass, selectClass } from "./ui/inputClass";
+  import Select from "./ui/Select.svelte";
+  import { inputClass } from "./ui/inputClass";
 
   // Per-app writing styles / context (per-app-context.md). Presentation only — the whole
   // `perApp` group is PATCHed via updateSettings (group-granular, like cleanup/snippets).
@@ -115,27 +116,39 @@
     </Field>
     <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
       <Field class="min-w-[160px] flex-1" label="Idioma">
-        <select bind:value={language} class={selectClass}>
-          <option value="inherit">Herdar</option>
-          <option value="auto">Automático</option>
-          <option value="pt">pt-BR</option>
-          <option value="en">English</option>
-        </select>
+        <Select
+          options={[
+            { value: "inherit", label: "Herdar" },
+            { value: "auto", label: "Automático" },
+            { value: "pt", label: "pt-BR" },
+            { value: "en", label: "English" },
+          ]}
+          value={language}
+          onchange={(v) => { language = v as typeof language; }}
+        />
       </Field>
       <Field class="min-w-[160px] flex-1" label="Inserção">
-        <select bind:value={injectMode} class={selectClass}>
-          <option value="inherit">Herdar</option>
-          <option value="auto">Automático</option>
-          <option value="sendInput">Digitar (SendInput)</option>
-          <option value="clipboard">Área de transferência</option>
-        </select>
+        <Select
+          options={[
+            { value: "inherit", label: "Herdar" },
+            { value: "auto", label: "Automático" },
+            { value: "sendInput", label: "Digitar (SendInput)" },
+            { value: "clipboard", label: "Área de transferência" },
+          ]}
+          value={injectMode}
+          onchange={(v) => { injectMode = v as typeof injectMode; }}
+        />
       </Field>
       <Field class="min-w-[160px] flex-1" label="Ponto final">
-        <select bind:value={trailingPeriod} class={selectClass}>
-          <option value="inherit">Herdar</option>
-          <option value="on">Sempre</option>
-          <option value="off">Nunca</option>
-        </select>
+        <Select
+          options={[
+            { value: "inherit", label: "Herdar" },
+            { value: "on", label: "Sempre" },
+            { value: "off", label: "Nunca" },
+          ]}
+          value={trailingPeriod}
+          onchange={(v) => { trailingPeriod = v as typeof trailingPeriod; }}
+        />
       </Field>
     </div>
     <div>

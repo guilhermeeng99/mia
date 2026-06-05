@@ -165,8 +165,8 @@
     content: "";
     position: absolute;
     inset: 1px;
-    border: 1.5px solid currentColor;
-    border-radius: 2px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
   }
 
   .window-glyph.maximize.maximized::before {
@@ -177,8 +177,8 @@
     content: "";
     position: absolute;
     inset: 1px 3px 3px 1px;
-    border: 1.5px solid currentColor;
-    border-radius: 2px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
     background: var(--color-canvas-deep);
   }
 
