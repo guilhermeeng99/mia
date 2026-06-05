@@ -7,6 +7,7 @@
     dictUpdate,
     type DictEntry,
   } from "../dictionary";
+  import { i18n } from "../i18n";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
@@ -79,7 +80,7 @@
   }
 </script>
 
-<PageHeader title="Dicionário pessoal" subtitle="Nomes, jargões e siglas escritos do seu jeito (ex.: mia → MIA)." />
+<PageHeader title={$i18n.dictionary.title} subtitle={$i18n.dictionary.subtitle} />
 
 <ErrorBanner message={error} />
 
@@ -92,26 +93,26 @@
           <span class="text-body text-ink-soft">← {entry.soundsLike.join(", ")}</span>
         {/if}
         <span class="ml-auto flex items-center gap-2">
-          {#if !entry.enabled}<Pill tone="neutral">desligado</Pill>{/if}
+          {#if !entry.enabled}<Pill tone="neutral">{$i18n.dictionary.disabled}</Pill>{/if}
           <Button variant="ghost" size="sm" onclick={() => toggle(entry)}>
-            {entry.enabled ? "Desativar" : "Ativar"}
+            {entry.enabled ? $i18n.dictionary.disable : $i18n.dictionary.enable}
           </Button>
-          <Button variant="ghost" size="sm" onclick={() => remove(entry.id)}>Remover</Button>
+          <Button variant="ghost" size="sm" onclick={() => remove(entry.id)}>{$i18n.generic.remove}</Button>
         </span>
       </li>
     {/each}
     {#if entries.length === 0}
-      <li class="text-body text-ink-soft">Nenhum termo ainda.</li>
+      <li class="text-body text-ink-soft">{$i18n.dictionary.empty}</li>
     {/if}
   </ul>
 
   <div class="mt-5 flex flex-col gap-4 border-t-2 border-hairline pt-5 sm:flex-row sm:items-end">
-    <Field class="flex-1" label="Forma correta">
+    <Field class="flex-1" label={$i18n.dictionary.correctForm}>
       <input bind:value={replacement} placeholder="MIA" class={inputClass} />
     </Field>
-    <Field class="flex-1" label="Variantes faladas — opcional">
+    <Field class="flex-1" label={$i18n.dictionary.spokenVariants}>
       <input bind:value={sounds} placeholder="mia, m i a" class={inputClass} />
     </Field>
-    <Button onclick={add} disabled={replacement.trim() === ""}>Adicionar</Button>
+    <Button onclick={add} disabled={replacement.trim() === ""}>{$i18n.generic.add}</Button>
   </div>
 </Card>

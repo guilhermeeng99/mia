@@ -8,7 +8,26 @@ export type { ActivationMode, HotkeyConfig };
 // Typed mirror of the Rust `settings::Settings` tree (serde camelCase). The Hub
 // reads via getSettings and PATCHes whole groups via updateSettings.
 
-export type DefaultLanguage = "auto" | "pt" | "en";
+export type DefaultLanguage =
+  | "auto"
+  | "pt"
+  | "en"
+  | "es"
+  | "fr"
+  | "de"
+  | "it"
+  | "nl"
+  | "pl"
+  | "ru"
+  | "uk"
+  | "tr"
+  | "ar"
+  | "hi"
+  | "id"
+  | "ja"
+  | "ko"
+  | "zh";
+export type UiLanguagePreference = "system" | "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh";
 export type Engine = "cpu" | "cuda";
 export type HudPosition = "caret" | "bottomCenter" | "bottomRight";
 /** Which recording indicator(s) to show; mirrors Rust `settings::Indicator`. Each surface is independent. */
@@ -21,6 +40,7 @@ export type AiModel = "qwen2.5-3b" | "llama-3.2-3b";
 export interface GeneralSettings {
   launchAtLogin: boolean;
   dictationEnabled: boolean;
+  uiLanguage: UiLanguagePreference;
   defaultLanguage: DefaultLanguage;
   collectStats: boolean;
   snippetsEnabled: boolean;

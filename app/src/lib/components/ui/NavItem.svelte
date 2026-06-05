@@ -1,14 +1,14 @@
 <script lang="ts">
   // A sidebar navigation pill (design-system.md §8a). Active = pumpkin fill +
   // charcoal outline (the Lpalo active-nav treatment); inactive is borderless
-  // until hover. Icon is a leading emoji glyph kept decorative (aria-hidden).
+  // until hover. Icon is decorative because the label carries the accessible name.
   interface Props {
     label: string;
-    icon: string;
+    iconSrc: string;
     active?: boolean;
     onclick?: () => void;
   }
-  let { label, icon, active = false, onclick }: Props = $props();
+  let { label, iconSrc, active = false, onclick }: Props = $props();
 </script>
 
 <button
@@ -20,6 +20,12 @@
          focus-visible:ring-4 focus-visible:ring-pumpkin/45
          {active ? 'border-charcoal bg-pumpkin' : 'border-transparent hover:border-charcoal hover:bg-surface'}"
 >
-  <span class="text-[1.15rem] leading-none" aria-hidden="true">{icon}</span>
+  <img
+    src={iconSrc}
+    alt=""
+    aria-hidden="true"
+    draggable="false"
+    class="h-7 w-7 shrink-0 object-contain"
+  />
   <span>{label}</span>
 </button>

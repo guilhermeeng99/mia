@@ -18,7 +18,7 @@
 > a selectable recording indicator. **Close-to-tray is wired**: closing the Hub hides it to the tray
 > (`lib.rs` `on_window_event` → `prevent_close` + `hide`) instead of quitting; only the tray "Sair"
 > exits. The richer tray menu (a "pick model" submenu) remains the documented Phase-1 backlog.
-> **Last updated**: 2026-06-04
+> **Last updated**: 2026-06-05
 > **Coverage**: Sections 1–9 drafted (tray + HUD as one feature; two surfaces). §2's exact command set
 > is partially superseded by the event-driven `hud.rs` + `dictation.rs` implementation, plus the new
 > `tray::reflect_phase` tray-badge path gated by `hud.indicator`.
@@ -81,7 +81,7 @@ model, open Hub, quit).
 | **Text in** | N/A. The HUD shows fixed per-state labels ("Listening…", "Transcribing…", "Inserted", error text), never the transcript itself in V1. |
 | **Text out** | N/A. No injection here. Emits **intents**: active-model selection, "open Hub", "quit" — persisted via [settings.md](settings.md). |
 | **Target** | The OS tray notification area; the dedicated frameless HUD window (always-on-top overlay); the Hub window (shown/hidden). |
-| **Language** | UI labels are localized (pt-BR / English, first-class — see [design-system.md](design-system.md)); the feature itself is language-agnostic. |
+| **Language** | HUD labels, tray menu labels, and tray tooltips use the interface locale (`general.uiLanguage`). The feature itself is language-agnostic. |
 
 Crates / features: Tauri's built-in **tray-icon feature** (`tauri = { features = ["tray-icon"] }`,
 driven by `tray.rs` — there is no separate `tray-icon` crate) for the tray + menu; Tauri's
@@ -106,17 +106,17 @@ scalar level.
 > // app/src-tauri/src/tray.rs — the tray-badge half
 > pub fn reflect_phase(app: &AppHandle, phase: Phase, message: Option<&str>);
 > // Pure, cargo-tested helpers behind it:
-> fn phase_tooltip(phase: Phase, message: Option<&str>) -> String;  // pt-BR tooltip per phase
+> fn phase_tooltip(language: UiLanguage, phase: Phase, message: Option<&str>) -> String;  // localized tooltip per phase
 > fn phase_badge(phase: Phase) -> Option<[u8; 3]>;                  // badge color, None = plain icon
 > fn overlay_badge(rgba: &mut [u8], w: u32, h: u32, rgb: [u8; 3]);  // paint a corner dot in place
 > ```
 >
 > Tray icon (the brand icon with a dot painted over it at runtime — `overlay_dot`, no asset):
 > **Listening** → a **big red ball** (`#E53E3E`) with a soft red glow halo in the top-right corner
-> + "MIA — ouvindo…";
-> **Transcribing/Inserting** → a smaller amber (`#F2A033`) dot, bottom-right + "MIA —
-> transcrevendo…/inserindo…"; **Idle** → plain icon + "MIA — ditado local"; **Error** (transient) →
-> plain icon + message in the tooltip ("MIA — erro: …").
+> + localized "listening" tooltip;
+> **Transcribing/Inserting** → a smaller amber (`#F2A033`) dot, bottom-right + localized
+> transcribing/inserting tooltip; **Idle** → plain icon + localized idle tooltip; **Error**
+> (transient) → plain icon + message in the localized error tooltip.
 >
 > The `show_hud`/`hide_hud`/`open_hub` commands below remain the **unimplemented** original design,
 > kept for history; the overlay is wired via events, not those commands.

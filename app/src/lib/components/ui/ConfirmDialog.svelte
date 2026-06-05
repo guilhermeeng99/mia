@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { i18n } from "../../i18n";
   import Button from "./Button.svelte";
 
   interface Props {
@@ -16,8 +17,8 @@
     open = false,
     title,
     message,
-    confirmLabel = "Confirmar",
-    cancelLabel = "Cancelar",
+    confirmLabel,
+    cancelLabel,
     confirmVariant = "primary",
     onconfirm,
     oncancel,
@@ -46,8 +47,8 @@
       <h2 id="confirm-dialog-title" class="font-display text-title">{title}</h2>
       <p class="mt-2 text-body text-ink-soft">{message}</p>
       <div class="mt-6 flex justify-end gap-3">
-        <Button variant="ghost" onclick={oncancel}>{cancelLabel}</Button>
-        <Button variant={confirmVariant} onclick={onconfirm}>{confirmLabel}</Button>
+        <Button variant="ghost" onclick={oncancel}>{cancelLabel ?? $i18n.generic.cancel}</Button>
+        <Button variant={confirmVariant} onclick={onconfirm}>{confirmLabel ?? $i18n.generic.confirm}</Button>
       </div>
     </div>
   </div>

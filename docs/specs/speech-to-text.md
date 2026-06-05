@@ -1,7 +1,7 @@
 # Speech-to-Text Feature Spec
 
 > **Status**: Phase 1 — engine implemented (whisper-server sidecar, ADR-004 revised default): model registry + on-demand download (progress `Channel`, `.part` rename), optional CUDA engine fetch, warm server lifecycle (spawn/wait/Drop), in-memory `transcribe_chunk`, and the `warm_status` command — all complete; pure helpers cargo-tested. whisper-rs in-process as a later optimization.
-> **Last updated**: 2026-05-30
+> **Last updated**: 2026-06-05
 > **Coverage**: all sections drafted
 > **Environment**: desktop (Windows, native)
 
@@ -155,7 +155,7 @@ Every user-facing parameter; the anti-hallucination settings are **fixed**, not 
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | Model | enum id | see registry below | `small` (live) | accuracy ↔ latency/RAM trade-off; warmed once |
-| Language | code or auto | `auto` + ~99 codes | `auto` | force vs detect source language; pt-BR + English first-class |
+| Language | code or auto | `auto` + popular pinned codes in the UI (`pt`, `en`, `es`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `uk`, `tr`, `ar`, `hi`, `id`, `ja`, `ko`, `zh`); Whisper can still auto-detect broad multilingual input | `auto` | force vs detect source language; independent from the UI locale |
 | Backend | enum | `whisperServer` · `whisperRs` | `whisperServer` | warm sidecar (MVP default, cmake-free) vs in-process (later optimization); advanced/diagnostic |
 | GPU engine | bool (gated) | on if installed + NVIDIA | off until downloaded | use CUDA build when present (≈7–10× faster) |
 

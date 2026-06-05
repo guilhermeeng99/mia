@@ -1,7 +1,7 @@
 # Onboarding Feature Spec
 
 > **Status**: Phase 4 — first-run wizard implemented (`Onboarding.svelte`, build-verified): welcome → hotkey (shows the chord via `get_hotkey`) → mic test (`test_microphone`) → model download. The Model step lists **all four registry models with sizes** (`small` flagged "Recomendado"), mirrors the Hub, and persists the selected downloaded model to `settings.model.model`; it is **mandatory** — there is no skip and "Concluir" stays disabled until the active selected model is on disk (Rule 6/7). `App.svelte` shows the wizard only when onboarding hasn't been completed **and** the active selected model is not installed; "Concluir" persists `settings.general.onboarding_completed=true` (Rule 1/14) so MIA then boots straight to the Hub. The **permission-denied deep-link is now wired**: a denied mic capture is tagged by `classify_mic_error` (sentinel `mic-permission-denied:`) and the mic-test step surfaces an "Abrir configurações" button that launches `ms-settings:privacy-microphone` (the `open_mic_privacy` command). Live mic level meter during the test.
-> **Last updated**: 2026-05-31
+> **Last updated**: 2026-06-05
 > **Coverage**: Sections 1-9 drafted.
 > **Environment**: desktop (Windows, native)
 
@@ -58,7 +58,7 @@ which runs one real dictation pass through the live pipeline.
 | **Text in** | None (no transcript consumed); TryIt's transcript is shown for confirmation only, not injected by default |
 | **Text out** | Persisted config (chosen model, hotkey binding, engine = CPU/CUDA, `onboardingCompleted=true`); a downloaded model file (and optional CUDA engine) in app-data |
 | **Target** | The onboarding window (Settings/Hub light theme); the system tray (post-finish residence); Windows Settings deep-link (mic privacy page) |
-| **Language** | UI: pt-BR + English (first-class, follows app locale). TryIt transcription: the user's selected dictation language (auto-detect default) |
+| **Language** | UI: follows `general.uiLanguage` (`system` default, with supported UI locales). TryIt transcription, when implemented, uses the user's selected dictation language (`auto` default). |
 
 Backing crates/engines: model + CUDA download reuse the engine's **`stt.rs`** (adapted from Toolzy's
 `transcription.rs` — `ureq` HTTP, `.part` rename-on-complete, progress `Channel`); mic
@@ -305,8 +305,9 @@ Hotkey step: Idle(default prefilled) → Recording(capturing chord) → Bound(ch
 ## 9. Out of Scope (this version)
 
 - **Account / sign-in / cloud sync of settings** — MIA has no account by design (ADR-001); never added.
-- **Multi-language UI picker beyond pt-BR/English** — the wizard follows the two first-class UI locales;
-  broader UI localization is backlog. (Dictation itself covers ~99 Whisper languages — see
+- **Additional UI language packs beyond the shipped set** — current UI packs cover the Hub/onboarding/HUD
+  supported locales from [settings.md](settings.md). More locales can be added without changing the
+  dictation language model. (Dictation itself uses Whisper language codes — see
   [speech-to-text.md](speech-to-text.md).)
 - **Per-app writing styles / custom dictionary / snippets setup** — personalization is Phase 3
   ([custom-dictionary.md](custom-dictionary.md), [snippets.md](snippets.md)); onboarding gets the user

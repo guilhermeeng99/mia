@@ -12,22 +12,20 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::dictation::Phase;
+use crate::settings::UiLanguage;
 
 /// Stable id so the engine can fetch the tray (`app.tray_by_id`) to re-skin it per phase.
 const TRAY_ID: &str = "mia-tray";
 
 /// Build the tray icon + menu (Open / Quit). Called once from `setup`.
 pub fn init(app: &AppHandle) -> Result<(), String> {
-    let open = MenuItem::with_id(app, "open", "Abrir MIA", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let quit =
-        MenuItem::with_id(app, "quit", "Sair", true, None::<&str>).map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(app, &[&open, &quit]).map_err(|e| e.to_string())?;
+    let text = tray_text(tray_language(app));
+    let menu = build_menu(app, text)?;
     let icon = app.default_window_icon().ok_or("no app icon")?.clone();
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("MIA — ditado local")
+        .tooltip(text.idle)
         .menu(&menu)
         .on_tray_icon_event(|tray, event| {
             if matches!(
@@ -49,6 +47,26 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .build(app)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Refresh labels after the interface language setting changes.
+pub fn refresh_labels(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let text = tray_text(tray_language(app));
+    if let Ok(menu) = build_menu(app, text) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    let _ = tray.set_tooltip(Some(text.idle));
+}
+
+fn build_menu(app: &AppHandle, text: TrayText) -> Result<Menu<tauri::Wry>, String> {
+    let open =
+        MenuItem::with_id(app, "open", text.open, true, None::<&str>).map_err(|e| e.to_string())?;
+    let quit =
+        MenuItem::with_id(app, "quit", text.quit, true, None::<&str>).map_err(|e| e.to_string())?;
+    Menu::with_items(app, &[&open, &quit]).map_err(|e| e.to_string())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,7 +110,7 @@ pub fn reflect_phase(app: &AppHandle, phase: Phase, message: Option<&str>) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    let _ = tray.set_tooltip(Some(phase_tooltip(phase, message)));
+    let _ = tray.set_tooltip(Some(phase_tooltip(tray_language(app), phase, message)));
     if let Some(icon) = phase_icon(app, phase) {
         let _ = tray.set_icon(Some(icon));
     }
@@ -116,16 +134,144 @@ fn default_icon(app: &AppHandle) -> Option<Image<'static>> {
     Some(Image::new_owned(base.rgba().to_vec(), base.width(), base.height()))
 }
 
-/// The tooltip line per phase (pt-BR). `message` enriches the transient error.
-fn phase_tooltip(phase: Phase, message: Option<&str>) -> String {
+#[derive(Clone, Copy)]
+struct TrayText {
+    open: &'static str,
+    quit: &'static str,
+    idle: &'static str,
+    listening: &'static str,
+    transcribing: &'static str,
+    inserting: &'static str,
+    error: &'static str,
+}
+
+fn tray_language(app: &AppHandle) -> UiLanguage {
+    let preference = app
+        .try_state::<crate::settings::SettingsState>()
+        .and_then(|state| state.snapshot().ok())
+        .map(|s| s.general.ui_language)
+        .unwrap_or(UiLanguage::System);
+    resolve_tray_language(preference)
+}
+
+fn resolve_tray_language(language: UiLanguage) -> UiLanguage {
+    match language {
+        UiLanguage::System => system_ui_language(),
+        explicit => explicit,
+    }
+}
+
+#[cfg(windows)]
+fn system_ui_language() -> UiLanguage {
+    use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
+
+    let lang_id = unsafe { GetUserDefaultUILanguage() };
+    match lang_id & 0x03ff {
+        0x16 => UiLanguage::Pt,
+        0x09 => UiLanguage::En,
+        0x0a => UiLanguage::Es,
+        0x0c => UiLanguage::Fr,
+        0x07 => UiLanguage::De,
+        0x10 => UiLanguage::It,
+        0x11 => UiLanguage::Ja,
+        0x04 => UiLanguage::Zh,
+        _ => UiLanguage::En,
+    }
+}
+
+#[cfg(not(windows))]
+fn system_ui_language() -> UiLanguage {
+    UiLanguage::En
+}
+
+fn tray_text(language: UiLanguage) -> TrayText {
+    match language {
+        UiLanguage::Pt => TrayText {
+            open: "Abrir MIA",
+            quit: "Sair",
+            idle: "MIA — ditado local",
+            listening: "MIA — ouvindo...",
+            transcribing: "MIA — transcrevendo...",
+            inserting: "MIA — inserindo...",
+            error: "MIA — erro",
+        },
+        UiLanguage::Es => TrayText {
+            open: "Abrir MIA",
+            quit: "Salir",
+            idle: "MIA — dictado local",
+            listening: "MIA — escuchando...",
+            transcribing: "MIA — transcribiendo...",
+            inserting: "MIA — insertando...",
+            error: "MIA — error",
+        },
+        UiLanguage::Fr => TrayText {
+            open: "Ouvrir MIA",
+            quit: "Quitter",
+            idle: "MIA — dictée locale",
+            listening: "MIA — écoute...",
+            transcribing: "MIA — transcription...",
+            inserting: "MIA — insertion...",
+            error: "MIA — erreur",
+        },
+        UiLanguage::De => TrayText {
+            open: "MIA öffnen",
+            quit: "Beenden",
+            idle: "MIA — lokales Diktat",
+            listening: "MIA — hört zu...",
+            transcribing: "MIA — transkribiert...",
+            inserting: "MIA — fügt ein...",
+            error: "MIA — Fehler",
+        },
+        UiLanguage::It => TrayText {
+            open: "Apri MIA",
+            quit: "Esci",
+            idle: "MIA — dettatura locale",
+            listening: "MIA — in ascolto...",
+            transcribing: "MIA — trascrizione...",
+            inserting: "MIA — inserimento...",
+            error: "MIA — errore",
+        },
+        UiLanguage::Ja => TrayText {
+            open: "MIA を開く",
+            quit: "終了",
+            idle: "MIA — ローカル音声入力",
+            listening: "MIA — 聞き取り中...",
+            transcribing: "MIA — 文字起こし中...",
+            inserting: "MIA — 挿入中...",
+            error: "MIA — エラー",
+        },
+        UiLanguage::Zh => TrayText {
+            open: "打开 MIA",
+            quit: "退出",
+            idle: "MIA — 本地听写",
+            listening: "MIA — 正在聆听...",
+            transcribing: "MIA — 正在转写...",
+            inserting: "MIA — 正在插入...",
+            error: "MIA — 错误",
+        },
+        UiLanguage::System | UiLanguage::En => TrayText {
+            open: "Open MIA",
+            quit: "Quit",
+            idle: "MIA — local dictation",
+            listening: "MIA — listening...",
+            transcribing: "MIA — transcribing...",
+            inserting: "MIA — inserting...",
+            error: "MIA — error",
+        },
+    }
+}
+
+/// The tooltip line per phase. `message` enriches the transient error.
+fn phase_tooltip(language: UiLanguage, phase: Phase, message: Option<&str>) -> String {
+    let text = tray_text(resolve_tray_language(language));
     match phase {
-        Phase::Idle => "MIA — ditado local".to_string(),
-        Phase::Listening => "MIA — ouvindo…".to_string(),
-        Phase::Transcribing => "MIA — transcrevendo…".to_string(),
-        Phase::Inserting => "MIA — inserindo…".to_string(),
+        Phase::Idle => text.idle.to_string(),
+        Phase::Listening => text.listening.to_string(),
+        Phase::Transcribing => text.transcribing.to_string(),
+        Phase::Inserting => text.inserting.to_string(),
         Phase::Error => match message {
-            Some(m) => format!("MIA — erro: {m}"),
-            None => "MIA — erro".to_string(),
+            Some(m) => format!("{}: {m}", text.error),
+            None => text.error.to_string(),
         },
     }
 }
@@ -292,10 +438,11 @@ mod tests {
 
     #[test]
     fn error_tooltip_includes_the_message_when_present() {
-        assert_eq!(phase_tooltip(Phase::Listening, None), "MIA — ouvindo…");
-        assert_eq!(phase_tooltip(Phase::Error, None), "MIA — erro");
+        assert_eq!(phase_tooltip(UiLanguage::Pt, Phase::Listening, None), "MIA — ouvindo...");
+        assert_eq!(phase_tooltip(UiLanguage::Pt, Phase::Error, None), "MIA — erro");
+        assert_eq!(phase_tooltip(UiLanguage::En, Phase::Idle, None), "MIA — local dictation");
         assert_eq!(
-            phase_tooltip(Phase::Error, Some("microfone bloqueado")),
+            phase_tooltip(UiLanguage::Pt, Phase::Error, Some("microfone bloqueado")),
             "MIA — erro: microfone bloqueado"
         );
     }

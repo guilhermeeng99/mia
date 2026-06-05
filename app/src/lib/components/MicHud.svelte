@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Phase } from "../dictation";
+  import { i18n } from "../i18n";
 
   // The floating mic HUD pill — "Blush Playground" (design-system.md §8b). A solid
   // white pill with a 2px charcoal outline so it stays legible floating over ANY
@@ -27,12 +28,12 @@
 
   const label = $derived(
     state === "listening" || state === "idle"
-      ? "Ouvindo…"
+      ? $i18n.hud.listening
       : state === "transcribing"
-        ? "Transcrevendo…"
+        ? $i18n.hud.transcribing
         : state === "inserting"
-          ? "Inserido"
-          : message || "Erro",
+          ? $i18n.hud.inserting
+          : message || $i18n.hud.error,
   );
 </script>
 

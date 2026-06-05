@@ -12,9 +12,10 @@
     value: string;
     onchange?: (value: string) => void;
     disabled?: boolean;
+    placement?: "bottom" | "top";
   }
 
-  let { options, value, onchange, disabled = false }: Props = $props();
+  let { options, value, onchange, disabled = false, placement = "bottom" }: Props = $props();
 
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -76,8 +77,12 @@
   {#if open}
     <ul
       role="listbox"
-      class="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden
+      class="absolute left-0 z-50 max-h-[360px] w-full overflow-y-auto
              rounded-card border-2 border-charcoal bg-surface"
+      class:top-full={placement === "bottom"}
+      class:mt-1={placement === "bottom"}
+      class:bottom-full={placement === "top"}
+      class:mb-1={placement === "top"}
     >
       {#each options as opt (opt.value)}
         <li role="option" aria-selected={opt.value === value}>

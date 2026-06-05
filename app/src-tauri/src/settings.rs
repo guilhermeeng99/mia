@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 /// Bumped when the on-disk shape changes; `migrate` upgrades older files (Rule 6).
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 /// Bundled small CPU model — the latency-first default (§4; see `speech-to-text.md`).
 const DEFAULT_MODEL_ID: &str = "small";
 /// Sentinel for "follow the OS default input device" (Rule 11).
@@ -38,6 +38,37 @@ pub enum DefaultLanguage {
     Auto,
     Pt,
     En,
+    Es,
+    Fr,
+    De,
+    It,
+    Nl,
+    Pl,
+    Ru,
+    Uk,
+    Tr,
+    Ar,
+    Hi,
+    Id,
+    Ja,
+    Ko,
+    Zh,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum UiLanguage {
+    /// Follow the user's OS/browser language when MIA has a matching UI pack.
+    #[default]
+    System,
+    Pt,
+    En,
+    Es,
+    Fr,
+    De,
+    It,
+    Ja,
+    Zh,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -90,6 +121,7 @@ impl Indicator {
 pub struct GeneralSettings {
     pub launch_at_login: bool,
     pub dictation_enabled: bool,
+    pub ui_language: UiLanguage,
     pub default_language: DefaultLanguage,
     /// Master switch for voice-triggered snippet expansion in the pipeline (Phase 3).
     pub snippets_enabled: bool,
@@ -105,6 +137,7 @@ impl Default for GeneralSettings {
         Self {
             launch_at_login: false,
             dictation_enabled: true,
+            ui_language: UiLanguage::System,
             default_language: DefaultLanguage::Auto,
             snippets_enabled: true,
             onboarding_completed: false,
@@ -499,6 +532,9 @@ pub fn update_settings(
         let mgr = app.autolaunch();
         let _ = if next.general.launch_at_login { mgr.enable() } else { mgr.disable() };
     }
+    if next.general.ui_language != current.general.ui_language {
+        crate::tray::refresh_labels(&app);
+    }
     Ok(next)
 }
 
@@ -522,6 +558,7 @@ mod tests {
     fn defaults_match_spec() {
         let s = Settings::default();
         assert_eq!(s.schema_version, SCHEMA_VERSION);
+        assert_eq!(s.general.ui_language, UiLanguage::System);
         assert_eq!(s.general.default_language, DefaultLanguage::Auto);
         assert!(s.general.dictation_enabled);
         assert!(!s.general.launch_at_login);
@@ -593,7 +630,7 @@ mod tests {
     fn migrate_inserts_missing_schema_version() {
         let v = serde_json::json!({ "general": {} });
         let migrated = migrate(v);
-        assert_eq!(migrated.get("schemaVersion").and_then(|x| x.as_u64()), Some(1));
+        assert_eq!(migrated.get("schemaVersion").and_then(|x| x.as_u64()), Some(SCHEMA_VERSION as u64));
     }
 
     #[test]

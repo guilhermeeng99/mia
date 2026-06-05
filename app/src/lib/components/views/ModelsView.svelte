@@ -14,6 +14,7 @@
     type WarmStatus,
     type WhisperModel,
   } from "../../stt";
+  import { i18n } from "../../i18n";
   import { getSettings, updateSettings, type ModelSettings } from "../../settings";
   import ErrorBanner from "../ui/ErrorBanner.svelte";
   import Button from "../ui/Button.svelte";
@@ -39,38 +40,22 @@
   let warmPoll: ReturnType<typeof setTimeout> | null = null;
   let confirmDeleteModel = $state<WhisperModel | null>(null);
 
-  const MODEL_DETAILS: Record<
-    string,
-    { fidelity: string; latency: string; tone: "neutral" | "success" | "accent" | "info"; note: string }
-  > = {
-    small: {
-      fidelity: "Fidelidade basica",
-      latency: "Mais rapido",
-      tone: "info",
-      note: "Bom para respostas rapidas; pode errar mais em fala longa ou ambiente ruidoso.",
-    },
-    medium: {
-      fidelity: "Fidelidade media",
-      latency: "Equilibrado",
-      tone: "neutral",
-      note: "Mais fiel que Small, ainda viavel em CPU boa.",
-    },
-    "large-v3-turbo": {
-      fidelity: "Fidelidade alta",
-      latency: "Rapido na NVIDIA",
-      tone: "success",
-      note: "Melhor ponto de partida com GPU NVIDIA.",
-    },
-    "large-v3": {
-      fidelity: "Fidelidade maxima",
-      latency: "Mais lento",
-      tone: "accent",
-      note: "Mais pesado; escolha quando a qualidade vale esperar mais.",
-    },
-  };
-
   function detailsFor(id: string) {
-    return MODEL_DETAILS[id] ?? MODEL_DETAILS.small;
+    const tones: Record<string, "neutral" | "success" | "accent" | "info"> = {
+      small: "info",
+      medium: "neutral",
+      "large-v3-turbo": "success",
+      "large-v3": "accent",
+    };
+    const details =
+      id === "medium"
+        ? $i18n.models.details.medium
+        : id === "large-v3-turbo"
+          ? $i18n.models.details.turbo
+          : id === "large-v3"
+            ? $i18n.models.details.large
+            : $i18n.models.details.small;
+    return { ...details, tone: tones[id] ?? "info" };
   }
 
   function activeModelLabel() {
@@ -78,8 +63,8 @@
   }
 
   function warmLabel() {
-    if (warm?.warming) return `aquecendo · ${warm.targetModel ?? activeModel}`;
-    return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
+    if (warm?.warming) return $i18n.overview.warmWarming(warm.targetModel ?? activeModel);
+    return warm?.loaded ? $i18n.overview.warmLoaded(warm.model ?? "Whisper") : $i18n.overview.warmCold;
   }
 
   function fail(e: unknown) {
@@ -203,19 +188,18 @@
   }
 </script>
 
-<PageHeader title="Modelos & Motor" subtitle="Baixe um modelo Whisper uma vez — depois, 100% offline." />
+<PageHeader title={$i18n.models.title} subtitle={$i18n.models.subtitle} />
 
 <ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card>
-    <h2 class="font-display text-title">Modelo Whisper</h2>
+    <h2 class="font-display text-title">{$i18n.models.whisperTitle}</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Baixado sob demanda do Hugging Face — a única saída de rede do MIA.
+      {$i18n.models.whisperSubtitle}
     </p>
     <p class="mt-2 text-body text-ink-soft">
-      Modelo ativo: <span class="font-bold text-charcoal">{activeModelLabel()}</span>. Baixe modelos uma vez e
-      selecione qual usar nas proximas falas.
+      {$i18n.models.activeModel(activeModelLabel())}
     </p>
     <ul class="mt-4 flex flex-col gap-3">
       {#each models as model (model.id)}
@@ -229,12 +213,12 @@
           <div class="flex min-w-0 flex-1 flex-col gap-2">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-body-lg font-bold {activeModel === model.id ? 'text-success' : ''}">
-                {activeModel === model.id ? '✓ ' : ''}{model.label}
+                {activeModel === model.id ? $i18n.models.selectedPrefix : ''}{model.label}
               </span>
               <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
               <Pill tone={details.tone}>{details.fidelity}</Pill>
               <Pill tone="neutral">{details.latency}</Pill>
-              {#if model.recommended}<Pill tone="accent">Padrao</Pill>{/if}
+              {#if model.recommended}<Pill tone="accent">{$i18n.models.defaultPill}</Pill>{/if}
             </div>
             <p class="text-body text-ink-soft">{details.note}</p>
           </div>
@@ -248,11 +232,11 @@
                     disabled={downloading !== null || deletingModel !== null}
                     onclick={() => (confirmDeleteModel = model)}
                   >
-                    {deletingModel === model.id ? "Deletando" : "Deletar"}
+                    {deletingModel === model.id ? $i18n.generic.deleting : $i18n.generic.delete}
                   </Button>
                 </div>
                 {#if activeModel === model.id}
-                  <Pill tone="success">Selecionado</Pill>
+                  <Pill tone="success">{$i18n.generic.selected}</Pill>
                 {:else}
                   <div class="opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
@@ -261,21 +245,21 @@
                       disabled={downloading !== null || deletingModel !== null}
                       onclick={() => selectModel(model.id)}
                     >
-                      Selecionar
+                      {$i18n.generic.select}
                     </Button>
                   </div>
                 {/if}
               </div>
             {:else if downloading === model.id}
               <div class="flex items-center gap-2">
-                <Pill tone="accent">baixando… {progress}%</Pill>
+                <Pill tone="accent">{$i18n.models.downloadingModel(progress)}</Pill>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={cancellingDownload === model.id}
                   onclick={() => cancelDownload(model.id)}
                 >
-                  {cancellingDownload === model.id ? "Cancelando" : "Cancelar"}
+                  {cancellingDownload === model.id ? $i18n.generic.canceling : $i18n.generic.cancel}
                 </Button>
               </div>
             {:else}
@@ -286,7 +270,7 @@
                   disabled={downloading !== null}
                   onclick={() => download(model.id)}
                 >
-                  Baixar
+                  {$i18n.generic.download}
                 </Button>
               </div>
             {/if}
@@ -297,28 +281,28 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Aceleração</h2>
+    <h2 class="font-display text-title">{$i18n.models.accelerationTitle}</h2>
     <div class="mt-3 flex flex-wrap gap-3">
       <Pill tone={warm?.warming ? "accent" : warm?.loaded ? "success" : "neutral"}>
         {warmLabel()}
       </Pill>
-      <Pill tone={warm?.gpu ? "success" : "neutral"}>motor: {warm?.gpu ? "GPU" : "CPU"}</Pill>
+      <Pill tone={warm?.gpu ? "success" : "neutral"}>{$i18n.overview.engineMode(warm?.gpu ? "GPU" : "CPU")}</Pill>
       {#if gpu?.gpuPresent}
         <Pill tone={gpu.downloaded ? "success" : "accent"}>
-          GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}
+          {gpu.downloaded ? $i18n.overview.gpuReady : $i18n.overview.gpuMissingEngine}
         </Pill>
       {:else}
-        <Pill tone="neutral">somente CPU</Pill>
+        <Pill tone="neutral">{$i18n.overview.cpuOnly}</Pill>
       {/if}
     </div>
     {#if gpu?.gpuPresent && !gpu.downloaded}
       <div class="mt-4 flex flex-wrap items-center gap-3">
         {#if gpuDownloading}
-          <Pill tone="accent">baixando engine… {gpuProgress}%</Pill>
+          <Pill tone="accent">{$i18n.models.downloadingEngine(gpuProgress)}</Pill>
         {:else}
-          <Button variant="secondary" onclick={downloadGpu}>Baixar engine GPU (~435 MB)</Button>
+          <Button variant="secondary" onclick={downloadGpu}>{$i18n.models.downloadGpu}</Button>
         {/if}
-        <span class="text-body text-ink-soft">~7–10× mais rápido; troca de motor na próxima fala.</span>
+        <span class="text-body text-ink-soft">{$i18n.models.gpuHint}</span>
       </div>
     {/if}
   </Card>
@@ -326,9 +310,9 @@
 
 <ConfirmDialog
   open={confirmDeleteModel !== null}
-  title="Deletar modelo"
-  message="Deletar o modelo {confirmDeleteModel?.label ?? ''}? Você poderá baixar novamente depois."
-  confirmLabel="Deletar"
+  title={$i18n.models.deleteTitle}
+  message={$i18n.models.deleteMessage(confirmDeleteModel?.label ?? "")}
+  confirmLabel={$i18n.generic.delete}
   confirmVariant="danger"
   onconfirm={confirmDelete}
   oncancel={() => (confirmDeleteModel = null)}

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { getHotkey, type HotkeyConfig } from "../../hotkey";
+  import { i18n } from "../../i18n";
   import { getStats, resetStats, type UsageStats } from "../../stats";
   import { gpuEngineStatus, warmStatus, type GpuStatus, type WarmStatus } from "../../stt";
   import {
@@ -40,8 +41,8 @@
   }
 
   function warmLabel() {
-    if (warm?.warming) return `aquecendo · ${warm.targetModel ?? "modelo"}`;
-    return warm?.loaded ? `quente · ${warm.model}` : "frio (nenhum modelo carregado)";
+    if (warm?.warming) return $i18n.overview.warmWarming(warm.targetModel ?? "model");
+    return warm?.loaded ? $i18n.overview.warmLoaded(warm.model ?? "Whisper") : $i18n.overview.warmCold;
   }
 
   function clearWarmPoll() {
@@ -73,7 +74,7 @@
   }
 
   function formatDate(ms: number) {
-    return new Intl.DateTimeFormat("pt-BR", {
+    return new Intl.DateTimeFormat($i18n.dateLocale, {
       day: "2-digit",
       month: "2-digit",
       hour: "2-digit",
@@ -148,65 +149,64 @@
   }
 </script>
 
-<PageHeader title="Visão geral" subtitle="Sua voz, sua máquina. Ditado local para Windows." />
+<PageHeader title={$i18n.overview.title} subtitle={$i18n.overview.subtitle} />
 
 <ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card tone="seafoam">
-    <p class="text-body-lg font-bold">Pronto para ditar</p>
+    <p class="text-body-lg font-bold">{$i18n.overview.readyTitle}</p>
     <p class="mt-2 max-w-[34ch] text-body-lg">
       {#if hotkey}
-        Segure <span class="font-display">{hotkey.accelerator}</span> em qualquer app, fale, e o MIA
-        digita o texto no cursor.
+        {$i18n.overview.readyWithHotkey(hotkey.accelerator)}
       {:else}
-        Segure seu atalho em qualquer app, fale, e o MIA digita o texto no cursor.
+        {$i18n.overview.readyWithoutHotkey}
       {/if}
     </p>
   </Card>
 
   <section>
     <div class="mb-3 flex items-center justify-between">
-      <h2 class="font-display text-title">Seu uso</h2>
+      <h2 class="font-display text-title">{$i18n.overview.usageTitle}</h2>
       {#if stats}
         <Button variant="danger" size="sm" onclick={() => (showResetConfirm = true)}>
-          Zerar estatísticas
+          {$i18n.overview.resetStats}
         </Button>
       {/if}
     </div>
     {#if stats}
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatTile tone="sky" value={stats.totalWords} label="palavras ditadas" />
-        <StatTile tone="lavender" value={stats.avgWpm} label="WPM médio" />
-        <StatTile tone="lemon" value={stats.dayStreak} label="dias seguidos" />
-        <StatTile tone="spring" value={stats.bestStreak} label="melhor sequência" />
+        <StatTile tone="sky" value={stats.totalWords} label={$i18n.overview.wordsDictated} />
+        <StatTile tone="lavender" value={stats.avgWpm} label={$i18n.overview.avgWpm} />
+        <StatTile tone="lemon" value={stats.dayStreak} label={$i18n.overview.dayStreak} />
+        <StatTile tone="spring" value={stats.bestStreak} label={$i18n.overview.bestStreak} />
       </div>
     {:else}
-      <p class="text-body text-ink-soft">Carregando…</p>
+      <p class="text-body text-ink-soft">{$i18n.generic.loading}</p>
     {/if}
   </section>
 
   <Card>
-    <h2 class="font-display text-title">Motor</h2>
-    <p class="mt-1 text-body text-ink-soft">Locais — nada sai da máquina (ADR-001).</p>
+    <h2 class="font-display text-title">{$i18n.overview.engineTitle}</h2>
+    <p class="mt-1 text-body text-ink-soft">{$i18n.overview.engineSubtitle}</p>
     <div class="mt-4 flex flex-wrap gap-3">
       <Pill tone={warm?.warming ? "accent" : warm?.loaded ? "success" : "neutral"}>
         {warmLabel()}
       </Pill>
-      <Pill tone={warm?.gpu ? "success" : "neutral"}>motor: {warm?.gpu ? "GPU" : "CPU"}</Pill>
+      <Pill tone={warm?.gpu ? "success" : "neutral"}>{$i18n.overview.engineMode(warm?.gpu ? "GPU" : "CPU")}</Pill>
       {#if gpu?.gpuPresent}
         <Pill tone={gpu.downloaded ? "success" : "accent"}>
-          GPU NVIDIA {gpu.downloaded ? "· engine pronto" : "· engine não baixado"}
+          {gpu.downloaded ? $i18n.overview.gpuReady : $i18n.overview.gpuMissingEngine}
         </Pill>
       {:else}
-        <Pill tone="neutral">somente CPU</Pill>
+        <Pill tone="neutral">{$i18n.overview.cpuOnly}</Pill>
       {/if}
     </div>
   </Card>
 
   <section>
     <div class="mb-3 flex items-center justify-between">
-      <h2 class="font-display text-title">Histórico</h2>
+      <h2 class="font-display text-title">{$i18n.overview.historyTitle}</h2>
       {#if historyEntries.length > 0}
         <Button
           variant="danger"
@@ -214,28 +214,28 @@
           disabled={historyLoading}
           onclick={() => (showClearConfirm = true)}
         >
-          Limpar tudo
+          {$i18n.overview.clearAll}
         </Button>
       {/if}
     </div>
     <Card>
       {#if historyLoading}
-        <p class="text-body text-ink-soft">Carregando...</p>
+        <p class="text-body text-ink-soft">{$i18n.generic.loading}</p>
       {:else if historyEntries.length === 0}
-        <p class="text-body text-ink-soft">Nenhum texto ditado ainda.</p>
+        <p class="text-body text-ink-soft">{$i18n.overview.noHistory}</p>
       {:else}
         <ul class="flex flex-col gap-3">
           {#each historyEntries as entry (entry.id)}
             <li class="group rounded-card border-2 border-charcoal bg-canvas px-4 py-3">
               <div class="flex flex-wrap items-center gap-2">
                 <Pill tone="neutral">{formatDate(entry.createdAtMs)}</Pill>
-                <Pill tone="info">{entry.wordCount} palavras</Pill>
+                <Pill tone="info">{$i18n.overview.words(entry.wordCount)}</Pill>
                 <div class="ml-auto flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                   <Button variant="secondary" size="sm" onclick={() => copyEntry(entry.id)}>
-                    {copiedId === entry.id ? "Copiado" : "Copiar"}
+                    {copiedId === entry.id ? $i18n.generic.copied : $i18n.generic.copy}
                   </Button>
                   <Button variant="ghost" size="sm" onclick={() => removeEntry(entry.id)}>
-                    Remover
+                    {$i18n.generic.remove}
                   </Button>
                 </div>
               </div>
@@ -252,9 +252,9 @@
 
 <ConfirmDialog
   open={showClearConfirm}
-  title="Limpar histórico"
-  message="Apagar todos os textos ditados? Esta ação não pode ser desfeita."
-  confirmLabel="Limpar tudo"
+  title={$i18n.overview.clearHistoryTitle}
+  message={$i18n.overview.clearHistoryMessage}
+  confirmLabel={$i18n.overview.clearAll}
   confirmVariant="danger"
   onconfirm={confirmClearAll}
   oncancel={() => (showClearConfirm = false)}
@@ -262,9 +262,9 @@
 
 <ConfirmDialog
   open={showResetConfirm}
-  title="Zerar estatísticas"
-  message="Apagar todas as estatísticas de uso? Esta ação não pode ser desfeita."
-  confirmLabel="Zerar"
+  title={$i18n.overview.resetStatsTitle}
+  message={$i18n.overview.resetStatsMessage}
+  confirmLabel={$i18n.overview.reset}
   confirmVariant="danger"
   onconfirm={confirmResetStats}
   oncancel={() => (showResetConfirm = false)}

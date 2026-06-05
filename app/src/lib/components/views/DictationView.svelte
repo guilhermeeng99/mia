@@ -14,6 +14,7 @@
     type ActivationMode,
     type HotkeyConfig,
   } from "../../hotkey";
+  import { dictationLanguageOptions, i18n } from "../../i18n";
   import {
     getSettings,
     updateSettings,
@@ -56,8 +57,8 @@
   let error = $state<string | null>(null);
 
   const deviceOptions = $derived([
-    { value: "", label: "Padrão do sistema" },
-    ...devices.map((d) => ({ value: d.id, label: d.name + (d.isDefault ? " · padrão" : "") })),
+    { value: "", label: $i18n.generic.systemDefault },
+    ...devices.map((d) => ({ value: d.id, label: d.name + (d.isDefault ? ` · ${$i18n.dictation.defaultDeviceSuffix}` : "") })),
   ]);
 
 
@@ -258,8 +259,8 @@
       const r = await testMicrophone(1500, (rms) => (micLevel = rms), selectedDevice || "default");
       micMsg =
         r.peak > 0.02
-          ? `Ouvimos você (pico ${(r.peak * 100).toFixed(0)}%).`
-          : "Quase nenhum som captado — verifique o microfone.";
+          ? $i18n.dictation.micHeard((r.peak * 100).toFixed(0))
+          : $i18n.dictation.micQuiet;
     } catch (e) {
       micDenied = isMicPermissionDenied(String(e));
       fail(e);
@@ -275,22 +276,22 @@
 
 </script>
 
-<PageHeader title="Ditado" subtitle="Como o MIA escuta e onde o texto aparece." />
+<PageHeader title={$i18n.dictation.title} subtitle={$i18n.dictation.subtitle} />
 
 <ErrorBanner message={error} />
 
 <div class="flex flex-col gap-6">
   <Card>
-    <h2 class="font-display text-title">Microfone</h2>
-    <p class="mt-1 text-body text-ink-soft">Escolha a entrada de áudio para o ditado.</p>
+    <h2 class="font-display text-title">{$i18n.dictation.micTitle}</h2>
+    <p class="mt-1 text-body text-ink-soft">{$i18n.dictation.micSubtitle}</p>
     <div class="mt-4">
-      <Field label="Dispositivo de entrada" hint="Usado no teste e no ditado ao vivo.">
+      <Field label={$i18n.dictation.inputDevice} hint={$i18n.dictation.inputHint}>
         <Select options={deviceOptions} value={selectedDevice} onchange={setInputDevice} />
       </Field>
     </div>
     <div class="mt-4 flex items-center gap-3">
       <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
-        {micTesting ? "Ouvindo…" : "Testar microfone"}
+        {micTesting ? $i18n.onboarding.listening : $i18n.dictation.testMic}
       </Button>
       {#if micTesting}
         <LevelMeter level={micLevel} />
@@ -300,18 +301,18 @@
     </div>
     {#if micDenied}
       <div class="mt-3 flex flex-wrap items-center gap-3">
-        <span class="text-body text-danger">Acesso ao microfone bloqueado pelo Windows.</span>
+        <span class="text-body text-danger">{$i18n.dictation.micBlocked}</span>
         <Button variant="secondary" size="sm" onclick={openMicSettings}>
-          Abrir configurações de microfone
+          {$i18n.dictation.openMicSettings}
         </Button>
       </div>
     {/if}
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Atalho (push-to-talk)</h2>
+    <h2 class="font-display text-title">{$i18n.dictation.hotkeyTitle}</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Segure o atalho e fale; solte para inserir. Grave uma combinação com modificador.
+      {$i18n.dictation.hotkeySubtitle}
     </p>
     {#if hotkeyError}
       <p class="mt-2 text-body text-danger">⚠ {hotkeyError}</p>
@@ -319,24 +320,24 @@
     <div class="mt-4 flex flex-wrap items-center gap-3">
       <Pill tone="accent">{hotkey?.accelerator ?? "—"}</Pill>
       {#if pendingHotkey}
-        <Pill tone="info">Novo: {pendingHotkey}</Pill>
+        <Pill tone="info">{$i18n.dictation.newHotkey(pendingHotkey)}</Pill>
       {/if}
       <Button variant="secondary" size="sm" disabled={recording || armingHotkeyRecorder || !!pendingHotkey} onclick={() => void startRecording()}>
-        {recording ? "Pressione a combinação…" : armingHotkeyRecorder ? "Preparando…" : "Gravar atalho"}
+        {recording ? $i18n.dictation.pressCombination : armingHotkeyRecorder ? $i18n.dictation.preparing : $i18n.dictation.recordHotkey}
       </Button>
       {#if pendingHotkey}
-        <Button size="sm" onclick={confirmPendingHotkey}>Confirmar</Button>
-        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
+        <Button size="sm" onclick={confirmPendingHotkey}>{$i18n.generic.confirm}</Button>
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>{$i18n.generic.cancel}</Button>
       {:else if recording}
-        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>Cancelar</Button>
+        <Button variant="ghost" size="sm" onclick={() => void cancelRecording()}>{$i18n.generic.cancel}</Button>
       {/if}
     </div>
     <div class="mt-4">
-      <Field label="Modo de ativação">
+      <Field label={$i18n.dictation.activationMode}>
         <Select
           options={[
-            { value: "pushToHold", label: "Segurar para falar" },
-            { value: "pressToToggle", label: "Pressionar para ligar/desligar" },
+            { value: "pushToHold", label: $i18n.dictation.pushToHold },
+            { value: "pressToToggle", label: $i18n.dictation.pressToToggle },
           ]}
           value={hotkey?.mode ?? "pushToHold"}
           disabled={!hotkey}
@@ -347,18 +348,14 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Idioma do ditado</h2>
+    <h2 class="font-display text-title">{$i18n.dictation.languageTitle}</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Automático detecta a fala; fixar pt-BR ou inglês melhora a precisão.
+      {$i18n.dictation.languageSubtitle}
     </p>
     <div class="mt-4">
-      <Field label="Idioma">
+      <Field label={$i18n.dictation.languageField}>
         <Select
-          options={[
-            { value: "auto", label: "Automático" },
-            { value: "pt", label: "Português (pt-BR)" },
-            { value: "en", label: "English" },
-          ]}
+          options={dictationLanguageOptions($i18n)}
           value={general?.defaultLanguage ?? "auto"}
           disabled={!general}
           onchange={setLanguage}
@@ -368,21 +365,20 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Indicador de gravação</h2>
+    <h2 class="font-display text-title">{$i18n.dictation.indicatorTitle}</h2>
     <p class="mt-1 text-body text-ink-soft">
-      Como o MIA mostra que está ouvindo: o balão flutuante sobre o app ou um ponto no
-      ícone da bandeja.
+      {$i18n.dictation.indicatorSubtitle}
     </p>
     <div class="mt-4 grid gap-3 sm:grid-cols-2">
       {#if hud}
         <Toggle
           checked={hud.indicator.overlay}
-          label="Balão flutuante"
+          label={$i18n.dictation.overlay}
           onchange={(value) => setIndicatorField("overlay", value)}
         />
         <Toggle
           checked={hud.indicator.tray}
-          label="Bandeja"
+          label={$i18n.dictation.tray}
           onchange={(value) => setIndicatorField("tray", value)}
         />
       {/if}
@@ -390,27 +386,27 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Limpeza de texto</h2>
+    <h2 class="font-display text-title">{$i18n.dictation.cleanupTitle}</h2>
     <div class="mt-4 grid gap-3 sm:grid-cols-2">
       {#if cleanup}
         <Toggle
           checked={cleanup.fillerRemoval}
-          label="Remover vícios de fala"
+          label={$i18n.dictation.fillerRemoval}
           onchange={(value) => setCleanup("fillerRemoval", value)}
         />
         <Toggle
           checked={cleanup.spokenPunctuation}
-          label="Converter pontuação falada"
+          label={$i18n.dictation.spokenPunctuation}
           onchange={(value) => setCleanup("spokenPunctuation", value)}
         />
         <Toggle
           checked={cleanup.stutterCollapse}
-          label="Juntar repetições"
+          label={$i18n.dictation.stutterCollapse}
           onchange={(value) => setCleanup("stutterCollapse", value)}
         />
         <Toggle
           checked={cleanup.capitalization}
-          label="Ajustar maiúsculas"
+          label={$i18n.dictation.capitalization}
           onchange={(value) => setCleanup("capitalization", value)}
         />
       {/if}
@@ -418,17 +414,17 @@
   </Card>
 
   <Card>
-    <h2 class="font-display text-title">Geral</h2>
+    <h2 class="font-display text-title">{$i18n.dictation.generalTitle}</h2>
     <div class="mt-3 flex flex-col gap-3">
       {#if general}
         <Toggle
           checked={general.launchAtLogin}
-          label="Abrir o MIA ao iniciar o Windows"
+          label={$i18n.dictation.launchAtLogin}
           onchange={setLaunchAtLogin}
         />
         <Toggle
           checked={general.dictationSounds}
-          label="Sons de ditado"
+          label={$i18n.dictation.dictationSounds}
           onchange={setDictationSounds}
         />
       {/if}

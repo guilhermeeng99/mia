@@ -1,7 +1,7 @@
 # Per-App Writing Styles / Context Feature Spec
 
 > **Status**: Implemented (code-complete; on-device validation pending — see §8)
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-06-05
 > **Coverage**: Sections 1–9 complete.
 > **Environment**: desktop (Windows, native)
 
@@ -42,7 +42,7 @@ and **ADR-006** (`Result<T, String>` IPC). Pairs with the focus/elevation probe 
 | **Text in** | The post-snippets text (and the chosen language feeds STT/cleanup earlier in the same call). |
 | **Text out** | The same text, injected via the per-app backend; or an `Err` when the target is elevated (Rule 7). |
 | **Target** | The OS-focused window (whose EXE was captured at start). |
-| **Language** | The per-app override can pin pt-BR / English / auto; otherwise inherits the global default. |
+| **Language** | The per-app override can pin `auto` or any supported dictation language option; otherwise it inherits the global dictation default. UI locale is unrelated. |
 
 Crates: `windows-sys` (`GetForegroundWindow` / `GetWindowThreadProcessId` / `OpenProcess` /
 `QueryFullProcessImageNameW` / token elevation) behind `win32.rs`. No audio, no disk, no network.
@@ -63,7 +63,7 @@ pub struct PerAppSettings { pub enabled: bool, pub styles: Vec<AppStyle> }
 // app_styles::AppStyle — every override Option = "inherit the global setting"
 pub struct AppStyle {
     pub match_exe: String,                 // case-insensitive substring of the EXE stem
-    pub language: Option<DefaultLanguage>, // auto | pt | en
+    pub language: Option<DefaultLanguage>, // auto | pt | en | es | fr | ...
     pub inject_mode: Option<InjectMode>,   // auto | sendInput | clipboard
     pub ensure_trailing_period: Option<bool>,
     pub spoken_punctuation: Option<bool>,
@@ -123,7 +123,7 @@ pub fn has_foreground_window() -> bool;
 |---|---|---|---|---|
 | `perApp.enabled` | bool | on / off | `false` | Master gate for the whole feature. |
 | `style.matchExe` | string | EXE substring | — | Which app the rule targets (e.g. `code`). |
-| `style.language` | enum? | `auto` · `pt` · `en` · *inherit* | *inherit* | Pin the dictation language for this app. |
+| `style.language` | enum? | `auto` plus supported dictation language codes · *inherit* | *inherit* | Pin the dictation language for this app. |
 | `style.injectMode` | enum? | `auto` · `sendInput` · `clipboard` · *inherit* | *inherit* | Injection backend for this app. |
 | `style.ensureTrailingPeriod` | bool? | on / off / *inherit* | *inherit* | Force/forbid a trailing period. |
 | `style.spokenPunctuation` | bool? | on / off / *inherit* | *inherit* | Enable/disable spoken-punctuation substitution. |
@@ -181,7 +181,7 @@ backend / cleanup the existing states use). Its controls live in the **Settings/
   - [x] `sanitize` — trims, drops blank, dedups by EXE.
   - [x] `settings::validate` sanitizes the `perApp.styles` vector.
 - **Manual / runtime** (needs a real desktop + multiple apps; owner-validated):
-  - [ ] A rule for one app (e.g. force clipboard, pin English) applies only in that app.
+  - [ ] A rule for one app (e.g. force clipboard, pin Spanish) applies only in that app.
   - [ ] Elevated/UAC window yields the run-as-administrator error, non-elevated injects normally.
   - [ ] Language override changes recognition + cleanup for the matched app.
   - [ ] Disabling the master toggle restores global behavior everywhere.

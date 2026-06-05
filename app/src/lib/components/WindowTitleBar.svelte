@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { i18n } from "../i18n";
 
   const win = getCurrentWindow();
 
@@ -42,11 +43,11 @@
     <span data-tauri-drag-region>MIA</span>
   </div>
 
-  <div class="window-controls" role="group" aria-label="Controles da janela">
+  <div class="window-controls" role="group" aria-label={$i18n.window.controls}>
     <button
       type="button"
       class="window-control"
-      aria-label="Minimizar"
+      aria-label={$i18n.window.minimize}
       onmousedown={stopControlEvent}
       ondblclick={stopControlEvent}
       onclick={minimize}
@@ -56,7 +57,7 @@
     <button
       type="button"
       class="window-control"
-      aria-label={maximized ? "Restaurar" : "Maximizar"}
+      aria-label={maximized ? $i18n.window.restore : $i18n.window.maximize}
       onmousedown={stopControlEvent}
       ondblclick={stopControlEvent}
       onclick={toggleMaximize}
@@ -66,7 +67,7 @@
     <button
       type="button"
       class="window-control close"
-      aria-label="Fechar"
+      aria-label={$i18n.window.close}
       onmousedown={stopControlEvent}
       ondblclick={stopControlEvent}
       onclick={close}

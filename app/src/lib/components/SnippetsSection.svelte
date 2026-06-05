@@ -7,6 +7,7 @@
     upsertSnippet,
     type Snippet,
   } from "../snippets";
+  import { i18n } from "../i18n";
   import { getSettings, updateSettings, type GeneralSettings } from "../settings";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
@@ -90,12 +91,12 @@
 </script>
 
 <PageHeader
-  title="Snippets"
-  subtitle="Frases-gatilho que expandem em texto pronto (assinatura, endereço, links)."
+  title={$i18n.snippets.title}
+  subtitle={$i18n.snippets.subtitle}
 >
   {#snippet action()}
     {#if general}
-      <Toggle checked={general.snippetsEnabled} label="Ativado" onchange={setEnabled} />
+      <Toggle checked={general.snippetsEnabled} label={$i18n.generic.enabled} onchange={setEnabled} />
     {/if}
   {/snippet}
 </PageHeader>
@@ -108,39 +109,39 @@
       <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-2.5">
         <span class="text-body-lg font-bold">{s.trigger}</span>
         <span class="truncate text-body text-ink-soft">→ {s.expansion}</span>
-        <Button variant="ghost" size="sm" onclick={() => remove(s.id)}>Remover</Button>
+        <Button variant="ghost" size="sm" onclick={() => remove(s.id)}>{$i18n.generic.remove}</Button>
       </li>
     {/each}
     {#if snippets.length === 0}
-      <li class="text-body text-ink-soft">Nenhum snippet ainda.</li>
+      <li class="text-body text-ink-soft">{$i18n.snippets.empty}</li>
     {/if}
   </ul>
 
   <div class="mt-5 flex flex-col gap-3 border-t-2 border-hairline pt-5">
-    <Field label="Gatilho">
-      <input bind:value={trigger} placeholder="minha assinatura" class={inputClass} />
+    <Field label={$i18n.snippets.trigger}>
+      <input bind:value={trigger} placeholder={$i18n.snippets.triggerPlaceholder} class={inputClass} />
     </Field>
-    <Field label="Expansão">
+    <Field label={$i18n.snippets.expansion}>
       <textarea
         bind:value={expansion}
         rows="3"
-        placeholder={"João Silva\nCEO — exemplo.com"}
+        placeholder={$i18n.snippets.expansionPlaceholder}
         class={textareaClass}
       ></textarea>
     </Field>
     <div>
       <Button onclick={add} disabled={trigger.trim() === "" || expansion.trim() === ""}>
-        Adicionar snippet
+        {$i18n.snippets.addSnippet}
       </Button>
     </div>
   </div>
 
   <div class="mt-5 flex flex-col gap-2 border-t-2 border-hairline pt-5">
-    <Field label="Testar expansão">
-      <input bind:value={sample} placeholder="segue minha assinatura" class={inputClass} />
+    <Field label={$i18n.snippets.testExpansion}>
+      <input bind:value={sample} placeholder={$i18n.snippets.samplePlaceholder} class={inputClass} />
     </Field>
     <div class="flex items-center gap-3">
-      <Button variant="secondary" onclick={runPreview}>Pré-visualizar</Button>
+      <Button variant="secondary" onclick={runPreview}>{$i18n.snippets.preview}</Button>
       {#if preview !== null}
         <span class="whitespace-pre-wrap text-body text-charcoal">{preview}</span>
       {/if}

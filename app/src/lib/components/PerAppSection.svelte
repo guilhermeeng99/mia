@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { i18n, perAppLanguageOptions } from "../i18n";
   import type { InjectMode } from "../inject";
   import {
     getSettings,
@@ -71,19 +72,31 @@
 
   function describe(s: AppStyle): string {
     const parts: string[] = [];
-    if (s.language) parts.push(s.language === "pt" ? "pt-BR" : s.language === "en" ? "English" : "auto");
-    if (s.injectMode) parts.push(s.injectMode);
-    if (s.ensureTrailingPeriod != null) parts.push(s.ensureTrailingPeriod ? "ponto final" : "sem ponto");
-    return parts.length ? parts.join(" · ") : "sem alterações";
+    if (s.language) parts.push(languageLabel(s.language));
+    if (s.injectMode) parts.push(injectModeLabel(s.injectMode));
+    if (s.ensureTrailingPeriod != null) {
+      parts.push(s.ensureTrailingPeriod ? $i18n.perApp.finalPeriod : $i18n.perApp.noPeriod);
+    }
+    return parts.length ? parts.join(" · ") : $i18n.perApp.noChanges;
+  }
+
+  function languageLabel(value: DefaultLanguage): string {
+    return perAppLanguageOptions($i18n).find((option) => option.value === value)?.label ?? value;
+  }
+
+  function injectModeLabel(value: InjectMode): string {
+    if (value === "sendInput") return $i18n.perApp.sendInput;
+    if (value === "clipboard") return $i18n.perApp.clipboard;
+    return $i18n.perApp.automatic;
   }
 </script>
 
 <PageHeader
-  title="Estilos por app"
-  subtitle="Regras por aplicativo em foco: fixar idioma, forçar área de transferência ou ponto final."
+  title={$i18n.perApp.title}
+  subtitle={$i18n.perApp.subtitle}
 >
   {#snippet action()}
-    <Toggle checked={perApp.enabled} label="Ativado" onchange={setEnabled} />
+    <Toggle checked={perApp.enabled} label={$i18n.generic.enabled} onchange={setEnabled} />
   {/snippet}
 </PageHeader>
 
@@ -91,7 +104,7 @@
 
 <Card>
   <p class="text-body text-ink-soft">
-    Use parte do nome do executável (ex.:
+    {$i18n.perApp.description}
     <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">code</code>,
     <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">chrome</code>,
     <code class="rounded-md border-2 border-charcoal bg-canvas px-1.5 py-0.5 font-bold">winword</code>).
@@ -102,49 +115,44 @@
       <li class="flex items-center gap-3 rounded-card border-2 border-charcoal bg-canvas px-4 py-2.5">
         <span class="text-body-lg font-bold">{s.matchExe}</span>
         <span class="truncate text-body text-ink-soft">→ {describe(s)}</span>
-        <Button variant="ghost" size="sm" onclick={() => remove(s.matchExe)}>Remover</Button>
+        <Button variant="ghost" size="sm" onclick={() => remove(s.matchExe)}>{$i18n.generic.remove}</Button>
       </li>
     {/each}
     {#if perApp.styles.length === 0}
-      <li class="text-body text-ink-soft">Nenhuma regra ainda.</li>
+      <li class="text-body text-ink-soft">{$i18n.perApp.empty}</li>
     {/if}
   </ul>
 
   <div class="mt-5 flex flex-col gap-3 border-t-2 border-hairline pt-5">
-    <Field label="Executável (parte do nome)">
+    <Field label={$i18n.perApp.executable}>
       <input bind:value={matchExe} placeholder="code" class={inputClass} />
     </Field>
     <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-      <Field class="min-w-[160px] flex-1" label="Idioma">
+      <Field class="min-w-[160px] flex-1" label={$i18n.perApp.language}>
         <Select
-          options={[
-            { value: "inherit", label: "Herdar" },
-            { value: "auto", label: "Automático" },
-            { value: "pt", label: "pt-BR" },
-            { value: "en", label: "English" },
-          ]}
+          options={perAppLanguageOptions($i18n)}
           value={language}
           onchange={(v) => { language = v as typeof language; }}
         />
       </Field>
-      <Field class="min-w-[160px] flex-1" label="Inserção">
+      <Field class="min-w-[160px] flex-1" label={$i18n.perApp.insertion}>
         <Select
           options={[
-            { value: "inherit", label: "Herdar" },
-            { value: "auto", label: "Automático" },
-            { value: "sendInput", label: "Digitar (SendInput)" },
-            { value: "clipboard", label: "Área de transferência" },
+            { value: "inherit", label: $i18n.perApp.inherit },
+            { value: "auto", label: $i18n.perApp.automatic },
+            { value: "sendInput", label: $i18n.perApp.sendInput },
+            { value: "clipboard", label: $i18n.perApp.clipboard },
           ]}
           value={injectMode}
           onchange={(v) => { injectMode = v as typeof injectMode; }}
         />
       </Field>
-      <Field class="min-w-[160px] flex-1" label="Ponto final">
+      <Field class="min-w-[160px] flex-1" label={$i18n.perApp.trailingPeriod}>
         <Select
           options={[
-            { value: "inherit", label: "Herdar" },
-            { value: "on", label: "Sempre" },
-            { value: "off", label: "Nunca" },
+            { value: "inherit", label: $i18n.perApp.inherit },
+            { value: "on", label: $i18n.perApp.always },
+            { value: "off", label: $i18n.perApp.never },
           ]}
           value={trailingPeriod}
           onchange={(v) => { trailingPeriod = v as typeof trailingPeriod; }}
@@ -152,7 +160,7 @@
       </Field>
     </div>
     <div>
-      <Button onclick={add} disabled={matchExe.trim() === ""}>Adicionar regra</Button>
+      <Button onclick={add} disabled={matchExe.trim() === ""}>{$i18n.perApp.addRule}</Button>
     </div>
   </div>
 </Card>

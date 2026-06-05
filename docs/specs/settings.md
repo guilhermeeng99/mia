@@ -1,7 +1,7 @@
 # Settings & "The Hub" Feature Spec
 
 > **Status**: Phase 1 — `settings.rs` persistence implemented: the full `Settings` tree (§4) with per-group defaults + `schemaVersion`, the pure `apply_patch` / `validate` / `migrate` / `parse_settings` core (cargo-tested), failure-safe `load_settings` (missing → defaults; corrupt → defaults + sidelined backup), atomic `save_settings`, and the `get/update/reset_settings` commands wired into the handler + a managed `SettingsState` loaded at startup. Typed `settings.ts` wrapper. `update_settings` re-registers the PTT hotkey when it changes (Rule 8, before persisting), invalidates the warm engine on a model change, and syncs launch-at-login. The mic test now streams a **live level meter** (`test_microphone` takes a `Channel<CaptureEvent>`; the Hub + onboarding render a live bar). New group: the `perApp` group (per-app writing styles — see [per-app-context.md](per-app-context.md)). The signed updater is wired (ADR-009).
-> **Last updated**: 2026-05-30
+> **Last updated**: 2026-06-05
 > **Coverage**: Sections 1-9 drafted. Phase 2 (AI tab) and Phase 4 (auto-update, stats) sections are forward-looking.
 > **Environment**: desktop (Windows, native)
 
@@ -56,7 +56,7 @@ itself.
 | **Text in** | N/A (dictionary/snippet text entry is delegated to [custom-dictionary.md](custom-dictionary.md) / [snippets.md](snippets.md)). |
 | **Text out** | Persisted settings (`settings.json`) and accumulated stats (`stats.json`); no text injected at the cursor. |
 | **Target** | The Hub window (light theme); writes go to the app-data dir on disk. |
-| **Language** | UI is English (V1); the **default dictation language** setting (`auto`/`pt`/`en`) is one of the values managed here and consumed by [speech-to-text.md](speech-to-text.md). |
+| **Language** | UI language is separate from dictation language. `general.uiLanguage` defaults to `system` and can be pinned to a supported UI locale; `general.defaultLanguage` controls only transcription and is consumed by [speech-to-text.md](speech-to-text.md). |
 
 Backed by: `tauri-plugin-store` or a hand-rolled serde-JSON store in `settings.rs` for the
 preferences file; `tauri-plugin-updater` for the About/Updates tab (ADR-009); the existing model
@@ -179,9 +179,10 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
 6. **Schema migration.** On load, if `schemaVersion` is older than current, `migrate` upgrades the
    tree in memory and the next save writes the new version. Unknown future fields are preserved
    where possible, or dropped with a logged warning if the version is newer than the running app.
-7. **Default language is `auto`.** The General tab's default dictation language is one of
-   `auto` | `pt` | `en`; `auto` lets Whisper detect ([speech-to-text.md](speech-to-text.md)).
-   pt-BR and English are first-class; `auto` is the default.
+7. **Interface language and dictation language are separate.** `general.uiLanguage` defaults to
+   `system`, which follows the user's OS/browser locale when MIA has a matching UI pack; the user
+   can pin it from the Hub. The default dictation language remains `auto`; pinning a dictation
+   language only changes the Whisper `language` argument and never changes the UI locale.
 8. **Hotkey rebind is validated by the engine.** Saving a new PTT chord re-registers it via the
    `tauri-plugin-global-shortcut` plugin inside `update_settings`; a conflict (already-registered combo, or a
    reserved system chord) returns `Err("hotkey already in use: …")` and the old binding stays
@@ -231,7 +232,8 @@ transcription fidelity.
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | `launchAtLogin` | bool | — | `false` | Start MIA (to tray) on Windows login. Writes a Run-key. |
-| `defaultLanguage` | enum | `auto` \| `pt` \| `en` | `auto` | Forces Whisper language or auto-detect ([speech-to-text.md](speech-to-text.md)). |
+| `uiLanguage` | enum | `system` \| `pt` \| `en` \| `es` \| `fr` \| `de` \| `it` \| `ja` \| `zh` | `system` | Interface locale only; `system` follows the user's OS/browser locale with English fallback. |
+| `defaultLanguage` | enum | `auto` plus popular Whisper codes (`pt`, `en`, `es`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `uk`, `tr`, `ar`, `hi`, `id`, `ja`, `ko`, `zh`) | `auto` | Forces Whisper language or auto-detect ([speech-to-text.md](speech-to-text.md)); independent from `uiLanguage`. |
 | `playSounds` | bool | — | `false` | Optional start/stop chime (off = unobtrusive default, design §9a). |
 | `collectStats` | bool | — | `true` | Enable local usage-stat collection (§6). |
 

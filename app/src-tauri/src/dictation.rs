@@ -212,6 +212,21 @@ fn stt_lang(lang: DefaultLanguage) -> Option<String> {
         DefaultLanguage::Auto => None,
         DefaultLanguage::Pt => Some("pt".to_string()),
         DefaultLanguage::En => Some("en".to_string()),
+        DefaultLanguage::Es => Some("es".to_string()),
+        DefaultLanguage::Fr => Some("fr".to_string()),
+        DefaultLanguage::De => Some("de".to_string()),
+        DefaultLanguage::It => Some("it".to_string()),
+        DefaultLanguage::Nl => Some("nl".to_string()),
+        DefaultLanguage::Pl => Some("pl".to_string()),
+        DefaultLanguage::Ru => Some("ru".to_string()),
+        DefaultLanguage::Uk => Some("uk".to_string()),
+        DefaultLanguage::Tr => Some("tr".to_string()),
+        DefaultLanguage::Ar => Some("ar".to_string()),
+        DefaultLanguage::Hi => Some("hi".to_string()),
+        DefaultLanguage::Id => Some("id".to_string()),
+        DefaultLanguage::Ja => Some("ja".to_string()),
+        DefaultLanguage::Ko => Some("ko".to_string()),
+        DefaultLanguage::Zh => Some("zh".to_string()),
     }
 }
 
@@ -220,6 +235,7 @@ fn cleanup_lang(lang: DefaultLanguage) -> crate::cleanup::Lang {
         DefaultLanguage::Auto => crate::cleanup::Lang::Other,
         DefaultLanguage::Pt => crate::cleanup::Lang::PtBr,
         DefaultLanguage::En => crate::cleanup::Lang::En,
+        _ => crate::cleanup::Lang::Other,
     }
 }
 
@@ -594,6 +610,21 @@ mod tests {
         assert_eq!(stt_lang(DefaultLanguage::Auto), None);
         assert_eq!(stt_lang(DefaultLanguage::Pt), Some("pt".to_string()));
         assert_eq!(stt_lang(DefaultLanguage::En), Some("en".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Es), Some("es".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Fr), Some("fr".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::De), Some("de".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::It), Some("it".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Nl), Some("nl".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Pl), Some("pl".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Ru), Some("ru".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Uk), Some("uk".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Tr), Some("tr".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Ar), Some("ar".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Hi), Some("hi".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Id), Some("id".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Ja), Some("ja".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Ko), Some("ko".to_string()));
+        assert_eq!(stt_lang(DefaultLanguage::Zh), Some("zh".to_string()));
     }
 
     #[test]
@@ -601,6 +632,7 @@ mod tests {
         assert_eq!(cleanup_lang(DefaultLanguage::Auto), crate::cleanup::Lang::Other);
         assert_eq!(cleanup_lang(DefaultLanguage::Pt), crate::cleanup::Lang::PtBr);
         assert_eq!(cleanup_lang(DefaultLanguage::En), crate::cleanup::Lang::En);
+        assert_eq!(cleanup_lang(DefaultLanguage::Es), crate::cleanup::Lang::Other);
     }
 
     #[test]

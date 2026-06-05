@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { isMicPermissionDenied, openMicPrivacy, testMicrophone } from "../audio";
   import { getHotkey } from "../hotkey";
+  import { i18n } from "../i18n";
   import { getSettings, updateSettings, type ModelSettings } from "../settings";
   import {
     cancelWhisperModelDownload,
@@ -38,7 +39,7 @@
   let progress = $state(0);
   let error = $state<string | null>(null);
 
-  const steps = ["Bem-vindo", "Atalho", "Microfone", "Modelo"];
+  const steps = $derived($i18n.onboarding.steps);
 
   async function refreshModels() {
     models = await listWhisperModels();
@@ -62,7 +63,7 @@
     micLevel = 0;
     try {
       const r = await testMicrophone(1500, (rms) => (micLevel = rms));
-      micMsg = r.peak > 0.02 ? "Ouvimos você! 🎤" : "Quase nenhum som — confira o microfone.";
+      micMsg = r.peak > 0.02 ? $i18n.onboarding.micHeard : $i18n.onboarding.micQuiet;
     } catch (e) {
       micDenied = isMicPermissionDenied(String(e));
       error = String(e);
@@ -133,28 +134,26 @@
       {/if}
 
       {#if step === 0}
-        <h1 class="font-display text-hero leading-none">Bem-vindo ao MIA</h1>
+        <h1 class="font-display text-hero leading-none">{$i18n.onboarding.welcomeTitle}</h1>
         <p class="mt-4 text-body-lg text-ink-soft">
-          Ditado por voz <strong class="text-charcoal">100% local</strong> para Windows. Sua voz
-          nunca sai da máquina.
+          {$i18n.onboarding.welcomeBody}
         </p>
-        <div class="mt-6"><Button onclick={() => (step = 1)}>Começar</Button></div>
+        <div class="mt-6"><Button onclick={() => (step = 1)}>{$i18n.onboarding.start}</Button></div>
       {:else if step === 1}
-        <h1 class="font-display text-page">Seu atalho</h1>
+        <h1 class="font-display text-page">{$i18n.onboarding.shortcutTitle}</h1>
         <p class="mt-3 text-body-lg text-ink-soft">
-          Segure <span class="font-display text-charcoal">{chord}</span> e fale; solte para inserir
-          o texto onde o cursor estiver.
+          {$i18n.onboarding.shortcutBody(chord)}
         </p>
         <div class="mt-6 flex gap-3">
-          <Button variant="secondary" onclick={() => (step = 0)}>Voltar</Button>
-          <Button onclick={() => (step = 2)}>Próximo</Button>
+          <Button variant="secondary" onclick={() => (step = 0)}>{$i18n.generic.back}</Button>
+          <Button onclick={() => (step = 2)}>{$i18n.generic.next}</Button>
         </div>
       {:else if step === 2}
-        <h1 class="font-display text-page">Testar microfone</h1>
-        <p class="mt-3 text-body-lg text-ink-soft">Fale algo e confirme que estamos ouvindo.</p>
+        <h1 class="font-display text-page">{$i18n.onboarding.micTitle}</h1>
+        <p class="mt-3 text-body-lg text-ink-soft">{$i18n.onboarding.micBody}</p>
         <div class="mt-4 flex items-center gap-3">
           <Button variant="secondary" disabled={micTesting} onclick={runMicTest}>
-            {micTesting ? "Ouvindo…" : "Testar"}
+            {micTesting ? $i18n.onboarding.listening : $i18n.onboarding.test}
           </Button>
           {#if micTesting}
             <LevelMeter level={micLevel} />
@@ -164,18 +163,18 @@
         </div>
         {#if micDenied}
           <div class="mt-3 flex flex-wrap items-center gap-3">
-            <span class="text-body text-danger">Acesso ao microfone bloqueado pelo Windows.</span>
-            <Button variant="secondary" size="sm" onclick={openMicSettings}>Abrir configurações</Button>
+            <span class="text-body text-danger">{$i18n.onboarding.micBlocked}</span>
+            <Button variant="secondary" size="sm" onclick={openMicSettings}>{$i18n.onboarding.openSettings}</Button>
           </div>
         {/if}
         <div class="mt-6 flex gap-3">
-          <Button variant="secondary" onclick={() => (step = 1)}>Voltar</Button>
-          <Button onclick={() => (step = 3)}>Próximo</Button>
+          <Button variant="secondary" onclick={() => (step = 1)}>{$i18n.generic.back}</Button>
+          <Button onclick={() => (step = 3)}>{$i18n.generic.next}</Button>
         </div>
       {:else}
-        <h1 class="font-display text-page">Baixar o modelo</h1>
+        <h1 class="font-display text-page">{$i18n.onboarding.modelTitle}</h1>
         <p class="mt-3 text-body-lg text-ink-soft">
-          Baixe um modelo (uma única vez). <strong class="text-charcoal">Small</strong> é o recomendado.
+          {$i18n.onboarding.modelBody}
         </p>
         <ul class="mt-4 flex flex-col gap-3">
           {#each models as model (model.id)}
@@ -183,14 +182,14 @@
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-body-lg font-bold">{model.label}</span>
-                  {#if model.recommended}<Pill tone="accent">Recomendado</Pill>{/if}
+                  {#if model.recommended}<Pill tone="accent">{$i18n.generic.recommended}</Pill>{/if}
                 </div>
                 <span class="text-body text-ink-soft">{model.sizeMb} MB</span>
               </div>
               <div class="shrink-0">
                 {#if model.downloaded}
                   {#if selectedModel === model.id}
-                    <Pill tone="success">✓ em uso</Pill>
+                    <Pill tone="success">✓ {$i18n.onboarding.selectedInUse}</Pill>
                   {:else}
                     <Button
                       variant="secondary"
@@ -198,7 +197,7 @@
                       disabled={downloading !== null}
                       onclick={() => selectModel(model.id).catch((e) => (error = String(e)))}
                     >
-                      Usar
+                      {$i18n.generic.use}
                     </Button>
                   {/if}
                 {:else if downloading === model.id}
@@ -210,12 +209,12 @@
                       disabled={cancellingDownload === model.id}
                       onclick={() => cancelDownload(model.id)}
                     >
-                      {cancellingDownload === model.id ? "Cancelando" : "Cancelar"}
+                      {cancellingDownload === model.id ? $i18n.generic.canceling : $i18n.generic.cancel}
                     </Button>
                   </div>
                 {:else}
                   <Button variant="secondary" size="sm" disabled={downloading !== null} onclick={() => download(model.id)}>
-                    Baixar
+                    {$i18n.generic.download}
                   </Button>
                 {/if}
               </div>
@@ -223,8 +222,8 @@
           {/each}
         </ul>
         <div class="mt-6 flex gap-3">
-          <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>Voltar</Button>
-          <Button disabled={!hasSelectedModel || downloading !== null} onclick={ondone}>Concluir</Button>
+          <Button variant="secondary" disabled={downloading !== null} onclick={() => (step = 2)}>{$i18n.generic.back}</Button>
+          <Button disabled={!hasSelectedModel || downloading !== null} onclick={ondone}>{$i18n.generic.finish}</Button>
         </div>
       {/if}
     </Card>
