@@ -32,7 +32,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 pub const DEFAULT_ACCEL: &str = "Ctrl+Space";
 /// Window that collapses key chatter / OS auto-repeat into one intent (Rule 9, §4).
 pub const DEBOUNCE_MS: u64 = 40;
-/// Missing-release watchdog timeout for push-to-hold (Rule 11, §4).
+/// Missing-release watchdog grace before polling the physical key state (Rule 11, §4).
 pub const MAX_HOLD_MS: u64 = 30_000;
 /// Recorder auto-cancel timeout (Rule 12, §4).
 pub const CAPTURE_TIMEOUT_MS: u64 = 15_000;
@@ -573,10 +573,10 @@ fn cancel_from_escape(app: &AppHandle) {
     });
 }
 
-/// Missing-release watchdog (Rule 11): if a push-to-hold session never sees its
-/// release within `MAX_HOLD_MS` (e.g. a focus change ate the keyup), force a Stop so
+/// Missing-release watchdog (Rule 11): after `MAX_HOLD_MS`, poll the physical chord.
+/// If the key has already been released but the plugin ate the keyup, force a Stop so
 /// dictation can't get stuck "listening" forever. A real Stop/Cancel (or a fresh
-/// session) bumps the generation first, so this fires only for a genuinely stuck hold.
+/// session) bumps the generation first, so a long intentional hold keeps recording.
 fn arm_watchdog(app: &AppHandle) {
     let Some(rt) = app.try_state::<HotkeyRuntime>() else {
         return;
@@ -588,21 +588,51 @@ fn arm_watchdog(app: &AppHandle) {
         let Some(rt) = app.try_state::<HotkeyRuntime>() else {
             return;
         };
-        if rt.generation.load(Ordering::SeqCst) != generation {
-            return; // a real edge already ended this session
-        }
-        let active = rt.edge.lock().map(|e| e.active).unwrap_or(false);
-        if !active {
+        loop {
+            if rt.generation.load(Ordering::SeqCst) != generation {
+                return; // a real edge already ended this session
+            }
+            let active = rt.edge.lock().map(|e| e.active).unwrap_or(false);
+            if !active {
+                return;
+            }
+            let Some(physically_pressed) = push_to_hold_physical_state(&rt) else {
+                return;
+            };
+            if !watchdog_should_force_stop(active, true, physically_pressed) {
+                std::thread::sleep(Duration::from_millis(WINDOWS_KEY_POLL_MS));
+                continue;
+            }
+            if let Ok(mut e) = rt.edge.lock() {
+                *e = EdgeState::default();
+            }
+            rt.generation.fetch_add(1, Ordering::SeqCst);
+            let _ = app.global_shortcut().unregister(escape_shortcut());
+            crate::dlog!(
+                "[hotkey] watchdog: push-to-hold key released without event -> forcing Stop"
+            );
+            let _ = app.emit("dictation://intent", DictationIntent::Stop);
             return;
         }
-        if let Ok(mut e) = rt.edge.lock() {
-            *e = EdgeState::default();
-        }
-        rt.generation.fetch_add(1, Ordering::SeqCst);
-        let _ = app.global_shortcut().unregister(escape_shortcut());
-        crate::dlog!("[hotkey] watchdog: no release after {MAX_HOLD_MS}ms → forcing Stop");
-        let _ = app.emit("dictation://intent", DictationIntent::Stop);
     });
+}
+
+fn push_to_hold_physical_state(rt: &HotkeyRuntime) -> Option<bool> {
+    let cfg = rt.cfg.lock().ok()?;
+    if cfg.mode != ActivationMode::PushToHold {
+        return None;
+    }
+    let accel = parse_accelerator(&cfg.accelerator).ok()?;
+    let mut blocked_until_release = false;
+    Some(polled_accel_pressed(&accel, &mut blocked_until_release))
+}
+
+pub fn watchdog_should_force_stop(
+    session_active: bool,
+    push_to_hold: bool,
+    physically_pressed: bool,
+) -> bool {
+    session_active && push_to_hold && !physically_pressed
 }
 
 /// Register `cfg`'s chord, replacing any prior registration (Rule 1; rolls back the
@@ -1336,6 +1366,14 @@ mod tests {
         assert!(!should_self_heal(true, 60_000, 30_000));
         // Idle but the interval hasn't elapsed yet → wait.
         assert!(!should_self_heal(false, 10_000, 30_000));
+    }
+
+    #[test]
+    fn watchdog_only_forces_stop_after_physical_release() {
+        assert!(!watchdog_should_force_stop(true, true, true));
+        assert!(watchdog_should_force_stop(true, true, false));
+        assert!(!watchdog_should_force_stop(false, true, false));
+        assert!(!watchdog_should_force_stop(true, false, false));
     }
 
     #[test]

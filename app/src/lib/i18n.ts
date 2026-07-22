@@ -184,6 +184,7 @@ const en = {
     generalTitle: "General",
     launchAtLogin: "Open MIA when Windows starts",
     dictationSounds: "Dictation sounds",
+    copyToClipboard: "Also copy to clipboard",
   },
   models: {
     title: "Models & Engine",
@@ -456,6 +457,7 @@ const pt: Messages = {
     generalTitle: "Geral",
     launchAtLogin: "Abrir o MIA ao iniciar o Windows",
     dictationSounds: "Sons de ditado",
+    copyToClipboard: "Copiar também para a área de transferência",
   },
   models: {
     title: "Modelos & Motor",
@@ -733,6 +735,7 @@ const es: Messages = {
     generalTitle: "General",
     launchAtLogin: "Abrir MIA al iniciar Windows",
     dictationSounds: "Sonidos de dictado",
+    copyToClipboard: "Copiar también al portapapeles",
   },
   models: {
     ...pt.models,
@@ -1012,6 +1015,7 @@ const fr: Messages = {
     generalTitle: "Général",
     launchAtLogin: "Ouvrir MIA au démarrage de Windows",
     dictationSounds: "Sons de dictée",
+    copyToClipboard: "Copier aussi dans le presse-papiers",
   },
   models: {
     ...es.models,
@@ -1289,6 +1293,7 @@ const de: Messages = {
     generalTitle: "Allgemein",
     launchAtLogin: "MIA beim Start von Windows öffnen",
     dictationSounds: "Diktattöne",
+    copyToClipboard: "Auch in die Zwischenablage kopieren",
   },
   history: {
     title: "Verlauf",
@@ -1564,6 +1569,7 @@ const it: Messages = {
     generalTitle: "Generale",
     launchAtLogin: "Apri MIA all'avvio di Windows",
     dictationSounds: "Suoni di dettatura",
+    copyToClipboard: "Copia anche negli appunti",
   },
   history: {
     title: "Cronologia",
@@ -1837,6 +1843,7 @@ const ja: Messages = {
     generalTitle: "一般",
     launchAtLogin: "Windows 起動時に MIA を開く",
     dictationSounds: "音声入力の効果音",
+    copyToClipboard: "クリップボードにもコピー",
   },
   models: {
     ...en.models,
@@ -2103,6 +2110,7 @@ const zh: Messages = {
     generalTitle: "常规",
     launchAtLogin: "Windows 启动时打开 MIA",
     dictationSounds: "听写提示音",
+    copyToClipboard: "同时复制到剪贴板",
   },
   models: {
     ...ja.models,

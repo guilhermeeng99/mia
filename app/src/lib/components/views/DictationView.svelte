@@ -193,6 +193,16 @@
     }
   }
 
+  async function setCopyToClipboard(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, copyToClipboard: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function setInputDevice(value: string) {
     selectedDevice = value;
     if (!audio) return;
@@ -426,6 +436,11 @@
           checked={general.dictationSounds}
           label={$i18n.dictation.dictationSounds}
           onchange={setDictationSounds}
+        />
+        <Toggle
+          checked={general.copyToClipboard}
+          label={$i18n.dictation.copyToClipboard}
+          onchange={setCopyToClipboard}
         />
       {/if}
     </div>

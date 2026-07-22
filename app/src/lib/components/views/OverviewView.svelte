@@ -130,10 +130,20 @@
       unlistenHistory = unlisten;
     });
 
+    // Refresh the usage stats live as each new transcript is recorded, so WPM/streak/words
+    // don't stay stale until the view is reopened (stats.rs emits this after record_and_save).
+    let unlistenStats: (() => void) | null = null;
+    listen("stats://updated", () => {
+      getStats().then((s) => (stats = s)).catch(fail);
+    }).then((unlisten) => {
+      unlistenStats = unlisten;
+    });
+
     return () => {
       clearWarmPoll();
       if (copyTimer) clearTimeout(copyTimer);
       unlistenHistory?.();
+      unlistenStats?.();
     };
   });
 

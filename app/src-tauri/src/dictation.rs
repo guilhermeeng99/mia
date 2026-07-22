@@ -500,6 +500,14 @@ fn run_dictation_tail(
     if let Err(e) = crate::inject::inject(&final_text, mode, &inj_settings) {
         return Err(fail(&events, e));
     }
+    // After a successful paste, optionally leave the text on the clipboard so the user can
+    // re-paste it later with Ctrl+V (general.copy_to_clipboard). This runs last so it wins
+    // over the clipboard backend's prior-clipboard restore.
+    if s.general.copy_to_clipboard {
+        if let Err(e) = crate::inject::set_clipboard(&final_text) {
+            crate::dlog!("[dictation] copy-to-clipboard failed: {e}");
+        }
+    }
     let done = crate::persist::now_ms();
     crate::dlog!("[dictation] injected {} chars", final_text.chars().count());
 

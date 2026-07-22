@@ -46,6 +46,7 @@ export interface GeneralSettings {
   snippetsEnabled: boolean;
   onboardingCompleted: boolean;
   dictationSounds: boolean;
+  copyToClipboard: boolean;
 }
 
 export interface ModelSettings {

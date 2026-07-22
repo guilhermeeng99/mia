@@ -152,6 +152,11 @@ pub fn inject(
     would briefly place it on the clipboard) and **never** logs even its length.
 14. **One injection at a time** — injection for an utterance must complete (or error) before the next
     utterance's injection begins; the orchestrator serializes calls (see [dictation.md](dictation.md)).
+15. **Opt-in "also copy to clipboard"** — when `general.copyToClipboard` is on, the orchestrator calls
+    `inject::set_clipboard(final_text)` **after** a successful paste, intentionally leaving the dictated
+    text on the clipboard for a later Ctrl+V. This deliberately overrides the clipboard backend's
+    prior-clipboard restore (Rule 3) for that session — the user asked to keep the text. Off by default.
+    Skipped on empty/whitespace text and best-effort (a clipboard failure is logged, not surfaced).
 
 ---
 

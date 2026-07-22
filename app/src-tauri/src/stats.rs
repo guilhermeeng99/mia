@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Persisted counters (serde camelCase). `last_dictation_day` is days-since-epoch
 /// (0 = never), so streak math is pure integer arithmetic.
@@ -133,7 +133,11 @@ impl StatsState {
     ) -> Result<(), String> {
         let updated = record_dictation(self.get()?, words, ms, today);
         save_stats(app, &updated)?;
-        self.set(updated)
+        self.set(updated)?;
+        // Notify the Hub so the dashboard refreshes its WPM/streak/word totals as soon as a
+        // new transcript lands, instead of staying stale until the view is reopened.
+        let _ = app.emit("stats://updated", ());
+        Ok(())
     }
 }
 

@@ -130,6 +130,9 @@ pub struct GeneralSettings {
     pub onboarding_completed: bool,
     /// Play a subtle sound when dictation starts and ends (start = listening, end = inserted).
     pub dictation_sounds: bool,
+    /// After pasting at the cursor, also leave the dictated text on the clipboard for a
+    /// later Ctrl+V (inject.rs `set_clipboard`, applied at the end of the pipeline).
+    pub copy_to_clipboard: bool,
 }
 
 impl Default for GeneralSettings {
@@ -142,6 +145,7 @@ impl Default for GeneralSettings {
             snippets_enabled: true,
             onboarding_completed: false,
             dictation_sounds: true,
+            copy_to_clipboard: false,
         }
     }
 }

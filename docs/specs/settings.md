@@ -211,6 +211,8 @@ async fn install_update(channel: tauri::ipc::Channel<Progress>) -> Result<(), St
 15. **Stats accumulate locally and are disable-able.** Each successful dictation increments local
     counters (words, time, day-streak); `get_stats` reads them; a General/Stats toggle stops
     collection and `reset_stats` clears `stats.json`. No stat ever leaves the machine (ADR-001).
+    After each recorded dictation the engine emits a `stats://updated` event so an open Hub
+    dashboard re-fetches `get_stats` and reflects the new transcript live (no manual refresh).
 16. **Update check is non-throwing.** `check_for_update` against GitHub Releases (ADR-009) returns
     `{available:false}` on offline/error rather than surfacing a scary error; `install_update`
     streams progress and verifies the minisign signature before applying.
@@ -236,6 +238,7 @@ transcription fidelity.
 | `defaultLanguage` | enum | `auto` plus popular Whisper codes (`pt`, `en`, `es`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `uk`, `tr`, `ar`, `hi`, `id`, `ja`, `ko`, `zh`) | `auto` | Forces Whisper language or auto-detect ([speech-to-text.md](speech-to-text.md)); independent from `uiLanguage`. |
 | `playSounds` | bool | — | `false` | Optional start/stop chime (off = unobtrusive default, design §9a). |
 | `collectStats` | bool | — | `true` | Enable local usage-stat collection (§6). |
+| `copyToClipboard` | bool | — | `false` | After pasting at the cursor, also leave the dictated text on the clipboard for a later Ctrl+V (`inject::set_clipboard`, applied at the end of the pipeline — overrides the clipboard backend's prior-clipboard restore). |
 
 ### Hotkey
 | Option | Type | Range / values | Default | Effect |

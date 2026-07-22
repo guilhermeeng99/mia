@@ -226,6 +226,18 @@ fn paste_shortcut() -> Result<(), String> {
     released
 }
 
+/// Leave `text` on the system clipboard **without** pasting or restoring — used by the
+/// "also copy to clipboard" general setting so the user can re-paste the last dictation
+/// with Ctrl+V later. Runs after injection, so it intentionally overwrites whatever the
+/// clipboard backend may have restored. Empty/whitespace → no-op.
+pub fn set_clipboard(text: &str) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Ok(());
+    }
+    let mut cb = arboard::Clipboard::new().map_err(|_| "clipboard unavailable".to_string())?;
+    cb.set_text(text.to_string()).map_err(|_| "clipboard unavailable".to_string())
+}
+
 /// Inject cleaned text into the focused window. Empty/whitespace → no-op (Rule 8).
 /// Called in-process by the dictation orchestrator (the hot path).
 pub fn inject(text: &str, mode: InjectMode, settings: &InjectSettings) -> Result<(), String> {
