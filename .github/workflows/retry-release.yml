@@ -1,0 +1,48 @@
+name: Retry v0.1.18 Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: build and publish v0.1.18
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install app dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Fetch bundled binaries
+        working-directory: app
+        run: node scripts/fetch-binaries.mjs
+
+      - name: Build and publish signed installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: v0.1.18
+          releaseName: "MIA v0.1.18"
+          releaseBody: |
+            Auto-released from `main` @ 16a9bd633430f347a09c41ef1bf624cddfd69849.
+
+            Download the installer (`.exe` NSIS) for Windows and run it. The Whisper
+            engine + DLLs are bundled; Whisper models download on first use.
+          releaseDraft: false
+          prerelease: false
