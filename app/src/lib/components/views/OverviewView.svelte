@@ -10,6 +10,7 @@
     copyHistoryEntry,
     deleteHistoryEntry,
     clearHistory,
+    exportHistory,
     type HistoryEntry,
   } from "../../history";
   import Button from "../ui/Button.svelte";
@@ -35,6 +36,7 @@
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let showClearConfirm = $state(false);
   let showResetConfirm = $state(false);
+  let exportedPath = $state<string | null>(null);
 
   function fail(e: unknown) {
     error = String(e);
@@ -111,6 +113,17 @@
       await clearHistory();
       historyEntries = [];
       copiedId = null;
+      exportedPath = null;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function exportAll() {
+    error = null;
+    exportedPath = null;
+    try {
+      exportedPath = await exportHistory();
     } catch (e) {
       fail(e);
     }
@@ -218,16 +231,27 @@
     <div class="mb-3 flex items-center justify-between">
       <h2 class="font-display text-title">{$i18n.overview.historyTitle}</h2>
       {#if historyEntries.length > 0}
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={historyLoading}
-          onclick={() => (showClearConfirm = true)}
-        >
-          {$i18n.overview.clearAll}
-        </Button>
+        <div class="flex gap-2">
+          <!-- Export is a debugging aid (raw transcripts for bug reports) — dev builds only. -->
+          {#if import.meta.env.DEV}
+            <Button variant="secondary" size="sm" disabled={historyLoading} onclick={exportAll}>
+              {$i18n.history.export}
+            </Button>
+          {/if}
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={historyLoading}
+            onclick={() => (showClearConfirm = true)}
+          >
+            {$i18n.overview.clearAll}
+          </Button>
+        </div>
       {/if}
     </div>
+    {#if exportedPath}
+      <p class="mb-3 break-all text-body text-ink-soft">{$i18n.history.exportedTo(exportedPath)}</p>
+    {/if}
     <Card>
       {#if historyLoading}
         <p class="text-body text-ink-soft">{$i18n.generic.loading}</p>

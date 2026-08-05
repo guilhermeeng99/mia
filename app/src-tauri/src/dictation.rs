@@ -295,6 +295,9 @@ fn indicator(app: &AppHandle) -> crate::settings::Indicator {
 fn show_phase(app: &AppHandle, phase: Phase, message: Option<&str>) {
     let ind = indicator(app);
     if ind.shows_overlay() {
+        // Re-claim topmost before painting the new phase — Windows can silently
+        // drop the HUD out of the topmost band (hud.rs::assert_topmost).
+        crate::hud::assert_topmost(app);
         let _ = app.emit("hud://state", HudState { phase, message });
     }
     if ind.shows_tray() {

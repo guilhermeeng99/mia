@@ -223,6 +223,16 @@ fn server_args(model: &Path, vad_model: &Path, port: u16, threads: usize) -> Vec
         "--vad".into(),
         "--vad-model".into(),
         vad_model.to_string_lossy().into_owned(),
+        // whisper.cpp's VAD defaults (min-silence 100 ms, pad 30 ms) cut segments on
+        // tiny intra-word energy dips, then splice the halves back together — Whisper
+        // then decodes the word split in two ("agu enta", "cons enso"). Match
+        // faster-whisper's battle-tested values: only a ≥2 s pause splits a segment,
+        // and each segment keeps 400 ms of context on both edges. Long leading/
+        // trailing silence is still trimmed, so the anti-hallucination gate holds.
+        "--vad-min-silence-duration-ms".into(),
+        "2000".into(),
+        "--vad-speech-pad-ms".into(),
+        "400".into(),
     ]
 }
 
@@ -248,16 +258,18 @@ fn inference_fields(language: Option<&str>, prompt: Option<&str>) -> Vec<(String
 
 /// Extract the transcript from a whisper-server JSON reply (`{"text": "..."}`);
 /// falls back to the raw body if it isn't the expected JSON.
+///
+/// whisper-server terminates every internal decode segment with `\n`, and a
+/// segment boundary can fall mid-word ("ao cons\nenso…"). Whisper's tokens keep
+/// word spacing themselves — a continuation segment starts without a leading
+/// space, a new-word segment starts with one — so *deleting* the newlines (not
+/// turning them into spaces) reconstructs the exact text ("consenso").
 fn parse_inference_text(body: &str) -> String {
-    match serde_json::from_str::<serde_json::Value>(body) {
-        Ok(v) => v
-            .get("text")
-            .and_then(|t| t.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string(),
-        Err(_) => body.trim().to_string(),
-    }
+    let text = match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(v) => v.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+        Err(_) => body.to_string(),
+    };
+    text.replace(['\r', '\n'], "").trim().to_string()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -994,6 +1006,17 @@ mod tests {
         assert!(a.windows(2).any(|w| w[0] == "--vad-model" && w[1] == "vad.bin"));
     }
 
+    // Guards the mid-word-split fix: whisper.cpp's VAD defaults (100 ms / 30 ms)
+    // spliced out intra-word dips and produced transcripts like "agu enta".
+    #[test]
+    fn server_args_tune_vad_against_mid_word_cuts() {
+        let a = server_args(Path::new("m.bin"), Path::new("vad.bin"), 8765, 8);
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--vad-min-silence-duration-ms" && w[1] == "2000"));
+        assert!(a.windows(2).any(|w| w[0] == "--vad-speech-pad-ms" && w[1] == "400"));
+    }
+
     #[test]
     fn inference_fields_enforce_determinism() {
         let f = inference_fields(Some("pt"), None);
@@ -1018,5 +1041,19 @@ mod tests {
         assert_eq!(parse_inference_text(r#"{"text":"  olá mundo  "}"#), "olá mundo");
         assert_eq!(parse_inference_text("plain text body"), "plain text body");
         assert_eq!(parse_inference_text(r#"{"other":1}"#), "");
+    }
+
+    // Regression: whisper-server ends each decode segment with `\n`, and the
+    // boundary can land mid-word — deleting (not spacing) newlines rebuilds the
+    // word, while new-word segments keep their own leading space.
+    #[test]
+    fn parse_inference_deletes_segment_newlines_mid_word() {
+        assert_eq!(
+            parse_inference_text(
+                "{\"text\":\" chegarem ao cons\\nenso da melhor opção possível.\\n Acho que aguenta\\n.\\n\"}"
+            ),
+            "chegarem ao consenso da melhor opção possível. Acho que aguenta."
+        );
+        assert_eq!(parse_inference_text("{\"text\":\" linha\\r\\numa\\n\"}"), "linhauma");
     }
 }

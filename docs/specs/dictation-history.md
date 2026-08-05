@@ -1,7 +1,7 @@
 # Dictation History Feature Spec
 
 > **Status**: Implemented
-> **Last updated**: 2026-06-02
+> **Last updated**: 2026-08-04
 > **Coverage**: Sections 1-9 complete
 > **Environment**: desktop (Windows, native)
 
@@ -14,7 +14,8 @@ target rejects insertion. Text stays on the user's machine in `history.json` (AD
 - **Final text only**: store the exact text MIA intends to inject, not raw audio or raw STT, so the
   history matches what the user would copy back into a target app.
 - **Local bounded cache**: keep only the latest 100 entries to avoid unbounded app-data growth.
-- **Manual controls**: the Hub can copy, remove one item, or clear all history; no cloud sync.
+- **Manual controls**: the Hub can copy, remove one item, clear all history, or export it as a
+  JSON file (bug reports / sharing transcripts); no cloud sync.
 
 ---
 
@@ -49,6 +50,9 @@ fn delete_history_entry(app: AppHandle, state: State<'_, HistoryState>, id: Stri
 
 #[tauri::command]
 fn clear_history(app: AppHandle, state: State<'_, HistoryState>) -> Result<(), String>;
+
+#[tauri::command]
+fn export_history(app: AppHandle, state: State<'_, HistoryState>) -> Result<String, String>;
 ```
 
 All commands return `Result<T, String>`. Persistence uses `persist::atomic_write_json`.
@@ -65,6 +69,13 @@ Clipboard copy uses `arboard`.
 5. **Copy by id** - copying a missing item returns `Err("history entry not found")`.
 6. **Delete is idempotent** - deleting a missing id still persists the unchanged list.
 7. **Clear removes all entries** - the in-memory state and `history.json` both become empty.
+8. **Export writes a local JSON file** - `export_history` writes
+   `mia-history-<YYYYMMDD-HHMMSS UTC>.json` (app version + export instant + newest-first entries)
+   into the user's Downloads folder, best-effort reveals it via `explorer /select`, and returns the
+   path. Exporting an empty history returns `Err("history is empty")`. Local file only — nothing
+   is uploaded (ADR-001). The export button is a **debugging aid shown in dev builds only**
+   (`import.meta.env.DEV` gate in `HistoryView`); the command stays registered in release builds
+   but has no UI entry point.
 
 ---
 
@@ -85,8 +96,8 @@ JSON write is small and bounded. Failure to record history does not fail dictati
 
 ## 6. UI States
 
-Hub view: loading, empty, populated list, copy success, error banner. Controls are copy, remove,
-and clear all.
+Hub view: loading, empty, populated list, copy success, exported-path notice, error banner.
+Controls are copy, remove, clear all, and export (disabled while loading or when empty).
 
 ---
 
@@ -107,10 +118,12 @@ and clear all.
   - [x] trimming and empty-skip behavior
   - [x] newest-first bounded insertion
   - [x] delete behavior
+  - [x] export filename timestamp formatting (`utc_stamp`)
 - **Manual / runtime**:
   - [ ] speak, then verify the item appears in Hub > Histórico
   - [ ] copy a history item and paste it into another app
   - [ ] remove one item and clear all
+  - [ ] export and verify the JSON lands in Downloads and Explorer highlights it
 
 ---
 

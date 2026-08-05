@@ -257,6 +257,12 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
 16. **Error states auto-dismiss but persist in the Hub.** A `HudState::Error` shows for a few
     seconds then fades; the full message is recorded for the Hub's status area so the user can read
     it after it's gone (don't rely on the transient HUD alone).
+17. **Topmost is re-asserted on every phase change.** Windows can silently demote an always-on-top
+    window out of the `HWND_TOPMOST` band (fullscreen apps, other topmost windows, an Explorer
+    restart), leaving the pill running but painted *behind* the foreground app. Before each
+    `hud://state` emission the engine calls `hud::assert_topmost` —
+    `set_always_on_top(true)` again, a fresh no-activate `SetWindowPos(HWND_TOPMOST)` — so the
+    pill is forced back on top at the start of every session without ever taking focus (Rule 1).
 
 ---
 

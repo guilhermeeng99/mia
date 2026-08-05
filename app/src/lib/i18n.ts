@@ -271,6 +271,8 @@ const en = {
   history: {
     title: "History",
     subtitle: "Dictated texts saved locally.",
+    export: "Export",
+    exportedTo: (path: string) => `Exported to ${path}`,
   },
 };
 
@@ -546,6 +548,8 @@ const pt: Messages = {
   history: {
     title: "Histórico",
     subtitle: "Textos ditados salvos localmente.",
+    export: "Exportar",
+    exportedTo: (path: string) => `Exportado para ${path}`,
   },
 };
 
@@ -827,6 +831,8 @@ const es: Messages = {
   history: {
     title: "Historial",
     subtitle: "Textos dictados guardados localmente.",
+    export: "Exportar",
+    exportedTo: (path: string) => `Exportado a ${path}`,
   },
 };
 
@@ -1108,6 +1114,8 @@ const fr: Messages = {
   history: {
     title: "Historique",
     subtitle: "Textes dictés enregistrés localement.",
+    export: "Exporter",
+    exportedTo: (path: string) => `Exporté vers ${path}`,
   },
 };
 
@@ -1298,6 +1306,8 @@ const de: Messages = {
   history: {
     title: "Verlauf",
     subtitle: "Lokal gespeicherte diktierte Texte.",
+    export: "Exportieren",
+    exportedTo: (path: string) => `Exportiert nach ${path}`,
   },
   models: {
     ...fr.models,
@@ -1574,6 +1584,8 @@ const it: Messages = {
   history: {
     title: "Cronologia",
     subtitle: "Testi dettati salvati localmente.",
+    export: "Esporta",
+    exportedTo: (path: string) => `Esportato in ${path}`,
   },
   models: {
     ...fr.models,
@@ -1932,6 +1944,8 @@ const ja: Messages = {
   history: {
     title: "履歴",
     subtitle: "ローカルに保存された音声入力テキスト。",
+    export: "エクスポート",
+    exportedTo: (path: string) => `${path} に書き出しました`,
   },
 };
 
@@ -2198,6 +2212,8 @@ const zh: Messages = {
   history: {
     title: "历史",
     subtitle: "本地保存的听写文本。",
+    export: "导出",
+    exportedTo: (path: string) => `已导出到 ${path}`,
   },
 };
 

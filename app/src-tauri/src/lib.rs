@@ -206,6 +206,7 @@ pub fn run() {
             history::copy_history_entry,
             history::delete_history_entry,
             history::clear_history,
+            history::export_history,
             settings::get_settings,
             settings::update_settings,
             settings::reset_settings,

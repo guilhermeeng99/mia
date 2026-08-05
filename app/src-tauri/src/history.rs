@@ -2,7 +2,7 @@
 //! Stored in `history.json` under app data, never uploaded. The orchestrator records
 //! non-empty final text before injection so users can copy it if the target app loses it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -151,6 +151,68 @@ pub fn clear_history(app: AppHandle, state: State<'_, HistoryState>) -> Result<(
     state.set(cleared)
 }
 
+/// Snapshot written by `export_history` — the newest-first entries plus enough
+/// metadata (app version, export instant) to make the file self-describing when
+/// attached to a bug report.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryExport {
+    app_version: String,
+    exported_at_ms: u64,
+    entries: Vec<HistoryEntry>,
+}
+
+/// Export the whole history as a JSON file in the user's Downloads folder and
+/// reveal it in Explorer, so transcripts can be shared/attached to a bug report
+/// without digging through AppData. Local file only — nothing is uploaded
+/// (ADR-001). Returns the written path for the Hub to display.
+#[tauri::command]
+pub fn export_history(app: AppHandle, state: State<'_, HistoryState>) -> Result<String, String> {
+    let entries = state.list()?;
+    if entries.is_empty() {
+        return Err("history is empty".to_string());
+    }
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("could not resolve the Downloads folder: {e}"))?;
+    let path = dir.join(format!("mia-history-{}.json", utc_stamp(crate::persist::now_secs())));
+    let export = HistoryExport {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        exported_at_ms: crate::persist::now_ms(),
+        entries,
+    };
+    crate::persist::atomic_write_json(&path, &export)?;
+    reveal_in_explorer(&path);
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Best-effort `explorer /select` so the freshly written export is one click from
+/// being dragged into a chat or issue. Failure is ignored — the path is returned
+/// to the Hub either way.
+fn reveal_in_explorer(path: &Path) {
+    let _ = std::process::Command::new("explorer.exe")
+        .arg(format!("/select,{}", path.display()))
+        .spawn();
+}
+
+/// UTC `YYYYMMDD-HHMMSS` for the export filename. WHY hand-rolled: it avoids a
+/// chrono dependency for one filename — the civil-date math is Hinnant's
+/// days-from-epoch algorithm, unit-tested below.
+fn utc_stamp(secs: u64) -> String {
+    let (h, m, s) = ((secs / 3600) % 24, (secs / 60) % 60, secs % 60);
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}{month:02}{day:02}-{h:02}{m:02}{s:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +247,15 @@ mod tests {
             trimmed.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
             vec!["new", "mid"]
         );
+    }
+
+    #[test]
+    fn utc_stamp_formats_known_instants() {
+        assert_eq!(utc_stamp(0), "19700101-000000");
+        // 2001-09-09 01:46:40 UTC — the classic 1e9 epoch instant.
+        assert_eq!(utc_stamp(1_000_000_000), "20010909-014640");
+        // 2000-02-29 12:00:00 UTC — a leap day crossing the era boundary.
+        assert_eq!(utc_stamp(951_825_600), "20000229-120000");
     }
 
     #[test]

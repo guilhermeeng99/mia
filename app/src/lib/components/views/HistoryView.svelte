@@ -4,6 +4,7 @@
     clearHistory,
     copyHistoryEntry,
     deleteHistoryEntry,
+    exportHistory,
     listHistory,
     type HistoryEntry,
   } from "../../history";
@@ -19,6 +20,7 @@
   let loading = $state(true);
   let copiedId = $state<string | null>(null);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  let exportedPath = $state<string | null>(null);
 
   function fail(e: unknown) {
     error = String(e);
@@ -74,6 +76,17 @@
       await clearHistory();
       entries = [];
       copiedId = null;
+      exportedPath = null;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function exportAll() {
+    error = null;
+    exportedPath = null;
+    try {
+      exportedPath = await exportHistory();
     } catch (e) {
       fail(e);
     }
@@ -82,13 +95,30 @@
 
 <PageHeader title={$i18n.history.title} subtitle={$i18n.history.subtitle}>
   {#snippet action()}
-    <Button variant="danger" size="sm" disabled={loading || entries.length === 0} onclick={clearAll}>
-      {$i18n.overview.clearAll}
-    </Button>
+    <div class="flex gap-2">
+      <!-- Export is a debugging aid (raw transcripts for bug reports) — dev builds only. -->
+      {#if import.meta.env.DEV}
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={loading || entries.length === 0}
+          onclick={exportAll}
+        >
+          {$i18n.history.export}
+        </Button>
+      {/if}
+      <Button variant="danger" size="sm" disabled={loading || entries.length === 0} onclick={clearAll}>
+        {$i18n.overview.clearAll}
+      </Button>
+    </div>
   {/snippet}
 </PageHeader>
 
 <ErrorBanner message={error} />
+
+{#if exportedPath}
+  <p class="mb-3 break-all text-body text-ink-soft">{$i18n.history.exportedTo(exportedPath)}</p>
+{/if}
 
 <Card>
   {#if loading}

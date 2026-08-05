@@ -22,3 +22,8 @@ export function deleteHistoryEntry(id: string): Promise<void> {
 export function clearHistory(): Promise<void> {
   return invoke<void>("clear_history");
 }
+
+/** Writes the full history as JSON into Downloads and reveals it in Explorer; resolves to the file path. */
+export function exportHistory(): Promise<string> {
+  return invoke<string>("export_history");
+}

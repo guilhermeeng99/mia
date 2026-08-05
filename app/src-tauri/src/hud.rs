@@ -32,6 +32,20 @@ pub fn setup_hud(app: &AppHandle) {
     dock_bottom_center(&hud);
 }
 
+/// Re-assert the HUD's topmost z-order. WHY: Windows can silently demote an
+/// always-on-top window out of the HWND_TOPMOST band (fullscreen/exclusive apps,
+/// other topmost windows, an Explorer restart), after which the pill still runs
+/// but renders *behind* the foreground app. `set_always_on_top(true)` issues a
+/// fresh SetWindowPos(HWND_TOPMOST) without activating the window (so focus never
+/// moves — ADR-005), and it is cheap, so the engine calls this on every phase
+/// change (dictation::show_phase).
+pub fn assert_topmost(app: &AppHandle) {
+    let Some(hud) = app.get_webview_window(HUD_LABEL) else {
+        return;
+    };
+    let _ = hud.set_always_on_top(true);
+}
+
 /// Centered bottom-edge placement, clamped to the monitor's origin so the window never
 /// lands off the top/left of the screen. Pure arithmetic, unit-tested in isolation —
 /// `origin`/`screen`/`win` are physical px, `margin` is the gap above the bottom edge.
