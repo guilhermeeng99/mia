@@ -737,7 +737,20 @@ fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW — no console flash
     }
-    cmd.spawn().map_err(|e| format!("failed to start whisper-server: {e}"))
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start whisper-server: {e}"))?;
+
+    // Keep only whisper-server in MIA's kill-on-close job. If MIA is force-killed,
+    // Windows closes the job handle and terminates the server even though Rust
+    // destructors do not run. Unrelated updater/helper children remain untouched.
+    if let Err(error) = crate::process_tree::attach(&child) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+
+    Ok(child)
 }
 
 fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<(), String> {

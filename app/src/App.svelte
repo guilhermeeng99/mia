@@ -2,8 +2,6 @@
   import { onMount } from "svelte";
   import { isTauri } from "@tauri-apps/api/core";
   import { appVersion } from "./lib/app";
-  import type { DictationEvent } from "./lib/dictation";
-  import { installPtt } from "./lib/ptt";
   import { setUiLanguagePreference } from "./lib/i18n";
   import { getSettings, updateSettings, type GeneralSettings } from "./lib/settings";
   import { listWhisperModels } from "./lib/stt";
@@ -46,11 +44,6 @@
     }
   }
 
-  // The hotkey channel still streams session events to the main window, but the HUD
-  // is driven by the engine directly (hud://state), so here we only need ptt.ts to
-  // run start/stop. Kept as a sink in case the Hub later surfaces live status.
-  function onDictationEvent(_e: DictationEvent) {}
-
   onMount(() => {
     if (!isDesktopRuntime) return;
     if (isHud) {
@@ -84,10 +77,6 @@
       }
     }
     void boot();
-    const pending = installPtt(onDictationEvent);
-    return () => {
-      void pending.then((un) => un());
-    };
   });
 </script>
 

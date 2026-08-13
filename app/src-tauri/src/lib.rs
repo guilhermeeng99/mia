@@ -17,6 +17,7 @@ pub mod hud;
 pub mod inject;
 pub mod persist;
 pub mod power_resume;
+mod process_tree;
 pub mod settings;
 pub mod snippets;
 pub mod sounds;
@@ -38,6 +39,8 @@ macro_rules! dlog {
     ($($arg:tt)*) => {{
         #[cfg(debug_assertions)]
         eprintln!($($arg)*);
+        #[cfg(not(debug_assertions))]
+        let _ = format_args!($($arg)*);
     }};
 }
 

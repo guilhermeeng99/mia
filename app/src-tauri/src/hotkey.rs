@@ -521,11 +521,33 @@ pub fn on_shortcut_event(app: &AppHandle, pressed: bool) {
     // shortcut handler, so calling register/unregister here would re-enter the plugin
     // lock and deadlock (freezing the app). A worker thread blocks harmlessly until the
     // handler returns and releases the lock.
+    // UI telemetry is best-effort. The actual pipeline runs natively so a minimized or
+    // not-yet-mounted Hub webview cannot make the global hotkey inert during login.
     let _ = app.emit("dictation://intent", intent);
     let app = app.clone();
-    std::thread::spawn(move || match intent {
-        DictationIntent::Start => on_session_start(&app),
-        DictationIntent::Stop | DictationIntent::Cancel => on_session_end(&app),
+    std::thread::spawn(move || {
+        let result = match intent {
+            DictationIntent::Start => {
+                let result = crate::dictation::start_from_hotkey(app.clone());
+                if result.is_ok() {
+                    on_session_start(&app);
+                }
+                result
+            }
+            DictationIntent::Stop => {
+                let result = crate::dictation::stop_from_hotkey(app.clone());
+                on_session_end(&app);
+                result
+            }
+            DictationIntent::Cancel => {
+                let result = crate::dictation::cancel_from_hotkey(app.clone());
+                on_session_end(&app);
+                result
+            }
+        };
+        if let Err(e) = result {
+            crate::dlog!("[hotkey] native dictation failed: {e}");
+        }
     });
 }
 
@@ -570,6 +592,9 @@ fn cancel_from_escape(app: &AppHandle) {
             }
         }
         let _ = app.global_shortcut().unregister(escape_shortcut());
+        if let Err(e) = crate::dictation::cancel_from_hotkey(app.clone()) {
+            crate::dlog!("[hotkey] native dictation cancel failed: {e}");
+        }
     });
 }
 
@@ -977,10 +1002,12 @@ fn platform_record_sample() -> HotkeyRecordSample {
     let accelerator = if cancelled {
         None
     } else if let Some(key) = key {
-        (!mods.is_empty()).then(|| to_canonical(&Accel {
-            mods,
-            key: Some(key),
-        }))
+        (!mods.is_empty()).then(|| {
+            to_canonical(&Accel {
+                mods,
+                key: Some(key),
+            })
+        })
     } else {
         (modifier_count(mods) >= 2).then(|| to_canonical(&Accel { mods, key: None }))
     };

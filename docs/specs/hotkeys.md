@@ -135,7 +135,8 @@ pub struct ConflictReport { pub accelerator: String, pub free: bool, pub reason:
   `GlobalShortcutExt`, mutating the desired config and (un)registering the `Shortcut`.
 - **Event handler**: the plugin invokes the on-shortcut handler (set at build time) on each chord
   press/release; the handler passes the raw edge through the pure `reduce()` reducer (below) and
-  emits the resulting `Option<DictationIntent>` to the frontend/orchestrator as the Tauri event
+  sends the resulting `Option<DictationIntent>` directly to the native dictation orchestrator;
+  it also emits the Tauri event
   `"dictation://intent"`.
 - **`Err(String)` messages** (each maps to one UI state — see [settings.md](settings.md)):
   - `"empty hotkey"` — no chord given.

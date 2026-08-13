@@ -21,6 +21,9 @@ use crate::hotkey::ActivationMode;
 use crate::settings::{CleanupSettings, DefaultLanguage};
 
 static PIPELINE_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Preserve hotkey edge order across the worker threads spawned by `hotkey.rs`.
+/// A very short press must finish opening capture before its release can stop it.
+static HOTKEY_INTENT_LOCK: Mutex<()> = Mutex::new(());
 
 struct PipelineActiveGuard;
 
@@ -110,6 +113,23 @@ pub enum DictationEvent {
     Injected { chars: usize, ms: u64 },
     Cancelled { reason: CancelReason },
     Error { message: String },
+}
+
+/// Optional UI event stream. Global-hotkey dictation must remain fully native so it
+/// still works while the Hub webview is minimized, suspended, or not mounted yet.
+#[derive(Clone, Default)]
+struct DictationEvents(Option<Channel<DictationEvent>>);
+
+impl DictationEvents {
+    fn ui(channel: Channel<DictationEvent>) -> Self {
+        Self(Some(channel))
+    }
+
+    fn send(&self, event: DictationEvent) {
+        if let Some(channel) = &self.0 {
+            let _ = channel.send(event);
+        }
+    }
 }
 
 /// The end-to-end session summary (spec §2).
@@ -264,9 +284,9 @@ fn empty_result() -> DictationResult {
 
 /// Emit a terminal HUD event (Cancelled/Error) then always settle the HUD to Idle —
 /// the single tail every non-injecting exit path shares (Rules 7-8, 14).
-fn emit_then_idle(events: &Channel<DictationEvent>, ev: DictationEvent) {
-    let _ = events.send(ev);
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+fn emit_then_idle(events: &DictationEvents, ev: DictationEvent) {
+    events.send(ev);
+    events.send(DictationEvent::StateChanged { phase: Phase::Idle });
 }
 
 /// Phase mirrored to the floating HUD window over the global `hud://state` event.
@@ -310,7 +330,9 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Begin a session: open mic capture and show the HUD listening state (Rule 1).
@@ -318,14 +340,21 @@ where
 /// explicit user action — hotkey release (push-to-hold) or a second press
 /// (press-to-toggle) — never automatically on a pause in speech.
 #[tauri::command]
-pub async fn start_dictation(app: AppHandle, events: Channel<DictationEvent>) -> Result<(), String> {
-    run_blocking(move || start_dictation_blocking(app, events)).await
-}
-
-fn start_dictation_blocking(
+pub async fn start_dictation(
     app: AppHandle,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    run_blocking(move || start_dictation_blocking(app, DictationEvents::ui(events))).await
+}
+
+pub fn start_from_hotkey(app: AppHandle) -> Result<(), String> {
+    let _guard = HOTKEY_INTENT_LOCK
+        .lock()
+        .map_err(|_| "hotkey pipeline lock poisoned".to_string())?;
+    start_dictation_blocking(app, DictationEvents::default())
+}
+
+fn start_dictation_blocking(app: AppHandle, events: DictationEvents) -> Result<(), String> {
     if PIPELINE_ACTIVE.load(Ordering::Acquire) {
         return Err("transcricao em segundo plano em andamento".to_string());
     }
@@ -333,7 +362,10 @@ fn start_dictation_blocking(
     let settings = app.state::<crate::settings::SettingsState>();
     let focus = app.state::<FocusContext>();
     let s = settings.snapshot()?;
-    crate::dlog!("[dictation] start: opening capture (device={:?})", s.audio.input_device);
+    crate::dlog!(
+        "[dictation] start: opening capture (device={:?})",
+        s.audio.input_device
+    );
     // Capture the focused app now (before the HUD or anything can shift focus) so the
     // per-app style targets the app the user is dictating into (per-app-context.md).
     focus.set(crate::win32::foreground_process_name());
@@ -348,7 +380,9 @@ fn start_dictation_blocking(
         emit_then_idle(&events, DictationEvent::Error { message: e.clone() });
         return Err(e);
     }
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Listening });
+    events.send(DictationEvent::StateChanged {
+        phase: Phase::Listening,
+    });
     show_phase(&app, Phase::Listening, None);
     crate::sounds::on_start(s.general.dictation_sounds);
     Ok(())
@@ -357,17 +391,18 @@ fn start_dictation_blocking(
 /// End capture and run the pipeline: STT → cleanup → dictionary → snippets →
 /// inject, emitting HUD events and returning the summary (Rules 2, 5-10, 14).
 #[tauri::command]
-pub async fn stop_dictation(
-    app: AppHandle,
-    events: Channel<DictationEvent>,
-) -> Result<(), String> {
-    run_blocking(move || stop_dictation_blocking(app, events)).await
+pub async fn stop_dictation(app: AppHandle, events: Channel<DictationEvent>) -> Result<(), String> {
+    run_blocking(move || stop_dictation_blocking(app, DictationEvents::ui(events))).await
 }
 
-fn stop_dictation_blocking(
-    app: AppHandle,
-    events: Channel<DictationEvent>,
-) -> Result<(), String> {
+pub fn stop_from_hotkey(app: AppHandle) -> Result<(), String> {
+    let _guard = HOTKEY_INTENT_LOCK
+        .lock()
+        .map_err(|_| "hotkey pipeline lock poisoned".to_string())?;
+    stop_dictation_blocking(app, DictationEvents::default())
+}
+
+fn stop_dictation_blocking(app: AppHandle, events: DictationEvents) -> Result<(), String> {
     let capture = app.state::<crate::audio::CaptureState>();
     let settings = app.state::<crate::settings::SettingsState>();
     let focus = app.state::<FocusContext>();
@@ -376,15 +411,26 @@ fn stop_dictation_blocking(
     // an immutable borrow of `s`; `s` is never mutated below so the borrow is safe.
     let exe = focus.take();
     let style = if s.per_app.enabled {
-        exe.as_deref().and_then(|e| crate::app_styles::match_style(&s.per_app.styles, e)).cloned()
+        exe.as_deref()
+            .and_then(|e| crate::app_styles::match_style(&s.per_app.styles, e))
+            .cloned()
     } else {
         None
     };
     let lang_pref = crate::app_styles::resolve_language(s.general.default_language, style.as_ref());
     let samples = crate::audio::end_capture(&capture)?;
-    crate::dlog!("[dictation] stop: captured {} samples (~{:.1}s)", samples.len(), samples.len() as f32 / 16_000.0);
+    crate::dlog!(
+        "[dictation] stop: captured {} samples (~{:.1}s)",
+        samples.len(),
+        samples.len() as f32 / 16_000.0
+    );
     if samples.is_empty() {
-        emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
+        emit_then_idle(
+            &events,
+            DictationEvent::Cancelled {
+                reason: CancelReason::EmptySpeech,
+            },
+        );
         show_phase(&app, Phase::Idle, None);
         return Ok(());
     }
@@ -396,11 +442,15 @@ fn stop_dictation_blocking(
         .is_err()
     {
         let msg = "transcricao em segundo plano em andamento; audio descartado".to_string();
-        let _ = events.send(DictationEvent::Error { message: msg.clone() });
+        events.send(DictationEvent::Error {
+            message: msg.clone(),
+        });
         return Err(msg);
     }
 
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Transcribing });
+    events.send(DictationEvent::StateChanged {
+        phase: Phase::Transcribing,
+    });
     show_phase(&app, Phase::Transcribing, None);
     let t0 = crate::persist::now_ms();
     tauri::async_runtime::spawn_blocking(move || {
@@ -414,7 +464,7 @@ fn stop_dictation_blocking(
 
 fn run_dictation_tail(
     app: AppHandle,
-    events: Channel<DictationEvent>,
+    events: DictationEvents,
     s: crate::settings::Settings,
     style: Option<crate::app_styles::AppStyle>,
     lang_pref: DefaultLanguage,
@@ -427,7 +477,7 @@ fn run_dictation_tail(
     let stats = app.state::<crate::stats::StatsState>();
     let history = app.state::<crate::history::HistoryState>();
     let app_for_err = app.clone();
-    let fail = |events: &Channel<DictationEvent>, e: String| -> String {
+    let fail = |events: &DictationEvents, e: String| -> String {
         crate::dlog!("[dictation] error: {e}");
         show_phase(&app_for_err, Phase::Error, Some(&e));
         emit_then_idle(events, DictationEvent::Error { message: e.clone() });
@@ -452,7 +502,11 @@ fn run_dictation_tail(
         Err(e) => return Err(fail(&events, e)),
     };
     let stt_end = crate::persist::now_ms();
-    crate::dlog!("[dictation] transcript: {} in {} ms", crate::inject::redact_for_log(&raw), stt_end.saturating_sub(stt_start));
+    crate::dlog!(
+        "[dictation] transcript: {} in {} ms",
+        crate::inject::redact_for_log(&raw),
+        stt_end.saturating_sub(stt_start)
+    );
 
     let opts = crate::app_styles::merge_cleanup(cleanup_options(&s.cleanup), style.as_ref());
     let cleaned = crate::cleanup::clean(&raw, cleanup_lang(lang_pref), &opts);
@@ -467,7 +521,12 @@ fn run_dictation_tail(
 
     if final_text.trim().is_empty() {
         crate::dlog!("[dictation] nothing to inject (empty after cleanup)");
-        emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::EmptySpeech });
+        emit_then_idle(
+            &events,
+            DictationEvent::Cancelled {
+                reason: CancelReason::EmptySpeech,
+            },
+        );
         show_phase(&app, Phase::Idle, None);
         return Ok(empty_result());
     }
@@ -498,7 +557,9 @@ fn run_dictation_tail(
     // real backend instead of a placeholder.
     let inj_settings = crate::inject::InjectSettings::default();
     let backend = crate::inject::resolved_backend(mode, final_text.chars().count(), &inj_settings);
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Inserting });
+    events.send(DictationEvent::StateChanged {
+        phase: Phase::Inserting,
+    });
     show_phase(&app, Phase::Inserting, None);
     if let Err(e) = crate::inject::inject(&final_text, mode, &inj_settings) {
         return Err(fail(&events, e));
@@ -516,28 +577,47 @@ fn run_dictation_tail(
 
     let chars = final_text.chars().count();
     let elapsed = done.saturating_sub(t0);
-    let _ = stats.record_and_save(&app, crate::stats::count_words(&final_text), elapsed, today_days());
-    let _ = events.send(DictationEvent::Injected { chars, ms: elapsed });
-    let _ = events.send(DictationEvent::StateChanged { phase: Phase::Idle });
+    let _ = stats.record_and_save(
+        &app,
+        crate::stats::count_words(&final_text),
+        elapsed,
+        today_days(),
+    );
+    events.send(DictationEvent::Injected { chars, ms: elapsed });
+    events.send(DictationEvent::StateChanged { phase: Phase::Idle });
     show_phase(&app, Phase::Idle, None);
-    Ok(build_result(chars, lang, t0, stt_start, stt_end, done, backend))
+    Ok(build_result(
+        chars, lang, t0, stt_start, stt_end, done, backend,
+    ))
 }
 
 /// Abort: discard the in-flight session, inject nothing, HUD → Idle (Rule 8).
 #[tauri::command]
-pub async fn cancel_dictation(app: AppHandle, events: Channel<DictationEvent>) -> Result<(), String> {
-    run_blocking(move || cancel_dictation_blocking(app, events)).await
-}
-
-fn cancel_dictation_blocking(
+pub async fn cancel_dictation(
     app: AppHandle,
     events: Channel<DictationEvent>,
 ) -> Result<(), String> {
+    run_blocking(move || cancel_dictation_blocking(app, DictationEvents::ui(events))).await
+}
+
+pub fn cancel_from_hotkey(app: AppHandle) -> Result<(), String> {
+    let _guard = HOTKEY_INTENT_LOCK
+        .lock()
+        .map_err(|_| "hotkey pipeline lock poisoned".to_string())?;
+    cancel_dictation_blocking(app, DictationEvents::default())
+}
+
+fn cancel_dictation_blocking(app: AppHandle, events: DictationEvents) -> Result<(), String> {
     let capture = app.state::<crate::audio::CaptureState>();
     let focus = app.state::<FocusContext>();
     focus.take(); // drop the captured focus target — this session injects nothing
     let _ = crate::audio::end_capture(&capture); // discard the buffer
-    emit_then_idle(&events, DictationEvent::Cancelled { reason: CancelReason::UserEscape });
+    emit_then_idle(
+        &events,
+        DictationEvent::Cancelled {
+            reason: CancelReason::UserEscape,
+        },
+    );
     show_phase(&app, Phase::Idle, None);
     Ok(())
 }
@@ -545,6 +625,15 @@ fn cancel_dictation_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_hotkey_events_do_not_require_a_ui_channel() {
+        let events = DictationEvents::default();
+        assert!(events.0.is_none());
+        events.send(DictationEvent::StateChanged {
+            phase: Phase::Listening,
+        });
+    }
 
     #[test]
     fn happy_path_transitions() {
@@ -562,12 +651,21 @@ mod tests {
     #[test]
     fn empty_speech_returns_to_idle_without_inserting() {
         assert_eq!(next_phase(Phase::Listening, Signal::Empty), Phase::Idle);
-        assert_eq!(next_phase(Phase::Transcribing, Signal::TranscribedEmpty), Phase::Idle);
+        assert_eq!(
+            next_phase(Phase::Transcribing, Signal::TranscribedEmpty),
+            Phase::Idle
+        );
     }
 
     #[test]
     fn cancel_from_any_phase_returns_idle() {
-        for p in [Phase::Idle, Phase::Listening, Phase::Transcribing, Phase::Inserting, Phase::Error] {
+        for p in [
+            Phase::Idle,
+            Phase::Listening,
+            Phase::Transcribing,
+            Phase::Inserting,
+            Phase::Error,
+        ] {
             assert_eq!(next_phase(p, Signal::Cancel), Phase::Idle);
         }
     }
@@ -582,15 +680,30 @@ mod tests {
     fn illegal_signal_is_a_no_op() {
         // Injected while Idle, EndCapture while Transcribing — neither applies.
         assert_eq!(next_phase(Phase::Idle, Signal::Injected), Phase::Idle);
-        assert_eq!(next_phase(Phase::Transcribing, Signal::EndCapture), Phase::Transcribing);
+        assert_eq!(
+            next_phase(Phase::Transcribing, Signal::EndCapture),
+            Phase::Transcribing
+        );
     }
 
     #[test]
     fn interpret_down_by_mode_and_activity() {
-        assert_eq!(interpret_down(ActivationMode::PushToHold, false), SessionAction::Start);
-        assert_eq!(interpret_down(ActivationMode::PressToToggle, false), SessionAction::Start);
-        assert_eq!(interpret_down(ActivationMode::PressToToggle, true), SessionAction::Stop);
-        assert_eq!(interpret_down(ActivationMode::PushToHold, true), SessionAction::Ignore);
+        assert_eq!(
+            interpret_down(ActivationMode::PushToHold, false),
+            SessionAction::Start
+        );
+        assert_eq!(
+            interpret_down(ActivationMode::PressToToggle, false),
+            SessionAction::Start
+        );
+        assert_eq!(
+            interpret_down(ActivationMode::PressToToggle, true),
+            SessionAction::Stop
+        );
+        assert_eq!(
+            interpret_down(ActivationMode::PushToHold, true),
+            SessionAction::Ignore
+        );
     }
 
     #[test]
@@ -640,10 +753,19 @@ mod tests {
 
     #[test]
     fn cleanup_lang_maps_each_language() {
-        assert_eq!(cleanup_lang(DefaultLanguage::Auto), crate::cleanup::Lang::Other);
-        assert_eq!(cleanup_lang(DefaultLanguage::Pt), crate::cleanup::Lang::PtBr);
+        assert_eq!(
+            cleanup_lang(DefaultLanguage::Auto),
+            crate::cleanup::Lang::Other
+        );
+        assert_eq!(
+            cleanup_lang(DefaultLanguage::Pt),
+            crate::cleanup::Lang::PtBr
+        );
         assert_eq!(cleanup_lang(DefaultLanguage::En), crate::cleanup::Lang::En);
-        assert_eq!(cleanup_lang(DefaultLanguage::Es), crate::cleanup::Lang::Other);
+        assert_eq!(
+            cleanup_lang(DefaultLanguage::Es),
+            crate::cleanup::Lang::Other
+        );
     }
 
     #[test]
