@@ -636,7 +636,13 @@ fn arm_watchdog(app: &AppHandle) {
             crate::dlog!(
                 "[hotkey] watchdog: push-to-hold key released without event -> forcing Stop"
             );
+            // Emit is UI telemetry only — nothing on the JS side drives the pipeline
+            // anymore, so the watchdog must run the native stop itself or the session
+            // would keep recording until the next hotkey press.
             let _ = app.emit("dictation://intent", DictationIntent::Stop);
+            if let Err(e) = crate::dictation::stop_from_hotkey(app.clone()) {
+                crate::dlog!("[hotkey] watchdog stop failed: {e}");
+            }
             return;
         }
     });

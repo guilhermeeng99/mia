@@ -256,8 +256,10 @@ defensively in `register_hotkey` (the UI guard is convenience, not the source of
   starting the (already-open, warm) audio stream, not by this module. Target: HUD shows *Listening*
   **< 50 ms** after key-down.
 - **Cancellation.** `Esc`/`Cancel` (Rule 13) and the `max_hold_ms` watchdog (Rule 11) both emit a
-  terminal intent; the actual capture teardown / cancel-flag is handled downstream. No in-flight STT
-  work is owned here.
+  terminal intent **and** call the native `dictation::{stop,cancel}_from_hotkey` teardown on a worker
+  thread. `dictation://intent` is UI telemetry only — no JS listener drives the pipeline, so an intent
+  that is merely emitted (as the watchdog once did) leaves the session recording forever. No in-flight
+  STT work is owned here.
 - **Resource use.** Negligible — one OS hotkey registration, one atomic edge-tracker, one timer for
   the watchdog. No model RAM.
 - **Self-heal threading (Rule 15).** Re-registration (`do_reregister`) calls the plugin's
