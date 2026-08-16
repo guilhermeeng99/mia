@@ -709,12 +709,56 @@ fn free_port() -> Result<u16, String> {
     Ok(port)
 }
 
+/// `STATUS_DLL_NOT_FOUND` as `ExitStatus::code()` reports it (0xC0000135 as i32).
+const STATUS_DLL_NOT_FOUND: i32 = -1_073_741_515;
+
+/// The MSVC runtime that `whisper-server.exe` and its `ggml*.dll` / `whisper.dll`
+/// siblings link against — both the bundled CPU build and the downloaded CUDA one.
+/// A freshly-installed Windows has neither, and the loader then kills the server
+/// with `STATUS_DLL_NOT_FOUND` while naming an *arbitrary* DLL from the dependency
+/// graph — usually `cublasLt64_12.dll`, which sends users hunting for a CUDA
+/// install they do not need (the CUDA engine is self-contained, ADR-007).
+const MISSING_VCREDIST: &str = "The Microsoft Visual C++ Runtime is missing, so the speech engine cannot start. \
+     Install \"Microsoft Visual C++ 2015-2022 Redistributable (x64)\" from \
+     https://aka.ms/vs/17/release/vc_redist.x64.exe and try again.";
+
+/// True when the MSVC runtime the speech engine links against is installed.
+/// Same System32 probe as `nvidia_present`; non-Windows builds are inert (ADR-011).
+fn vcredist_present() -> bool {
+    #[cfg(windows)]
+    {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let sys32 = Path::new(&root).join("System32");
+        ["vcruntime140.dll", "msvcp140.dll"].iter().all(|dll| sys32.join(dll).exists())
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
+/// Message for a server that died before accepting connections. Pure so the
+/// loader-failure mapping is unit-tested without spawning a process.
+fn early_exit_message(code: Option<i32>) -> String {
+    match code {
+        Some(STATUS_DLL_NOT_FOUND) => MISSING_VCREDIST.to_string(),
+        Some(code) => format!("whisper-server exited before it was ready (code {code})"),
+        None => "whisper-server exited before it was ready".to_string(),
+    }
+}
+
 /// Block until the server accepts TCP connections on `port`, or time out.
-fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
+///
+/// Polls the child too: a mis-linked server dies in milliseconds, so waiting out the
+/// full warm timeout (up to 5 min on `large-v3`) would bury the real cause.
+fn wait_for_server(child: &mut Child, port: u16, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return Ok(());
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(early_exit_message(status.code()));
         }
         std::thread::sleep(Duration::from_millis(150));
     }
@@ -730,6 +774,12 @@ fn warm_timeout(model: &str) -> Duration {
 }
 
 fn spawn_server(exe: &Path, args: &[String]) -> Result<Child, String> {
+    // Preflight: without the MSVC runtime the child dies in the loader and Windows
+    // shows *its own* modal naming a DLL that is present, which MIA cannot intercept.
+    // Fail here instead, with the fix.
+    if !vcredist_present() {
+        return Err(MISSING_VCREDIST.to_string());
+    }
     let mut cmd = std::process::Command::new(exe);
     cmd.args(args);
     #[cfg(windows)]
@@ -777,7 +827,7 @@ fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<()
         }
     }
     let mut child = spawn_server(&exe, &server_args(&model_path, &vad_path, port, threads))?;
-    if let Err(e) = wait_for_server(port, warm_timeout(model)) {
+    if let Err(e) = wait_for_server(&mut child, port, warm_timeout(model)) {
         let _ = child.kill();
         let _ = child.wait();
         return Err(e);
@@ -924,6 +974,22 @@ mod tests {
         assert!(model_url("nope").is_none());
         assert!(model_filename("nope").is_none());
         assert!(model_sha256("nope").is_none());
+    }
+
+    #[test]
+    fn early_exit_maps_loader_failure_to_the_vcredist_fix() {
+        // The loader-failure code must point at the MSVC runtime, not at the DLL
+        // Windows happens to name (usually cublasLt64_12.dll, which is present).
+        let msg = early_exit_message(Some(STATUS_DLL_NOT_FOUND));
+        assert!(msg.contains("Visual C++"), "{msg}");
+        assert!(msg.contains("vc_redist.x64.exe"), "{msg}");
+        assert!(!msg.contains("cublas"), "{msg}");
+
+        // Any other early exit stays generic and keeps the code for diagnosis.
+        let other = early_exit_message(Some(3));
+        assert!(other.contains("code 3"), "{other}");
+        assert!(!other.contains("Visual C++"), "{other}");
+        assert!(!early_exit_message(None).contains("Visual C++"));
     }
 
     // NOTE: the f32→i16 quantizer is now the single canonical `audio::f32_to_s16`
