@@ -263,6 +263,24 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
     `hud://state` emission the engine calls `hud::assert_topmost` —
     `set_always_on_top(true)` again, a fresh no-activate `SetWindowPos(HWND_TOPMOST)` — so the
     pill is forced back on top at the start of every session without ever taking focus (Rule 1).
+18. **macOS: the HUD joins every Space.** macOS pins a window to the Space it opened on, so
+    `setup_hud` calls `set_visible_on_all_workspaces(true)`; otherwise the pill would stay on
+    Desktop 1 while the user dictates in another Space. (Fullscreen apps are a separate Space
+    type and may still hide it — acceptable, as in Rule 15.)
+19. **macOS: close-to-tray also leaves the Dock.** Hiding the Hub switches MIA to the `Accessory`
+    activation policy (no Dock icon, no Cmd+Tab entry), so it lives only in the menu bar like the
+    Windows tray-only state; showing it again (tray "Open", or reopening the app from Finder)
+    switches back to `Regular` first (`macos::set_dock_icon_visible`). The HUD keeps drawing either way.
+20. **macOS: the HUD docks above the Dock.** Placement uses the monitor's work area (NSScreen
+    `visibleFrame`, which excludes the Dock and menu bar) plus a 16 pt gap, instead of the full
+    screen + 64 px used on Windows, so the pill never sits behind the Dock whatever its size, side
+    or auto-hide setting. Because the Dock can change at any time, `hud::assert_topmost` also
+    re-docks the pill on every phase change on macOS.
+21. **macOS: the menu-bar icon is a monochrome template.** Status items on macOS are black+alpha
+    template images the system tints for a light or dark bar, so MIA uses the "MIA" wordmark
+    silhouette (`icons/tray-template.png`, rasterized from the logo at 2x) instead of the colorful
+    brand icon. The recording badge keeps Rule 5's sizes and positions but, since color is lost,
+    is drawn as a solid dot with a transparent ring knocked out of the glyph (`overlay_template_dot`).
 
 ---
 

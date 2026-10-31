@@ -265,9 +265,11 @@ Transitions: cleaned text ready → Inserting; inject Ok(()) → brief check →
 
 ## 9. Out of Scope (this version)
 
-- **macOS / Linux injection** — different APIs (macOS Accessibility/TCC, Linux Wayland synthetic-input
-  restrictions); deferred behind the same `TextInjector` trait (ADR-011; [../ROADMAP.md](../ROADMAP.md)
-  Phase 5 / Backlog).
+- **Linux injection** — Wayland synthetic-input restrictions; deferred behind the same
+  `TextInjector` trait (ADR-011; [../ROADMAP.md](../ROADMAP.md) Phase 5 / Backlog). macOS is now an
+  experimental port: Cmd+V paste gated on Accessibility trust. MIA prompts for it once, on the first
+  launch (`macos::prompt_accessibility_once`, marker file in app data), and otherwise only when an
+  injection is attempted without trust, which also returns `ACCESSIBILITY_REQUIRED` — never on every launch.
 - **Per-app text rules / writing styles** — target-specific formatting and context are Phase 3
   ([../ROADMAP.md](../ROADMAP.md)).
 - **Reading the focused control's existing text** — MIA only writes at the cursor; it never retrieves

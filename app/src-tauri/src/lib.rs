@@ -110,9 +110,9 @@ pub fn run() {
             // rounded corners explicitly for the frameless main window.
             win32::apply_main_window_rounded_corners(app.handle());
             // macOS gates synthetic input (the paste) behind Accessibility trust; ask
-            // up-front so the first dictation doesn't fail (macos.rs).
+            // up-front on the first launch so the first dictation doesn't fail (macos.rs).
             #[cfg(target_os = "macos")]
-            macos::accessibility_trusted(true);
+            macos::prompt_accessibility_once(app.handle());
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             // Hydrate the already-managed (default) state from disk now that the
@@ -184,6 +184,8 @@ pub fn run() {
                     let _ = window_state::save_main_window_bounds(window);
                     api.prevent_close();
                     let _ = window.hide();
+                    #[cfg(target_os = "macos")]
+                    macos::set_dock_icon_visible(window.app_handle(), false);
                 }
                 WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                     let _ = window_state::save_main_window_bounds(window);
@@ -242,8 +244,8 @@ pub fn run() {
 
 /// App-lifecycle events the window handler can't see. On macOS, Cmd+Q / the app menu's
 /// Quit bypass the tray's `quit_app`, so the warm whisper-server is stopped here too
-/// (macOS has no kill-on-close job object — process_tree.rs is Windows-only); and a
-/// Dock-icon click must bring the close-to-tray Hub back.
+/// (`Drop` does not run on exit); and reopening the app (Dock click, or launching it
+/// again from Finder while the Hub is hidden in the menu bar) must bring the Hub back.
 fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     match event {
         tauri::RunEvent::Exit => {
@@ -252,12 +254,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
             }
         }
         #[cfg(target_os = "macos")]
-        tauri::RunEvent::Reopen { .. } => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }
+        tauri::RunEvent::Reopen { .. } => tray::show_main(app),
         _ => {}
     }
 }

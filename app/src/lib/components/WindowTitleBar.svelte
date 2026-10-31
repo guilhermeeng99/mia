@@ -3,6 +3,11 @@
   import { i18n } from "../i18n";
 
   const win = getCurrentWindow();
+  // macOS draws its own traffic lights over this bar (tauri.macos.conf.json:
+  // `titleBarStyle: "Overlay"`), so the Windows-style controls are hidden there and
+  // the title shifts right to clear them. Tauri's drag region already zooms on
+  // double-click on macOS, so our handler would toggle it straight back.
+  const isMac = /Mac/.test(navigator.userAgent);
 
   let maximized = $state(false);
 
@@ -34,47 +39,50 @@
 
 <header
   class="window-titlebar"
+  class:mac={isMac}
   role="presentation"
   data-tauri-drag-region
-  ondblclick={toggleMaximize}
+  ondblclick={isMac ? undefined : toggleMaximize}
 >
   <div class="window-title" data-tauri-drag-region>
     <img src="/logo.png" alt="" class="window-title-logo" data-tauri-drag-region />
     <span data-tauri-drag-region>MIA</span>
   </div>
 
-  <div class="window-controls" role="group" aria-label={$i18n.window.controls}>
-    <button
-      type="button"
-      class="window-control"
-      aria-label={$i18n.window.minimize}
-      onmousedown={stopControlEvent}
-      ondblclick={stopControlEvent}
-      onclick={minimize}
-    >
-      <span class="window-glyph minimize"></span>
-    </button>
-    <button
-      type="button"
-      class="window-control"
-      aria-label={maximized ? $i18n.window.restore : $i18n.window.maximize}
-      onmousedown={stopControlEvent}
-      ondblclick={stopControlEvent}
-      onclick={toggleMaximize}
-    >
-      <span class:maximized class="window-glyph maximize"></span>
-    </button>
-    <button
-      type="button"
-      class="window-control close"
-      aria-label={$i18n.window.close}
-      onmousedown={stopControlEvent}
-      ondblclick={stopControlEvent}
-      onclick={close}
-    >
-      <span class="window-glyph close-x"></span>
-    </button>
-  </div>
+  {#if !isMac}
+    <div class="window-controls" role="group" aria-label={$i18n.window.controls}>
+      <button
+        type="button"
+        class="window-control"
+        aria-label={$i18n.window.minimize}
+        onmousedown={stopControlEvent}
+        ondblclick={stopControlEvent}
+        onclick={minimize}
+      >
+        <span class="window-glyph minimize"></span>
+      </button>
+      <button
+        type="button"
+        class="window-control"
+        aria-label={maximized ? $i18n.window.restore : $i18n.window.maximize}
+        onmousedown={stopControlEvent}
+        ondblclick={stopControlEvent}
+        onclick={toggleMaximize}
+      >
+        <span class:maximized class="window-glyph maximize"></span>
+      </button>
+      <button
+        type="button"
+        class="window-control close"
+        aria-label={$i18n.window.close}
+        onmousedown={stopControlEvent}
+        ondblclick={stopControlEvent}
+        onclick={close}
+      >
+        <span class="window-glyph close-x"></span>
+      </button>
+    </div>
+  {/if}
 </header>
 <div class="titlebar-divider"></div>
 
@@ -108,6 +116,11 @@
     font-size: 12px;
     font-weight: 800;
     line-height: 1;
+  }
+
+  /* Clears the three traffic lights (x 14 + ~52 px wide) with the usual gap. */
+  .window-titlebar.mac .window-title {
+    padding-left: 80px;
   }
 
   .window-title-logo {

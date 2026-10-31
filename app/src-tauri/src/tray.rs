@@ -21,10 +21,11 @@ const TRAY_ID: &str = "mia-tray";
 pub fn init(app: &AppHandle) -> Result<(), String> {
     let text = tray_text(tray_language(app));
     let menu = build_menu(app, text)?;
-    let icon = app.default_window_icon().ok_or("no app icon")?.clone();
+    let icon = base_icon(app).ok_or("no app icon")?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip(text.idle)
         .menu(&menu)
         .on_tray_icon_event(|tray, event| {
@@ -82,6 +83,7 @@ const BUSY_AMBER: [u8; 3] = [0xF2, 0xA0, 0x33];
 /// Position, core radius, and glow radius are fractions of the icon's smaller side so
 /// they scale with whatever tray-icon resolution the OS requests. `glow_frac <= r_frac`
 /// disables the glow (no halo).
+#[cfg_attr(target_os = "macos", allow(dead_code))] // color badge is Windows-only; macOS uses overlay_template_dot
 #[derive(Clone, Copy)]
 struct Dot {
     cx_frac: f32,
@@ -92,6 +94,7 @@ struct Dot {
 }
 
 /// Peak opacity of the glow halo at the core edge (0..1), fading to 0 at `glow_frac`.
+#[cfg_attr(target_os = "macos", allow(dead_code))] // color badge is Windows-only; macOS uses overlay_template_dot
 const GLOW_CENTER: f32 = 0.55;
 
 /// The recording dot: a **big** red ball in the top-right corner with a soft red glow
@@ -113,6 +116,9 @@ pub fn reflect_phase(app: &AppHandle, phase: Phase, message: Option<&str>) {
     let _ = tray.set_tooltip(Some(phase_tooltip(tray_language(app), phase, message)));
     if let Some(icon) = phase_icon(app, phase) {
         let _ = tray.set_icon(Some(icon));
+        // Keep the menu-bar tinting after the swap (a new image is not a template by default).
+        #[cfg(target_os = "macos")]
+        let _ = tray.set_icon_as_template(true);
     }
 }
 
@@ -129,9 +135,24 @@ fn phase_icon(app: &AppHandle, phase: Phase) -> Option<Image<'static>> {
 
 /// The plain brand icon as an owned (`'static`) tray `Image`. Rebuilds it from the
 /// default window icon's pixels so the lifetime isn't tied to the borrow.
-fn default_icon(app: &AppHandle) -> Option<Image<'static>> {
+#[cfg(not(target_os = "macos"))]
+fn base_icon(app: &AppHandle) -> Option<Image<'static>> {
     let base = app.default_window_icon()?;
     Some(Image::new_owned(base.rgba().to_vec(), base.width(), base.height()))
+}
+
+/// macOS: menu-bar icons are monochrome *template* images (black + alpha) that the
+/// system tints for a light/dark bar, like every other status item. The colorful
+/// brand icon would stand out, so this is the "MIA" wordmark silhouette, rasterized
+/// from the logo at 2x (36 px tall = the 18 pt menu-bar height).
+#[cfg(target_os = "macos")]
+fn base_icon(_app: &AppHandle) -> Option<Image<'static>> {
+    let icon = Image::from_bytes(include_bytes!("../icons/tray-template.png")).ok()?;
+    Some(Image::new_owned(icon.rgba().to_vec(), icon.width(), icon.height()))
+}
+
+fn default_icon(app: &AppHandle) -> Option<Image<'static>> {
+    base_icon(app)
 }
 
 #[derive(Clone, Copy)]
@@ -313,20 +334,51 @@ fn phase_tooltip(language: UiLanguage, phase: Phase, message: Option<&str>) -> S
     }
 }
 
-/// Build a tray icon by painting `dot` onto a copy of the brand icon's pixels.
-/// Returns `None` if there's no default icon to base it on.
+/// Build a tray icon by painting `dot` onto a copy of the base icon's pixels.
+/// Returns `None` if there's no icon to base it on.
 fn badge_icon(app: &AppHandle, dot: Dot) -> Option<Image<'static>> {
-    let base = app.default_window_icon()?;
+    let base = base_icon(app)?;
     let (w, h) = (base.width(), base.height());
     let mut rgba = base.rgba().to_vec();
+    #[cfg(not(target_os = "macos"))]
     overlay_dot(&mut rgba, w, h, dot);
+    #[cfg(target_os = "macos")]
+    overlay_template_dot(&mut rgba, w, h, dot);
     Some(Image::new_owned(rgba, w, h))
+}
+
+/// Gap cleared around a template dot, as a fraction of the icon's smaller side.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const TEMPLATE_GAP_FRAC: f32 = 0.08;
+
+/// Template-image badge (macOS): color is ignored there — only alpha survives the
+/// system tint — so the dot is told apart from the wordmark by shape. A transparent
+/// ring is knocked out of the glyph around a solid core (no glow, which would just
+/// read as a blob). Size and position come from `dot`, as on Windows. Pure → tested.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn overlay_template_dot(rgba: &mut [u8], w: u32, h: u32, dot: Dot) {
+    let (wi, hi) = (w as i32, h as i32);
+    let min = wi.min(hi) as f32;
+    let (core, gap) = (min * dot.r_frac, min * TEMPLATE_GAP_FRAC);
+    let (cx, cy) = (wi as f32 * dot.cx_frac, hi as f32 * dot.cy_frac);
+    for y in 0..hi {
+        for x in 0..wi {
+            let dist = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
+            let keep = (dist - core - gap).clamp(0.0, 1.0);
+            let i = ((y * wi + x) * 4) as usize;
+            let glyph = rgba[i + 3] as f32 / 255.0 * keep;
+            let alpha = (core - dist).clamp(0.0, 1.0).max(glyph);
+            rgba[i..i + 3].fill(0);
+            rgba[i + 3] = (alpha * 255.0).round() as u8;
+        }
+    }
 }
 
 /// Paint a filled circular dot (plus its soft glow halo) onto an RGBA icon, in place,
 /// at `dot`'s fractional center/radius. The solid core is alpha-blended with a ~1px
 /// anti-aliased edge; outside it, the glow fades linearly from `GLOW_CENTER` opacity at
 /// the core edge to 0 at `glow_frac`. Pure pixel math → cargo-tested.
+#[cfg_attr(target_os = "macos", allow(dead_code))] // color badge is Windows-only; macOS uses overlay_template_dot
 fn overlay_dot(rgba: &mut [u8], w: u32, h: u32, dot: Dot) {
     let (wi, hi) = (w as i32, h as i32);
     let min = wi.min(hi) as f32;
@@ -358,12 +410,17 @@ fn overlay_dot(rgba: &mut [u8], w: u32, h: u32, dot: Dot) {
 }
 
 /// Alpha-blend `fg` over `bg` with coverage `a` in `[0.0, 1.0]`.
+#[cfg_attr(target_os = "macos", allow(dead_code))] // color badge is Windows-only; macOS uses overlay_template_dot
 fn blend(bg: u8, fg: u8, a: f32) -> u8 {
     (fg as f32 * a + bg as f32 * (1.0 - a)).round() as u8
 }
 
-/// Show + focus the main Hub window (from the tray "Open" action).
-fn show_main(app: &AppHandle) {
+/// Show + focus the main Hub window (from the tray "Open" action, or a macOS reopen).
+pub(crate) fn show_main(app: &AppHandle) {
+    // macOS: restore the Dock icon that close-to-tray removed, before showing, so the
+    // Hub comes forward as a regular app window.
+    #[cfg(target_os = "macos")]
+    crate::macos::set_dock_icon_visible(app, true);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -430,6 +487,20 @@ fn quit_app(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_dot_is_solid_with_a_cleared_ring_and_leaves_the_rest() {
+        // Fully opaque 40x40 glyph; dot at the center, r = 10 px, gap = 3.2 px.
+        let (w, h) = (40u32, 40u32);
+        let mut rgba = vec![0xFFu8; (w * h * 4) as usize];
+        let dot = Dot { cx_frac: 0.5, cy_frac: 0.5, r_frac: 0.25, glow_frac: 0.0, rgb: REC_RED };
+        overlay_template_dot(&mut rgba, w, h, dot);
+        let alpha = |x: u32, y: u32| rgba[((y * w + x) * 4 + 3) as usize];
+        assert_eq!(alpha(20, 20), 0xFF, "core is solid");
+        assert_eq!(alpha(20 + 11, 20), 0x00, "ring around the core is knocked out");
+        assert_eq!(alpha(1, 1), 0xFF, "glyph far from the dot is untouched");
+        assert!(rgba.as_chunks::<4>().0.iter().all(|p| p[..3] == [0, 0, 0]), "template pixels are black");
+    }
 
     #[test]
     fn apple_languages_output_maps_to_ui_language() {

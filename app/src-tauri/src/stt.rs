@@ -702,7 +702,9 @@ fn server_exe(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// The engine executable's file name. On macOS it is a static, Metal-enabled build
-/// produced by `scripts/fetch-binaries.mjs` (no sibling dylibs).
+/// produced by `scripts/fetch-binaries.mjs` (no sibling dylibs), shipped as a Tauri
+/// `externalBin` sidecar so it lands in `Contents/MacOS` beside MIA (the `exe.parent()`
+/// candidate above) and is code-signed with the bundle.
 #[cfg(windows)]
 const SERVER_BIN: &str = "whisper-server.exe";
 #[cfg(not(windows))]
@@ -824,7 +826,8 @@ fn warm_model_inner(app: &AppHandle, state: &SttState, model: &str) -> Result<()
     // the server so recognition is VAD-gated (anti-hallucination).
     let vad_path = require_vad(app)?;
     let exe = server_exe(app)?;
-    let gpu = exe.starts_with(gpu_dir(app)?);
+    // The macOS build always runs on Metal (fetch-binaries.mjs), so it is GPU too.
+    let gpu = cfg!(target_os = "macos") || exe.starts_with(gpu_dir(app)?);
     let port = free_port()?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     {

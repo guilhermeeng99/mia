@@ -15,7 +15,11 @@
 // macOS: whisper.cpp publishes no prebuilt server for macOS, so we build it from the
 // same pinned tag with CMake — static (no dylibs to bundle) and with the Metal shaders
 // embedded, so Apple Silicon gets GPU inference out of the box. Needs `git` + `cmake`
-// (Xcode Command Line Tools + `brew install cmake`). Other OSes are a no-op.
+// (Xcode Command Line Tools + `brew install cmake`). The output is named with the Rust
+// target triple (`whisper-server-aarch64-apple-darwin`) because macOS ships it as a
+// Tauri `externalBin` sidecar (tauri.macos.conf.json): Tauri strips the suffix, puts it
+// in `Contents/MacOS` and code-signs it with the app — a Mach-O left in `Resources`
+// is never signed, which notarization rejects. Other OSes are a no-op.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -38,6 +42,9 @@ const SERVER_EXE = "whisper-server.exe";
 const WHISPER_TAG = "v1.8.4";
 const WHISPER_REPO = "https://github.com/ggml-org/whisper.cpp.git";
 const MAC_SERVER_BIN = "whisper-server";
+// Tauri's externalBin naming: `<name>-<rust target triple>`.
+const MAC_TRIPLE = process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+const MAC_SIDECAR = `${MAC_SERVER_BIN}-${MAC_TRIPLE}`;
 
 // Resolve paths relative to THIS script so CWD doesn't matter.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url)); // app/scripts
@@ -128,9 +135,12 @@ function run(cmd, args, cwd) {
 /** macOS: build a static, Metal-enabled whisper-server from the pinned tag. */
 async function buildMacServer() {
   await mkdir(BINARIES_DIR, { recursive: true });
-  const out = join(BINARIES_DIR, MAC_SERVER_BIN);
+  const out = join(BINARIES_DIR, MAC_SIDECAR);
+  // Builds from before the sidecar switch left an unsuffixed binary; reuse it.
+  const legacy = join(BINARIES_DIR, MAC_SERVER_BIN);
+  if (!existsSync(out) && existsSync(legacy)) await rename(legacy, out);
   if (existsSync(out)) {
-    console.log(`fetch-binaries: ${MAC_SERVER_BIN} already present in ${BINARIES_DIR}`);
+    console.log(`fetch-binaries: ${MAC_SIDECAR} already present in ${BINARIES_DIR}`);
     return;
   }
   const src = join(BINARIES_DIR, "whisper-src");
@@ -168,7 +178,7 @@ async function buildMacServer() {
     await rm(src, { recursive: true, force: true }).catch(() => {});
   }
   const { size } = await stat(out);
-  console.log(`fetch-binaries: done (${MAC_SERVER_BIN} = ${size} bytes)`);
+  console.log(`fetch-binaries: done (${MAC_SIDECAR} = ${size} bytes)`);
 }
 
 async function main() {

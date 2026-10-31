@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.24",
   "type": "module",
-  "description": "MIA — local voice-to-text dictation for Windows",
+  "description": "MIA — local voice-to-text dictation for Windows and macOS",
   "license": "MIT",
   "scripts": {
     "dev": "vite",

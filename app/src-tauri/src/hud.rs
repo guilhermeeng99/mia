@@ -15,11 +15,16 @@
 //! `hud://state` events. This module only does the native plumbing the frontend
 //! can't: click-through + docking bottom-center.
 
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, WebviewWindow};
 
 const HUD_LABEL: &str = "hud";
 /// Gap (physical px) between the pill and the screen's bottom edge.
+#[cfg(not(target_os = "macos"))]
 const BOTTOM_MARGIN: i32 = 64;
+/// macOS: gap (points) above the Dock / bottom of the usable area. The work area
+/// already excludes the Dock, so this is just breathing room, scaled per display.
+#[cfg(target_os = "macos")]
+const MAC_DOCK_GAP_PT: f64 = 16.0;
 
 /// Make the HUD click-through and dock it bottom-center of its monitor. Best-effort:
 /// a missing window or monitor must never fail app startup, so every step is lenient.
@@ -29,6 +34,10 @@ pub fn setup_hud(app: &AppHandle) {
     };
     // Mouse events fall through to the app beneath — the HUD never needs input.
     let _ = hud.set_ignore_cursor_events(true);
+    // macOS pins a window to the Space it opened on; without this the pill stays
+    // behind on Desktop 1 while the user dictates in another Space.
+    #[cfg(target_os = "macos")]
+    let _ = hud.set_visible_on_all_workspaces(true);
     dock_bottom_center(&hud);
 }
 
@@ -44,6 +53,10 @@ pub fn assert_topmost(app: &AppHandle) {
         return;
     };
     let _ = hud.set_always_on_top(true);
+    // macOS: the Dock can be resized, magnified, moved or auto-hidden at any time, so
+    // re-dock above its current edge at the start of every phase too.
+    #[cfg(target_os = "macos")]
+    dock_bottom_center(&hud);
 }
 
 /// Centered bottom-edge placement, clamped to the monitor's origin so the window never
@@ -67,15 +80,31 @@ fn dock_bottom_center(hud: &WebviewWindow) {
     let Ok(win) = hud.outer_size() else {
         return;
     };
-    let screen = monitor.size();
-    let origin = monitor.position();
-    let (x, y) = bottom_center_pos(
-        (origin.x, origin.y),
-        (screen.width as i32, screen.height as i32),
-        (win.width as i32, win.height as i32),
-        BOTTOM_MARGIN,
-    );
+    let (origin, screen, margin) = placement_area(&monitor);
+    let (x, y) = bottom_center_pos(origin, screen, (win.width as i32, win.height as i32), margin);
     let _ = hud.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Windows: the full monitor with a fixed margin that clears the taskbar (validated
+/// behavior, kept as is).
+#[cfg(not(target_os = "macos"))]
+fn placement_area(monitor: &Monitor) -> ((i32, i32), (i32, i32), i32) {
+    let (origin, size) = (monitor.position(), monitor.size());
+    ((origin.x, origin.y), (size.width as i32, size.height as i32), BOTTOM_MARGIN)
+}
+
+/// macOS: the monitor's work area (NSScreen `visibleFrame` — minus the Dock and the
+/// menu bar), so the pill sits above the Dock whatever its size, side or auto-hide
+/// setting, instead of being painted behind it.
+#[cfg(target_os = "macos")]
+fn placement_area(monitor: &Monitor) -> ((i32, i32), (i32, i32), i32) {
+    let area = monitor.work_area();
+    let margin = (MAC_DOCK_GAP_PT * monitor.scale_factor()).round() as i32;
+    (
+        (area.position.x, area.position.y),
+        (area.size.width as i32, area.size.height as i32),
+        margin,
+    )
 }
 
 #[cfg(test)]
@@ -96,6 +125,23 @@ mod tests {
         let (x, y) = bottom_center_pos((1920, 0), (1280, 720), (200, 48), 64);
         assert_eq!(x, 1920 + (1280 - 200) / 2);
         assert_eq!(y, 720 - 48 - 64);
+    }
+
+    /// tauri.macos.conf.json must restate both windows (a JSON merge patch replaces the
+    /// whole `windows` array), so guard it against drifting from the base config: only
+    /// the native-titlebar keys of the Hub may differ.
+    #[test]
+    fn macos_window_config_only_adds_the_native_titlebar() {
+        let parse = |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap();
+        let base = parse(include_str!("../tauri.conf.json"));
+        let mut mac = parse(include_str!("../tauri.macos.conf.json"));
+        let main = mac["app"]["windows"][0].as_object_mut().unwrap();
+        for key in ["titleBarStyle", "hiddenTitle", "trafficLightPosition"] {
+            assert!(main.remove(key).is_some(), "{key} missing from the macOS Hub window");
+        }
+        main.insert("decorations".into(), false.into());
+        main.insert("shadow".into(), false.into());
+        assert_eq!(mac["app"]["windows"], base["app"]["windows"]);
     }
 
     #[test]

@@ -2,12 +2,25 @@ name: Release
 
 # On every push to main: run CI (Biome + app build + clippy + cargo test) and ONLY if
 # it passes, bump the patch version, tag, build the Windows installer (whisper engine
-# bundled), and publish a signed GitHub Release (ADR-009). PRs run CI only. The release
-# job skips the bot's own bump commit (`chore(release):`). Mirrors Toolzy's release flow.
+# bundled), and publish a signed GitHub Release (ADR-009). The macOS (Apple Silicon)
+# .dmg is then built from the same tag and appended to that release, its updater entry
+# merged into the same latest.json. PRs run CI only. The release job skips the bot's own
+# bump commit (`chore(release):`). Mirrors Toolzy's release flow.
+#
+# WHY macOS runs after Windows, not in parallel: both jobs upload latest.json (tauri-action
+# downloads, merges, re-uploads it), so concurrent uploads could drop a platform. And a
+# macOS failure must never block the Windows release — it only leaves the .dmg out.
 #
 # Requires repo secrets (already set): TAURI_SIGNING_PRIVATE_KEY +
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (minisign, for the updater's latest.json).
 # GITHUB_TOKEN is provided automatically.
+#
+# Optional macOS code-signing secrets (without them the .app is ad-hoc signed):
+#   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
+#     — a stable identity keeps the Accessibility/Microphone grants across updates;
+#       ad-hoc builds change identity on every release, so macOS asks again.
+#   APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID — notarization; needs a
+#     Developer ID certificate above. Removes the Gatekeeper "unidentified developer" step.
 
 on:
   push:
@@ -64,10 +77,56 @@ jobs:
       - name: Cargo test (Rust engine)
         run: cargo test --manifest-path app/src-tauri/Cargo.toml
 
+  # Same gates on the macOS target (keystate_macos.rs, macos.rs and the other cfg'd
+  # paths never compile on the Windows runner). Gates only the macOS release.
+  ci-macos:
+    name: ci macOS (build · clippy · test)
+    runs-on: macos-latest # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install app dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Build app (svelte-check + Vite)
+        working-directory: app
+        run: bun run build
+
+      # whisper-server is compiled from source on macOS (~minutes); the pinned tag lives
+      # in fetch-binaries.mjs, so its hash is the cache key.
+      - name: Cache whisper-server (Metal build)
+        uses: actions/cache@v4
+        with:
+          path: app/src-tauri/binaries/whisper-server-aarch64-apple-darwin
+          key: whisper-server-macos-arm64-${{ hashFiles('app/scripts/fetch-binaries.mjs') }}
+
+      - name: Build whisper-server (Metal, static)
+        working-directory: app
+        run: node scripts/fetch-binaries.mjs
+
+      - name: Clippy (Rust lints, warnings = errors)
+        run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Cargo test (Rust engine)
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml
+
   release:
     name: bump · build · publish
     runs-on: windows-latest
     needs: [ci]
+    outputs:
+      next: ${{ steps.bump.outputs.next }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release):')
     steps:
       - uses: actions/checkout@v4
@@ -142,10 +201,96 @@ jobs:
           releaseBody: |
             Auto-released from `main` @ ${{ github.sha }}.
 
-            Download the installer (`.exe` NSIS) for Windows and run it. The Whisper
-            engine + DLLs are bundled; Whisper models download on first use.
+            **Windows:** download the installer (`MIA_*_x64-setup.exe`) and run it. The
+            Whisper engine + DLLs are bundled; Whisper models download on first use.
 
             > **First install:** MIA is unsigned, so Windows SmartScreen may warn
             > "Unrecognized app". Click **More info → Run anyway**.
+
+            **macOS (Apple Silicon, experimental):** download `MIA_*_aarch64.dmg` (added a
+            few minutes after the Windows build), drag MIA to Applications, then grant
+            Microphone + Accessibility when asked.
+
+            > **First open:** MIA is not notarized, so macOS blocks it. Open
+            > **System Settings → Privacy & Security** and click **Open Anyway**, or run
+            > `xattr -dr com.apple.quarantine /Applications/MIA.app`.
+          releaseDraft: false
+          prerelease: false
+
+  # Appends the macOS .dmg + updater bundle to the release the Windows job just
+  # published (tauri-action finds it by tag and merges darwin-aarch64 into latest.json).
+  release-macos:
+    name: build · publish (macOS)
+    runs-on: macos-latest # Apple Silicon (arm64)
+    needs: [release, ci-macos]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.next }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install app dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Cache whisper-server (Metal build)
+        uses: actions/cache@v4
+        with:
+          path: app/src-tauri/binaries/whisper-server-aarch64-apple-darwin
+          key: whisper-server-macos-arm64-${{ hashFiles('app/scripts/fetch-binaries.mjs') }}
+
+      - name: Build whisper-server (Metal, static)
+        working-directory: app
+        run: node scripts/fetch-binaries.mjs
+
+      # Tauri reads these from the environment; an *empty* APPLE_CERTIFICATE would make it
+      # try to import a blank certificate, so only export the ones that are actually set.
+      - name: Configure macOS signing (optional)
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            {
+              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            } >> "$GITHUB_ENV"
+            echo "signing with: $APPLE_SIGNING_IDENTITY"
+          else
+            echo "no signing certificate configured: ad-hoc signature"
+          fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+            echo "notarization enabled"
+          fi
+
+      - name: Build & publish .dmg
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: v${{ needs.release.outputs.next }}
+          releaseName: "MIA v${{ needs.release.outputs.next }}"
           releaseDraft: false
           prerelease: false

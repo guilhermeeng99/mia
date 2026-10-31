@@ -264,7 +264,7 @@ the OS allows.
 - Each view is **self-contained** — it calls the typed `invoke()` wrappers itself
   (`OverviewView`, `DictationView`, `ModelsView`, and the `DictionarySection` / `SnippetsSection` /
   `PerAppSection` CRUD views). The shell owns only navigation + the update affordance.
-- Window is **resizable** (min 720×520); native Windows title bar (decorations on). WebView2 host.
+- Window is **resizable** (min 720×520) with a custom frameless title bar (`WindowTitleBar.svelte`). On Windows it draws its own minimize/maximize/close on the right; on macOS the native traffic lights are overlaid on the left (`titleBarStyle: "Overlay"` in `tauri.macos.conf.json`) and the custom controls are hidden.
 
 ### 8b. Floating mic HUD (frameless, always-on-top)
 - A **frameless, transparent, no-activate, always-on-top** Tauri window holding only the `MicHud`

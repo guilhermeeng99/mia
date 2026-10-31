@@ -1,4 +1,4 @@
-//! Windows lifetime guard for whisper-server.
+//! Lifetime guard for whisper-server (Windows Job Object; macOS watchdog).
 //!
 //! `Drop` is not run when MIA is terminated forcibly. A kernel Job Object with
 //! `KILL_ON_JOB_CLOSE` makes each attached whisper-server process die when the
@@ -79,7 +79,46 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+/// macOS has no Job Object, and a crashed or force-quit MIA would orphan the warm
+/// server (holding the model in RAM) until reboot. A detached `sh` watchdog polls both
+/// PIDs and kills the server once MIA is gone. It also exits as soon as the server
+/// does (a normal unload), so it never outlives its child long enough to hit a reused PID.
+/// The loop runs in a backgrounded subshell so the outer `sh` exits at once and is
+/// reaped here — no zombie per spawn — while the loop is reparented to launchd.
+#[cfg(target_os = "macos")]
+mod platform {
+    use std::process::{Child, Command, Stdio};
+
+    pub fn watchdog_script(parent: u32, child: u32) -> String {
+        format!(
+            "(while kill -0 {parent} 2>/dev/null && kill -0 {child} 2>/dev/null; do sleep 1; done; \
+             kill -0 {parent} 2>/dev/null || kill {child} 2>/dev/null) &"
+        )
+    }
+
+    pub fn attach(child: &Child) -> Result<(), String> {
+        Command::new("/bin/sh")
+            .args(["-c", &watchdog_script(std::process::id(), child.id())])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|_| ())
+            .map_err(|e| format!("failed to start the whisper-server watchdog: {e}"))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn watchdog_kills_the_child_only_after_the_parent_is_gone() {
+            let s = super::watchdog_script(10, 20);
+            assert!(s.contains("kill -0 10") && s.contains("kill -0 20"));
+            assert!(s.ends_with("kill -0 10 2>/dev/null || kill 20 2>/dev/null) &"));
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use std::process::Child;
 

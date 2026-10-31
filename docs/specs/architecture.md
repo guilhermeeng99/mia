@@ -380,6 +380,11 @@ keeps the door open for future per-OS backends without restructuring the engine.
 - ⚠️ No macOS/Linux in v1 — explicitly out of scope, tracked in [ROADMAP.md](../ROADMAP.md)
   Phase 5 / Backlog.
 
+**Amendment (2026-10-31).** A community port added **experimental macOS (Apple Silicon)**
+support, and releases now ship a `.dmg` beside the Windows installer. Windows stays the
+primary, fully supported platform; macOS gaps (no notarization, Accessibility/TCC grants that
+reset on ad-hoc-signed updates) are tracked in the ROADMAP. Linux remains out of scope.
+
 ---
 
 ## Cross-cutting concerns
