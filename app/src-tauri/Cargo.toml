@@ -16,6 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# `macos-private-api` (transparent HUD window on macOS) must match `app.macOSPrivateApi` in the
+# *base* tauri.conf.json: tauri-build checks features against the config on every platform,
+# ignoring cfg(target). On Windows both are inert.
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
