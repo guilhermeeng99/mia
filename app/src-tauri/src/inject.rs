@@ -259,9 +259,11 @@ pub fn inject(text: &str, mode: InjectMode, settings: &InjectSettings) -> Result
         return Ok(());
     }
     // macOS drops synthetic input from untrusted apps without any error, so check
-    // up-front and surface the fix (re-prompting) instead of "succeeding" silently.
+    // up-front and surface the fix instead of "succeeding" silently. No system prompt
+    // here: a dialog stealing focus mid-dictation would derail the target app — MIA
+    // asks at launch instead (lib.rs).
     #[cfg(target_os = "macos")]
-    if !crate::macos::accessibility_trusted(true) {
+    if !crate::macos::accessibility_trusted(false) {
         return Err(crate::macos::ACCESSIBILITY_REQUIRED.to_string());
     }
     match pick_backend(mode, text.chars().count(), settings) {

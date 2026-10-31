@@ -267,9 +267,10 @@ Transitions: cleaned text ready → Inserting; inject Ok(()) → brief check →
 
 - **Linux injection** — Wayland synthetic-input restrictions; deferred behind the same
   `TextInjector` trait (ADR-011; [../ROADMAP.md](../ROADMAP.md) Phase 5 / Backlog). macOS is now an
-  experimental port: Cmd+V paste gated on Accessibility trust. MIA prompts for it once, on the first
-  launch (`macos::prompt_accessibility_once`, marker file in app data), and otherwise only when an
-  injection is attempted without trust, which also returns `ACCESSIBILITY_REQUIRED` — never on every launch.
+  experimental port: Cmd+V paste gated on Accessibility trust. MIA shows the system prompt at every
+  launch while trust is missing (`macos::accessibility_trusted(true)` in `setup`); an injection
+  attempted without trust only checks silently and returns `ACCESSIBILITY_REQUIRED`, never prompting
+  mid-dictation. Releases are signed with a stable certificate, so a grant survives updates.
 - **Per-app text rules / writing styles** — target-specific formatting and context are Phase 3
   ([../ROADMAP.md](../ROADMAP.md)).
 - **Reading the focused control's existing text** — MIA only writes at the cursor; it never retrieves

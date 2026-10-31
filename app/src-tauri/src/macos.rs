@@ -3,7 +3,8 @@
 //! Synthetic keystrokes (the Cmd+V paste and typed text in inject.rs) are silently
 //! dropped by macOS unless MIA is trusted under Privacy & Security → Accessibility.
 //! Windows has no such gate (only UIPI for elevated targets, ADR-005), so the port
-//! asks once at startup — before the first dictation — instead of failing mid-session.
+//! asks at every startup while trust is missing — before the first dictation —
+//! instead of prompting mid-session.
 
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
@@ -23,27 +24,6 @@ pub fn accessibility_trusted(prompt: bool) -> bool {
     let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
     let options = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::from(prompt))]);
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) }
-}
-
-/// Startup Accessibility prompt, shown on the **first launch only**. Prompting on every
-/// launch nagged anyone who had not granted it yet — or whose grant went stale, since
-/// an ad-hoc-signed rebuild/update is a new identity to TCC. Later launches stay
-/// silent; `inject` still re-asks at the moment the user actually dictates.
-pub fn prompt_accessibility_once(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    if accessibility_trusted(false) {
-        return;
-    }
-    let Ok(dir) = app.path().app_data_dir() else {
-        return;
-    };
-    let marker = dir.join("accessibility-prompted");
-    if marker.exists() {
-        return;
-    }
-    let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(&marker, b"");
-    accessibility_trusted(true);
 }
 
 /// User-presentable error for an injection attempted without Accessibility trust.

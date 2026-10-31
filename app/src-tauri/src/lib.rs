@@ -109,10 +109,12 @@ pub fn run() {
             // `shadow: false` removes the Win11 DWM top-line artifact, so request
             // rounded corners explicitly for the frameless main window.
             win32::apply_main_window_rounded_corners(app.handle());
-            // macOS gates synthetic input (the paste) behind Accessibility trust; ask
-            // up-front on the first launch so the first dictation doesn't fail (macos.rs).
+            // macOS gates synthetic input (the paste) behind Accessibility trust. Ask at
+            // every launch while it is missing — not mid-dictation (inject.rs only reports
+            // it). With a stable signing identity the grant survives updates, so a trusted
+            // install never sees this again (macos.rs).
             #[cfg(target_os = "macos")]
-            macos::prompt_accessibility_once(app.handle());
+            macos::accessibility_trusted(true);
             // Load preferences once at startup; failure-safe (defaults on a missing
             // or corrupt file, never a startup failure — settings.rs Rule 4/5).
             // Hydrate the already-managed (default) state from disk now that the
