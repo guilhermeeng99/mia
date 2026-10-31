@@ -4,10 +4,7 @@
     "macOSPrivateApi": true
   },
   "bundle": {
-    "targets": [
-      "app",
-      "dmg"
-    ],
+    "targets": ["app", "dmg"],
     "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "11.0",

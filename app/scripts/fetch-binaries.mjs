@@ -144,7 +144,8 @@ async function buildMacServer() {
     await run(
       "cmake",
       [
-        "-B", "build",
+        "-B",
+        "build",
         "-DCMAKE_BUILD_TYPE=Release",
         "-DBUILD_SHARED_LIBS=OFF",
         "-DGGML_METAL=ON",
@@ -155,7 +156,11 @@ async function buildMacServer() {
       ],
       src,
     );
-    await run("cmake", ["--build", "build", "--config", "Release", "-j", "--target", "whisper-server"], src);
+    await run(
+      "cmake",
+      ["--build", "build", "--config", "Release", "-j", "--target", "whisper-server"],
+      src,
+    );
     const built = await findFile(join(src, "build"), MAC_SERVER_BIN);
     if (!built) throw new Error(`${MAC_SERVER_BIN} not produced by the build`);
     await copyFile(built, out);
