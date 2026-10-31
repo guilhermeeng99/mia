@@ -49,7 +49,7 @@ Download `MIA_<version>_aarch64.dmg`, open it, and drag **MIA** to **Application
 - Grant the two permissions MIA asks for:
   - **Microphone**, to hear you.
   - **Accessibility** (System Settings → Privacy & Security → Accessibility), to paste text into other apps. Without it, dictation transcribes but cannot type.
-- After an update, macOS may ask for these permissions again, because releases are not signed with a stable Apple identity yet. If typing stops working after an update, remove MIA from the Accessibility list with **−**, then add it again.
+- Releases are signed with a stable (self-signed) certificate, so the permissions survive updates. Coming from an older, ad-hoc-signed version, macOS asks once more. If typing stops working after an update, remove MIA from the Accessibility list with **−**, then add it again.
 
 Default hotkey: **Option + Space** (Ctrl + Space switches input sources on macOS).
 
@@ -93,7 +93,7 @@ The `app/` frontend is the Tauri webview for the desktop app. It is not intended
 
 Every push to `main` runs CI on Windows and macOS, bumps the patch version, and publishes a GitHub Release with the Windows installer, the macOS `.dmg`, and a signed `latest.json` for the in-app updater ([`release.yml`](.github/workflows/release.yml)). The macOS build is appended after the Windows one, so a macOS failure never blocks a Windows release.
 
-macOS builds are ad-hoc signed by default. To sign and notarize them, add these repository secrets; the workflow picks them up automatically:
+macOS builds are signed with the identity in these repository secrets (ad-hoc when they are absent). The workflow imports the certificate into its own keychain, so both a self-signed certificate and an Apple Developer ID work:
 
 | Secret | Purpose |
 |---|---|
@@ -102,7 +102,7 @@ macOS builds are ad-hoc signed by default. To sign and notarize them, add these 
 | `APPLE_SIGNING_IDENTITY` | Certificate name, e.g. `Developer ID Application: Name (TEAMID)`. |
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Notarization. `APPLE_PASSWORD` is an app-specific password. Requires a Developer ID certificate. |
 
-A stable certificate, even a self-signed one, keeps the macOS Microphone and Accessibility permissions across updates. A Developer ID certificate with notarization also removes the Gatekeeper warning on first launch.
+The repository currently uses a self-signed certificate (`MIA Self-Signed Code Signing`, valid until 2036). Any stable certificate keeps the macOS Microphone and Accessibility permissions across updates, because macOS then identifies MIA by bundle ID + certificate instead of by the hash of each build. Keep a backup of the `.p12` and its password: a new certificate is a new identity, and users would grant the permissions once more. A Developer ID certificate with notarization also removes the Gatekeeper warning on first launch.
 
 ## Tech
 

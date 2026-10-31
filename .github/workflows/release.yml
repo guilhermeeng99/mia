@@ -15,10 +15,11 @@ name: Release
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (minisign, for the updater's latest.json).
 # GITHUB_TOKEN is provided automatically.
 #
-# Optional macOS code-signing secrets (without them the .app is ad-hoc signed):
+# macOS code-signing secrets (without them the .app is ad-hoc signed):
 #   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
-#     — a stable identity keeps the Accessibility/Microphone grants across updates;
-#       ad-hoc builds change identity on every release, so macOS asks again.
+#     — set to a self-signed "MIA Self-Signed Code Signing" certificate. A stable
+#       identity keeps the Accessibility/Microphone grants across updates; ad-hoc
+#       builds change identity on every release, so macOS would ask again.
 #   APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID — notarization; needs a
 #     Developer ID certificate above. Removes the Gatekeeper "unidentified developer" step.
 
@@ -250,8 +251,11 @@ jobs:
         working-directory: app
         run: node scripts/fetch-binaries.mjs
 
-      # Tauri reads these from the environment; an *empty* APPLE_CERTIFICATE would make it
-      # try to import a blank certificate, so only export the ones that are actually set.
+      # The certificate is imported into a keychain of our own and only the identity name
+      # is handed to Tauri: given APPLE_CERTIFICATE, Tauri accepts only Apple-issued
+      # certificate names ("Developer ID Application: …"), which rejects the self-signed
+      # one MIA uses today. Either kind works this way. Without the secrets the build is
+      # ad-hoc signed (tauri.macos.conf.json).
       - name: Configure macOS signing (optional)
         shell: bash
         env:
@@ -264,11 +268,21 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            {
-              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
-              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
-              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
-            } >> "$GITHUB_ENV"
+            keychain="$RUNNER_TEMP/mia-signing.keychain-db"
+            keychain_password="$(openssl rand -base64 24)"
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/mia-signing.p12"
+            security create-keychain -p "$keychain_password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$keychain_password" "$keychain"
+            security import "$RUNNER_TEMP/mia-signing.p12" -k "$keychain" \
+              -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+              -k "$keychain_password" "$keychain" > /dev/null
+            # Put it on the search list so `codesign -s <identity>` finds it.
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+            rm "$RUNNER_TEMP/mia-signing.p12"
+            security find-identity -p codesigning "$keychain"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
             echo "signing with: $APPLE_SIGNING_IDENTITY"
           else
             echo "no signing certificate configured: ad-hoc signature"
