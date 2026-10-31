@@ -1,6 +1,6 @@
 [package]
 name = "mia"
-version = "0.1.23"
+version = "0.1.24"
 description = "MIA — local voice-to-text dictation for Windows and macOS"
 authors = ["Guilherme Passos"]
 edition = "2021"
