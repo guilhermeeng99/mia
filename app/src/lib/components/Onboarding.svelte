@@ -2,7 +2,7 @@
   import { Channel } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { isMicPermissionDenied, openMicPrivacy, testMicrophone } from "../audio";
-  import { getHotkey } from "../hotkey";
+  import { formatAccelerator, getHotkey } from "../hotkey";
   import { i18n } from "../i18n";
   import { getSettings, updateSettings, type ModelSettings } from "../settings";
   import {
@@ -142,7 +142,7 @@
       {:else if step === 1}
         <h1 class="font-display text-page">{$i18n.onboarding.shortcutTitle}</h1>
         <p class="mt-3 text-body-lg text-ink-soft">
-          {$i18n.onboarding.shortcutBody(chord)}
+          {$i18n.onboarding.shortcutBody(formatAccelerator(chord))}
         </p>
         <div class="mt-6 flex gap-3">
           <Button variant="secondary" onclick={() => (step = 0)}>{$i18n.generic.back}</Button>

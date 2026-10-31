@@ -429,11 +429,22 @@ pub fn test_microphone(
 /// Open Windows' microphone privacy settings (`ms-settings:privacy-microphone`) so the
 /// user can grant access after a permission denial (onboarding.md). Best-effort: launches
 /// the URI via `explorer.exe`, the reliable handler for `ms-settings:` deep links.
+/// On macOS it opens System Settings → Privacy & Security → Microphone via `open`.
 #[tauri::command]
 pub fn open_mic_privacy() -> Result<(), String> {
-    std::process::Command::new("explorer.exe")
-        .arg("ms-settings:privacy-microphone")
-        .spawn()
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
+        c
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("explorer.exe");
+        c.arg("ms-settings:privacy-microphone");
+        c
+    };
+    cmd.spawn()
         .map_err(|e| format!("could not open microphone settings: {e}"))?;
     Ok(())
 }

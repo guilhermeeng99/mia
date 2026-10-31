@@ -2143,8 +2143,11 @@ name = "mia"
 version = "0.1.23"
 dependencies = [
  "arboard",
+ "core-foundation",
  "cpal",
  "enigo",
+ "objc2-app-kit",
+ "objc2-foundation",
  "regex",
  "rodio",
  "serde",

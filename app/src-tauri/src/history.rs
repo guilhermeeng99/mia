@@ -190,10 +190,17 @@ pub fn export_history(app: AppHandle, state: State<'_, HistoryState>) -> Result<
 /// Best-effort `explorer /select` so the freshly written export is one click from
 /// being dragged into a chat or issue. Failure is ignored — the path is returned
 /// to the Hub either way.
+#[cfg(not(target_os = "macos"))]
 fn reveal_in_explorer(path: &Path) {
     let _ = std::process::Command::new("explorer.exe")
         .arg(format!("/select,{}", path.display()))
         .spawn();
+}
+
+/// macOS: `open -R` reveals (selects) the file in Finder.
+#[cfg(target_os = "macos")]
+fn reveal_in_explorer(path: &Path) {
+    let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
 }
 
 /// UTC `YYYYMMDD-HHMMSS` for the export filename. WHY hand-rolled: it avoids a

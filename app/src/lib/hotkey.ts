@@ -34,3 +34,22 @@ export function unregisterHotkey(): Promise<void> {
 export function sampleHotkeyRecording(): Promise<HotkeyRecordSample> {
   return invoke<HotkeyRecordSample>("sample_hotkey_recording");
 }
+
+const MAC_KEY_LABELS: Record<string, string> = {
+  Ctrl: "⌃ Control",
+  Alt: "⌥ Option",
+  Shift: "⇧ Shift",
+  Super: "⌘ Cmd",
+};
+
+/**
+ * Human label for a canonical accelerator. The engine stores Windows-style names
+ * (`Alt`, `Super`); on macOS show the keys as printed on a Mac keyboard.
+ */
+export function formatAccelerator(accelerator: string): string {
+  if (!/Mac/.test(navigator.userAgent)) return accelerator;
+  return accelerator
+    .split("+")
+    .map((part) => MAC_KEY_LABELS[part] ?? part)
+    .join(" + ");
+}

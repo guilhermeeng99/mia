@@ -179,7 +179,44 @@ fn system_ui_language() -> UiLanguage {
     }
 }
 
-#[cfg(not(windows))]
+/// macOS: the first entry of the user's preferred languages (e.g. "pt-BR"), read via
+/// `defaults` so no extra Foundation bindings are needed for a once-per-menu lookup.
+/// Cached: the tray text is rebuilt on phase changes, and spawning per change is waste.
+#[cfg(target_os = "macos")]
+fn system_ui_language() -> UiLanguage {
+    static CACHED: std::sync::OnceLock<UiLanguage> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let out = std::process::Command::new("defaults")
+            .args(["read", "-g", "AppleLanguages"])
+            .output();
+        let Ok(out) = out else {
+            return UiLanguage::En;
+        };
+        language_from_tag(&String::from_utf8_lossy(&out.stdout))
+    })
+}
+
+/// Map the first BCP-47-ish tag found in `text` to a supported UI language. Pure.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn language_from_tag(text: &str) -> UiLanguage {
+    let tag = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .find(|t| t.len() >= 2)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match tag.get(..2).unwrap_or("") {
+        "pt" => UiLanguage::Pt,
+        "es" => UiLanguage::Es,
+        "fr" => UiLanguage::Fr,
+        "de" => UiLanguage::De,
+        "it" => UiLanguage::It,
+        "ja" => UiLanguage::Ja,
+        "zh" => UiLanguage::Zh,
+        _ => UiLanguage::En,
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn system_ui_language() -> UiLanguage {
     UiLanguage::En
 }
@@ -395,6 +432,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn apple_languages_output_maps_to_ui_language() {
+        assert_eq!(language_from_tag("(\n    \"pt-BR\",\n    \"en-US\"\n)"), UiLanguage::Pt);
+        assert_eq!(language_from_tag("(\n    \"en-US\"\n)"), UiLanguage::En);
+        assert_eq!(language_from_tag("(\n    \"zh-Hans-CN\"\n)"), UiLanguage::Zh);
+        assert_eq!(language_from_tag(""), UiLanguage::En);
+    }
+
+    #[test]
     fn leaves_a_visible_window_in_place() {
         let pos = clamp_position_to_screen((100, 120), (0, 0), (1920, 1080), (920, 680));
         assert_eq!(pos, (100, 120));
@@ -425,7 +470,7 @@ mod tests {
         let painted = |dot: Dot| {
             let mut rgba = vec![0u8; 32 * 32 * 4];
             overlay_dot(&mut rgba, 32, 32, dot);
-            rgba.chunks_exact(4).filter(|p| p[3] > 0).count()
+            rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 0).count()
         };
         let mut rec = vec![0u8; 32 * 32 * 4];
         overlay_dot(&mut rec, 32, 32, REC_DOT);

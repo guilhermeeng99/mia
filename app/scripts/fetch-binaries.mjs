@@ -10,7 +10,12 @@
 // It mirrors the GPU path in stt.rs (download release zip → `tar -xf` extract → copy
 // whisper-server.exe + sibling *.dll), but for the CPU x64 build. Runs under both Node
 // (18+) and Bun, ESM, no external deps — uses global `fetch` and the `tar` that ships on
-// Windows 10+ (bsdtar). Windows-only target (ADR-011); a no-op on other OSes.
+// Windows 10+ (bsdtar).
+//
+// macOS: whisper.cpp publishes no prebuilt server for macOS, so we build it from the
+// same pinned tag with CMake — static (no dylibs to bundle) and with the Metal shaders
+// embedded, so Apple Silicon gets GPU inference out of the box. Needs `git` + `cmake`
+// (Xcode Command Line Tools + `brew install cmake`). Other OSes are a no-op.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -28,6 +33,11 @@ const CPU_URL =
 const CPU_SHA256 = "74f973345cb52ef5ba3ec9e7e7af8e48cc8c71722d1528603b80588a11f82e3e";
 
 const SERVER_EXE = "whisper-server.exe";
+
+// Same pinned release as the Windows zip, built from source on macOS.
+const WHISPER_TAG = "v1.8.4";
+const WHISPER_REPO = "https://github.com/ggml-org/whisper.cpp.git";
+const MAC_SERVER_BIN = "whisper-server";
 
 // Resolve paths relative to THIS script so CWD doesn't matter.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url)); // app/scripts
@@ -104,8 +114,69 @@ async function copyEngineFiles(srcDir, destDir) {
   return copied;
 }
 
+/** Run a command, inheriting stdio; rejects on a non-zero exit. */
+function run(cmd, args, cwd) {
+  return new Promise((res, rej) => {
+    const child = spawn(cmd, args, { stdio: "inherit", cwd });
+    child.on("error", rej);
+    child.on("close", (code) =>
+      code === 0 ? res() : rej(new Error(`${cmd} exited with code ${code}`)),
+    );
+  });
+}
+
+/** macOS: build a static, Metal-enabled whisper-server from the pinned tag. */
+async function buildMacServer() {
+  await mkdir(BINARIES_DIR, { recursive: true });
+  const out = join(BINARIES_DIR, MAC_SERVER_BIN);
+  if (existsSync(out)) {
+    console.log(`fetch-binaries: ${MAC_SERVER_BIN} already present in ${BINARIES_DIR}`);
+    return;
+  }
+  const src = join(BINARIES_DIR, "whisper-src");
+  try {
+    await rm(src, { recursive: true, force: true });
+    console.log(`fetch-binaries: cloning whisper.cpp ${WHISPER_TAG}`);
+    await run("git", ["clone", "--depth", "1", "--branch", WHISPER_TAG, WHISPER_REPO, src]);
+    // WHY these flags: static libs → a single self-contained binary for the .app bundle;
+    // embedded Metal library → no default.metallib to ship; no tests/examples beyond
+    // the server keeps the build short.
+    await run(
+      "cmake",
+      [
+        "-B",
+        "build",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DGGML_METAL=ON",
+        "-DGGML_METAL_EMBED_LIBRARY=ON",
+        "-DWHISPER_BUILD_TESTS=OFF",
+        "-DWHISPER_BUILD_EXAMPLES=ON",
+        "-DWHISPER_BUILD_SERVER=ON",
+      ],
+      src,
+    );
+    await run(
+      "cmake",
+      ["--build", "build", "--config", "Release", "-j", "--target", "whisper-server"],
+      src,
+    );
+    const built = await findFile(join(src, "build"), MAC_SERVER_BIN);
+    if (!built) throw new Error(`${MAC_SERVER_BIN} not produced by the build`);
+    await copyFile(built, out);
+  } finally {
+    await rm(src, { recursive: true, force: true }).catch(() => {});
+  }
+  const { size } = await stat(out);
+  console.log(`fetch-binaries: done (${MAC_SERVER_BIN} = ${size} bytes)`);
+}
+
 async function main() {
-  // Binaries are Windows-only (ADR-011) — don't fail dev on macOS/Linux.
+  if (process.platform === "darwin") {
+    await buildMacServer();
+    return;
+  }
+  // No prebuilt engine for other platforms — don't fail dev on Linux.
   if (process.platform !== "win32") {
     console.log(
       `fetch-binaries: whisper-server is Windows-only (ADR-011); nothing to fetch on ${process.platform}.`,

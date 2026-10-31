@@ -97,7 +97,8 @@ These are the **only** items left, all blocked on assets, hardware, or secrets t
 - 💡 **GPU keep-warm** sub-second end-to-end latency.
 - 💡 **"Hey MIA" wake word** — hands-free activation.
 - 💡 **Whisper Mode** — recognition tuned for quiet/whispered speech.
-- 💡 **macOS / Linux** — deferred (macOS Accessibility/TCC; Linux Wayland injection). See [ADR-011](specs/architecture.md#adr-011-windows-only-v1).
+- 🚧 **macOS (experimental, Apple Silicon)** — builds and runs locally: `fetch-binaries.mjs` compiles a static, Metal-enabled `whisper-server` from the pinned tag; PTT via Carbon hotkeys + CoreGraphics key-state polling (`keystate_macos.rs`, default `Option+Space`); Cmd+V injection gated on the Accessibility prompt (`macos.rs`); frontmost-app probe for per-app styles (`win32.rs`); `.app`/`.dmg` via `tauri.macos.conf.json` (ad-hoc signed, hardened runtime + mic entitlement). Not in CI/releases yet (no Apple signing/notarization, no `darwin` entry in `latest.json`).
+- 💡 **Linux** — deferred (Wayland injection). See [ADR-011](specs/architecture.md#adr-011-windows-only-v1).
 - 💡 **File-transcription mode** — batch transcribe audio/video files via the old cold-file shape: ffmpeg preprocesses arbitrary media to 16 kHz mono WAV, then the same Whisper model registry/download policy feeds a file transcription pipeline.
 
 ## Out of scope (deliberate)

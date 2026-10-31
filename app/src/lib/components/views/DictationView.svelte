@@ -8,6 +8,7 @@
     type AudioDevice,
   } from "../../audio";
   import {
+    formatAccelerator,
     sampleHotkeyRecording,
     unregisterHotkey,
     updateHotkey,
@@ -328,9 +329,9 @@
       <p class="mt-2 text-body text-danger">⚠ {hotkeyError}</p>
     {/if}
     <div class="mt-4 flex flex-wrap items-center gap-3">
-      <Pill tone="accent">{hotkey?.accelerator ?? "—"}</Pill>
+      <Pill tone="accent">{hotkey ? formatAccelerator(hotkey.accelerator) : "—"}</Pill>
       {#if pendingHotkey}
-        <Pill tone="info">{$i18n.dictation.newHotkey(pendingHotkey)}</Pill>
+        <Pill tone="info">{$i18n.dictation.newHotkey(formatAccelerator(pendingHotkey))}</Pill>
       {/if}
       <Button variant="secondary" size="sm" disabled={recording || armingHotkeyRecorder || !!pendingHotkey} onclick={() => void startRecording()}>
         {recording ? $i18n.dictation.pressCombination : armingHotkeyRecorder ? $i18n.dictation.preparing : $i18n.dictation.recordHotkey}
