@@ -414,3 +414,6 @@ Transitions:
   ffmpeg path) is a separate backlog item ([architecture.md → Future](architecture.md#future-file-transcription-mode-reusing-toolzys-ffmpeg-path), [../ROADMAP.md](../ROADMAP.md) Phase 5).
 - **macOS / Linux capture backends** — Windows/WASAPI only for v1
   ([ADR-011](architecture.md#adr-011-windows-only-v1-deliberate)); cpal keeps the door open.
+  The experimental macOS build is signed with the hardened runtime, so it **must** carry the
+  `com.apple.security.device.audio-input` entitlement (`app/src-tauri/Entitlements.plist`) on top of
+  `NSMicrophoneUsageDescription` — without it CoreAudio delivers silence, not an error.

@@ -2217,7 +2217,33 @@ const zh: Messages = {
   },
 };
 
-const translations: Record<UiLocale, Messages> = { en, pt, es, fr, de, it, ja, zh };
+/** True when the webview runs on macOS — copy written for Windows is retargeted. */
+export const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
+
+/**
+ * WHY a deep rewrite instead of per-platform copies: the catalogs name the OS only as
+ * the word "Windows" (welcome, mic-blocked, launch-at-login…), so on macOS swapping
+ * that word keeps all eight translations correct without duplicating them.
+ */
+function retargetOs<T>(value: T): T {
+  if (typeof value === "string") return value.replaceAll("Windows", "macOS") as T;
+  if (typeof value === "function") {
+    const fn = value as (...args: unknown[]) => unknown;
+    return ((...args: unknown[]) => retargetOs(fn(...args))) as T;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).map(([k, v]) => [k, retargetOs(v)]);
+    return Object.fromEntries(entries) as T;
+  }
+  return value;
+}
+
+const catalogs: Record<UiLocale, Messages> = { en, pt, es, fr, de, it, ja, zh };
+const translations: Record<UiLocale, Messages> = isMac
+  ? (Object.fromEntries(
+      Object.entries(catalogs).map(([locale, m]) => [locale, retargetOs(m)]),
+    ) as Record<UiLocale, Messages>)
+  : catalogs;
 
 const uiLanguagePreference = writable<UiLanguagePreference>("system");
 

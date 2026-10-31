@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { getHotkey, type HotkeyConfig } from "../../hotkey";
+  import { formatAccelerator, getHotkey, type HotkeyConfig } from "../../hotkey";
   import { i18n } from "../../i18n";
   import { getStats, resetStats, type UsageStats } from "../../stats";
   import { gpuEngineStatus, warmStatus, type GpuStatus, type WarmStatus } from "../../stt";
@@ -181,7 +181,7 @@
     <p class="text-body-lg font-bold">{$i18n.overview.readyTitle}</p>
     <p class="mt-2 max-w-[34ch] text-body-lg">
       {#if hotkey}
-        {$i18n.overview.readyWithHotkey(hotkey.accelerator)}
+        {$i18n.overview.readyWithHotkey(formatAccelerator(hotkey.accelerator))}
       {:else}
         {$i18n.overview.readyWithoutHotkey}
       {/if}

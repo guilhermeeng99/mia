@@ -1,4 +1,4 @@
-//! System-wide text injection on Windows (ADR-005) — the last dictation stage.
+//! System-wide text injection on Windows and macOS (ADR-005) — the last dictation stage.
 //! Two backends behind one `TextInjector` trait, runtime-selected: `arboard`
 //! clipboard + simulated `Ctrl+V` (default; **saves and restores** the user's
 //! prior clipboard) and `enigo` SendInput Unicode keystrokes (explicit override;
@@ -216,12 +216,26 @@ impl TextInjector for ClipboardInjector {
     }
 }
 
+/// The platform paste chord: `Ctrl+V` on Windows, `Cmd+V` on macOS.
+#[cfg(not(target_os = "macos"))]
+const PASTE_MODIFIER: Key = Key::Control;
+#[cfg(target_os = "macos")]
+const PASTE_MODIFIER: Key = Key::Meta;
+
+/// The `V` key. On macOS we send the raw `kVK_ANSI_V` code: enigo's `Key::Unicode`
+/// resolves it through the keyboard-layout API, which macOS only allows on the main
+/// thread — and injection runs on a worker thread.
+#[cfg(not(target_os = "macos"))]
+const PASTE_KEY: Key = Key::Unicode('v');
+#[cfg(target_os = "macos")]
+const PASTE_KEY: Key = Key::Other(9);
+
 fn paste_shortcut() -> Result<(), String> {
     let mut enigo =
         Enigo::new(&Settings::default()).map_err(|e| format!("injection backend failed: {e}"))?;
-    enigo.key(Key::Control, Direction::Press).map_err(|e| format!("injection backend failed: {e}"))?;
-    let pasted = enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| format!("injection backend failed: {e}"));
-    let released = enigo.key(Key::Control, Direction::Release).map_err(|e| format!("injection backend failed: {e}"));
+    enigo.key(PASTE_MODIFIER, Direction::Press).map_err(|e| format!("injection backend failed: {e}"))?;
+    let pasted = enigo.key(PASTE_KEY, Direction::Click).map_err(|e| format!("injection backend failed: {e}"));
+    let released = enigo.key(PASTE_MODIFIER, Direction::Release).map_err(|e| format!("injection backend failed: {e}"));
     pasted?;
     released
 }
@@ -243,6 +257,12 @@ pub fn set_clipboard(text: &str) -> Result<(), String> {
 pub fn inject(text: &str, mode: InjectMode, settings: &InjectSettings) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
+    }
+    // macOS drops synthetic input from untrusted apps without any error, so check
+    // up-front and surface the fix (re-prompting) instead of "succeeding" silently.
+    #[cfg(target_os = "macos")]
+    if !crate::macos::accessibility_trusted(true) {
+        return Err(crate::macos::ACCESSIBILITY_REQUIRED.to_string());
     }
     match pick_backend(mode, text.chars().count(), settings) {
         Backend::SendInput => SendInputInjector { chunk: settings.sendinput_chunk_chars }.inject(text),

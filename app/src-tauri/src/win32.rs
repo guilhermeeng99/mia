@@ -5,7 +5,7 @@
 //!
 //! Every call is best-effort: any FFI failure returns `None`/`false`/`true` so the
 //! pipeline degrades gracefully and **never panics across the IPC boundary** (ADR-006).
-//! Windows-only (ADR-011); non-Windows builds get inert stubs so the crate still compiles.
+//! Windows + a macOS (NSWorkspace) port; other targets get inert stubs so the crate compiles.
 
 /// Lowercased executable stem from a full process-image path: take the last path segment
 /// (split on `\` or `/`), lowercase it, and drop a trailing `.exe`. Pure so the per-app
@@ -145,7 +145,30 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// macOS: the "foreground window" is the frontmost application (NSWorkspace). There is
+/// no UIPI equivalent — Accessibility permission gates synthetic input for *all* apps
+/// (macos.rs) — so the elevation probe is always false.
+#[cfg(target_os = "macos")]
+mod imp {
+    use objc2_app_kit::NSWorkspace;
+
+    /// Lowercased app name of the frontmost application (e.g. "slack", "code"), the
+    /// macOS analogue of the Windows exe stem used as the per-app style key.
+    pub fn foreground_process_name() -> Option<String> {
+        let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
+        let name = app.localizedName()?.to_string().to_lowercase();
+        (!name.is_empty()).then_some(name)
+    }
+    pub fn is_foreground_elevated() -> bool {
+        false
+    }
+    pub fn has_foreground_window() -> bool {
+        NSWorkspace::sharedWorkspace().frontmostApplication().is_some()
+    }
+    pub fn apply_main_window_rounded_corners(_app: &tauri::AppHandle) {}
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     pub fn foreground_process_name() -> Option<String> {
         None

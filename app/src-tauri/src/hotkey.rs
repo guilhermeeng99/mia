@@ -25,11 +25,20 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RETURN, VK_RIGHT,
     VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SPACE, VK_TAB, VK_UP,
 };
+#[cfg(target_os = "macos")]
+use crate::keystate_macos::{
+    any_non_modifier_pressed, current_mods_pressed, first_pressed_record_key, key_pressed,
+};
 
 /// Default PTT chord — `Ctrl + Space`. A modifier-anchored chord with a real key
 /// (a modifier-only chord like `Ctrl+Win` is not registrable via `RegisterHotKey`),
 /// low collision risk, ergonomic to hold (§4; aligned with settings.md).
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_ACCEL: &str = "Ctrl+Space";
+/// macOS default — `Option + Space`. `Ctrl+Space` is the system "previous input
+/// source" shortcut on macOS, so it would collide for anyone with two keyboard layouts.
+#[cfg(target_os = "macos")]
+pub const DEFAULT_ACCEL: &str = "Alt+Space";
 /// Window that collapses key chatter / OS auto-repeat into one intent (Rule 9, §4).
 pub const DEBOUNCE_MS: u64 = 40;
 /// Missing-release watchdog grace before polling the physical key state (Rule 11, §4).
@@ -47,7 +56,6 @@ pub const SELF_HEAL_INTERVAL_MS: u64 = 30_000;
 const SELF_HEAL_POLL_MS: u64 = 5_000;
 /// Windows-key polling cadence. Needed for Win/Super and modifier-only chords that
 /// `RegisterHotKey`/the Tauri plugin cannot reliably deliver.
-#[cfg(windows)]
 const WINDOWS_KEY_POLL_MS: u64 = 30;
 
 /// How the chord activates dictation (§2). Persisted in settings.
@@ -415,7 +423,14 @@ fn should_poll_accel(accel: &Accel) -> bool {
     accel.mods.sup || accel.key.is_none()
 }
 
-#[cfg(not(windows))]
+/// macOS: Carbon hotkeys deliver Cmd chords fine; only modifier-only chords
+/// (e.g. `Ctrl+Alt`) have no main key to register, so those are polled.
+#[cfg(target_os = "macos")]
+fn should_poll_accel(accel: &Accel) -> bool {
+    accel.key.is_none()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn should_poll_accel(_accel: &Accel) -> bool {
     false
 }
@@ -881,7 +896,7 @@ pub fn start_self_heal(app: &AppHandle) {
     });
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn start_windows_key_polling(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -925,10 +940,17 @@ pub fn start_windows_key_polling(app: &AppHandle) {
     });
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn start_windows_key_polling(_app: &AppHandle) {}
 
-#[cfg(windows)]
+/// No physical key-state probe here: report "still held" so the watchdog never
+/// force-stops a session it cannot verify.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn polled_accel_pressed(_accel: &Accel, _blocked_until_release: &mut bool) -> bool {
+    true
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 fn polled_accel_pressed(accel: &Accel, blocked_until_release: &mut bool) -> bool {
     if !expected_modifiers_pressed(accel.mods) {
         *blocked_until_release = false;
@@ -942,6 +964,11 @@ fn polled_accel_pressed(accel: &Accel, blocked_until_release: &mut bool) -> bool
         return false;
     }
     accel.key.as_deref().is_none_or(key_pressed)
+}
+
+#[cfg(target_os = "macos")]
+fn expected_modifiers_pressed(expected: Mods) -> bool {
+    expected_modifiers_match(expected, current_mods_pressed())
 }
 
 #[cfg(windows)]
@@ -962,6 +989,7 @@ fn expected_modifiers_pressed(expected: Mods) -> bool {
     )
 }
 
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn expected_modifiers_match(expected: Mods, actual: Mods) -> bool {
     (!expected.ctrl || actual.ctrl)
         && (!expected.alt || actual.alt)
@@ -999,7 +1027,7 @@ fn key_pressed(key: &str) -> bool {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn platform_record_sample() -> HotkeyRecordSample {
     let mods = current_mods_pressed();
     let key = first_pressed_record_key();
@@ -1025,7 +1053,7 @@ fn platform_record_sample() -> HotkeyRecordSample {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn platform_record_sample() -> HotkeyRecordSample {
     HotkeyRecordSample {
         accelerator: None,
@@ -1044,6 +1072,7 @@ fn current_mods_pressed() -> Mods {
     }
 }
 
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn modifier_count(mods: Mods) -> usize {
     [mods.ctrl, mods.alt, mods.shift, mods.sup]
         .into_iter()
@@ -1412,7 +1441,7 @@ mod tests {
     #[test]
     fn default_config_is_ctrl_space_push_to_hold() {
         let c = HotkeyConfig::default();
-        assert_eq!(c.accelerator, "Ctrl+Space");
+        assert_eq!(c.accelerator, DEFAULT_ACCEL);
         assert_eq!(c.mode, ActivationMode::PushToHold);
         let parsed = parse_accelerator(&c.accelerator).unwrap();
         assert_eq!(parsed.key.as_deref(), Some("Space")); // a registrable chord (has a key)

@@ -608,13 +608,13 @@ fn extract_zip(zip: &Path, tmp: &Path) -> Result<(), String> {
 /// Copy the GPU build's `whisper-server.exe` + sibling DLLs (located by finding the
 /// server exe) into `dest`.
 fn copy_engine_files(extracted: &Path, dest: &Path) -> Result<(), String> {
-    let exe = find_file(extracted, "whisper-server.exe")
-        .ok_or("whisper-server.exe not in archive")?;
+    let exe = find_file(extracted, SERVER_BIN)
+        .ok_or("whisper-server not in archive")?;
     let src = exe.parent().ok_or("bad archive layout")?;
     for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
         let name = entry.file_name();
         let keep = name.to_str().is_some_and(|n| {
-            n == "whisper-server.exe" || n.to_ascii_lowercase().ends_with(".dll")
+            n == SERVER_BIN || n.to_ascii_lowercase().ends_with(".dll")
         });
         if keep {
             std::fs::copy(entry.path(), dest.join(&name)).map_err(|e| e.to_string())?;
@@ -641,7 +641,7 @@ fn install_gpu_engine(dir: &Path, on_progress: &Channel<DownloadProgress>) -> Re
 pub fn gpu_engine_status(app: AppHandle) -> Result<GpuStatus, String> {
     Ok(GpuStatus {
         gpu_present: nvidia_present(),
-        downloaded: gpu_dir(&app)?.join("whisper-server.exe").exists(),
+        downloaded: gpu_dir(&app)?.join(SERVER_BIN).exists(),
     })
 }
 
@@ -653,7 +653,7 @@ pub async fn download_gpu_engine(
     settings: State<'_, crate::settings::SettingsState>,
     on_progress: Channel<DownloadProgress>,
 ) -> Result<(), String> {
-    if gpu_dir(&app)?.join("whisper-server.exe").exists() {
+    if gpu_dir(&app)?.join(SERVER_BIN).exists() {
         warm_model_in_background(app.clone(), settings.snapshot()?.model.model);
         return Ok(());
     }
@@ -675,31 +675,38 @@ pub async fn download_gpu_engine(
 /// Resolve the whisper-server executable: the CUDA build if installed, else the
 /// bundled CPU build (resource dir in a bundle, `binaries/` beside src-tauri in dev).
 fn server_exe(app: &AppHandle) -> Result<PathBuf, String> {
-    let gpu = gpu_dir(app)?.join("whisper-server.exe");
+    let gpu = gpu_dir(app)?.join(SERVER_BIN);
     if gpu.exists() {
         return Ok(gpu);
     }
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(res) = app.path().resource_dir() {
-        candidates.push(res.join("binaries").join("whisper-server.exe"));
+        candidates.push(res.join("binaries").join(SERVER_BIN));
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(d) = exe.parent() {
-            candidates.push(d.join("whisper-server.exe"));
-            candidates.push(d.join("binaries").join("whisper-server.exe"));
+            candidates.push(d.join(SERVER_BIN));
+            candidates.push(d.join("binaries").join(SERVER_BIN));
         }
     }
     // dev: src-tauri/binaries
     candidates.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("binaries")
-            .join("whisper-server.exe"),
+            .join(SERVER_BIN),
     );
     candidates
         .into_iter()
         .find(|p| p.exists())
         .ok_or_else(|| "whisper-server not found (run scripts/fetch-binaries.mjs)".to_string())
 }
+
+/// The engine executable's file name. On macOS it is a static, Metal-enabled build
+/// produced by `scripts/fetch-binaries.mjs` (no sibling dylibs).
+#[cfg(windows)]
+const SERVER_BIN: &str = "whisper-server.exe";
+#[cfg(not(windows))]
+const SERVER_BIN: &str = "whisper-server";
 
 /// Pick a free localhost port by binding an ephemeral one and releasing it.
 fn free_port() -> Result<u16, String> {
