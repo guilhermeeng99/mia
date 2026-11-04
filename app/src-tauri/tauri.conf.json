@@ -26,7 +26,7 @@
         "shadow": false,
         "backgroundColor": "#efd2ca",
         "theme": "Light",
-        "visible": true
+        "visible": false
       },
       {
         "label": "hud",

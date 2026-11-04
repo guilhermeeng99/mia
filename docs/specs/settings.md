@@ -234,6 +234,7 @@ transcription fidelity.
 | Option | Type | Range / values | Default | Effect |
 |---|---|---|---|---|
 | `launchAtLogin` | bool | — | `false` | Start MIA (to tray) on Windows login. Writes a Run-key. |
+| `startMinimized` | bool | — | `true` | Shown only while `launchAtLogin` is on ("Start minimized"). A login launch (the Run-key passes `--autostart`) stays in the tray instead of opening the Hub. A manual launch always opens the Hub, and so does any launch before onboarding is completed. The main window is created hidden and revealed at startup unless this applies, so a tray start never flashes the Hub. |
 | `uiLanguage` | enum | `system` \| `pt` \| `en` \| `es` \| `fr` \| `de` \| `it` \| `ja` \| `zh` | `system` | Interface locale only; `system` follows the user's OS/browser locale with English fallback. |
 | `defaultLanguage` | enum | `auto` plus popular Whisper codes (`pt`, `en`, `es`, `fr`, `de`, `it`, `nl`, `pl`, `ru`, `uk`, `tr`, `ar`, `hi`, `id`, `ja`, `ko`, `zh`) | `auto` | Forces Whisper language or auto-detect ([speech-to-text.md](speech-to-text.md)); independent from `uiLanguage`. |
 | `playSounds` | bool | — | `false` | Optional start/stop chime (off = unobtrusive default, design §9a). |

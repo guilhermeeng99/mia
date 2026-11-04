@@ -39,6 +39,8 @@ export type AiModel = "qwen2.5-3b" | "llama-3.2-3b";
 
 export interface GeneralSettings {
   launchAtLogin: boolean;
+  /** Login launch stays in the tray instead of opening the Hub. */
+  startMinimized: boolean;
   dictationEnabled: boolean;
   uiLanguage: UiLanguagePreference;
   defaultLanguage: DefaultLanguage;

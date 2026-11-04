@@ -15,7 +15,7 @@
         "shadow": true,
         "backgroundColor": "#efd2ca",
         "theme": "Light",
-        "visible": true,
+        "visible": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {

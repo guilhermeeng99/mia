@@ -120,6 +120,9 @@ impl Indicator {
 #[serde(rename_all = "camelCase", default)]
 pub struct GeneralSettings {
     pub launch_at_login: bool,
+    /// When MIA is started by the OS at login, stay in the tray instead of opening the
+    /// Hub (lib.rs `should_start_hidden`). Only meaningful while `launch_at_login` is on.
+    pub start_minimized: bool,
     pub dictation_enabled: bool,
     pub ui_language: UiLanguage,
     pub default_language: DefaultLanguage,
@@ -139,6 +142,7 @@ impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             launch_at_login: false,
+            start_minimized: true,
             dictation_enabled: true,
             ui_language: UiLanguage::System,
             default_language: DefaultLanguage::Auto,

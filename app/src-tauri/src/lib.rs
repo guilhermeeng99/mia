@@ -56,6 +56,38 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// CLI flag the OS login entry passes (tauri-plugin-autostart args), marking a launch
+/// the OS started rather than the user.
+const AUTOSTART_ARG: &str = "--autostart";
+
+fn launched_by_autostart() -> bool {
+    std::env::args().any(|arg| arg == AUTOSTART_ARG)
+}
+
+/// Stay in the tray only for an OS login launch the user asked to keep minimized.
+/// A manual launch always shows the Hub, and so does an unfinished onboarding — the
+/// wizard must never be hidden behind the tray on first run.
+fn should_start_hidden(by_autostart: bool, general: &settings::GeneralSettings) -> bool {
+    by_autostart
+        && general.launch_at_login
+        && general.start_minimized
+        && general.onboarding_completed
+}
+
+/// Show the (initially hidden) Hub, or keep MIA tray-only — on macOS that also drops
+/// the Dock icon, matching close-to-tray.
+fn reveal_main_window(app: &tauri::AppHandle, start_hidden: bool) {
+    if !start_hidden {
+        tray::show_main(app);
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    #[cfg(target_os = "macos")]
+    macos::set_dock_icon_visible(app, false);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -97,9 +129,11 @@ pub fn run() {
         )
         // Launch-at-login (Windows registry Run key). The toggle lives in settings;
         // we enable/disable to match it at startup and on change (settings.rs).
+        // The login entry carries AUTOSTART_ARG so startup can tell an OS launch from a
+        // manual one (only the former honours "Start minimized").
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec![AUTOSTART_ARG]),
         ))
         // Signed in-app auto-update (GitHub Releases + minisign-verified latest.json,
         // ADR-009). `process` provides the relaunch into the freshly-installed version.
@@ -123,6 +157,7 @@ pub fn run() {
             let loaded = settings::load_settings(app.handle());
             let hk_cfg = loaded.hotkey.clone();
             let launch_at_login = loaded.general.launch_at_login;
+            let start_hidden = should_start_hidden(launched_by_autostart(), &loaded.general);
             let startup_model = loaded.model.model.clone();
             app.state::<settings::SettingsState>().hydrate(loaded);
             // Sync the OS autostart entry to the saved preference (best-effort).
@@ -165,6 +200,9 @@ pub fn run() {
             // Restore the Hub window's last normal bounds/maximized state after
             // settings and tray setup, before long-running background warmup.
             window_state::restore_main_window(app.handle());
+            // The main window is created hidden (tauri.conf.json) so a login launch to
+            // the tray never flashes the Hub; every other launch reveals it here.
+            reveal_main_window(app.handle(), start_hidden);
             // Dock the floating, click-through, always-on-top mic HUD overlay window
             // (driven by the engine's `hud://state` events — see hud.rs / dictation.rs).
             hud::setup_hud(app.handle());
@@ -258,5 +296,48 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => tray::show_main(app),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_start_hidden;
+    use crate::settings::GeneralSettings;
+
+    fn login_minimized() -> GeneralSettings {
+        GeneralSettings {
+            launch_at_login: true,
+            start_minimized: true,
+            onboarding_completed: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn login_launch_with_start_minimized_stays_in_tray() {
+        assert!(should_start_hidden(true, &login_minimized()));
+    }
+
+    #[test]
+    fn manual_launch_always_shows_the_hub() {
+        assert!(!should_start_hidden(false, &login_minimized()));
+    }
+
+    #[test]
+    fn login_launch_shows_the_hub_when_start_minimized_is_off() {
+        let general = GeneralSettings { start_minimized: false, ..login_minimized() };
+        assert!(!should_start_hidden(true, &general));
+    }
+
+    #[test]
+    fn unfinished_onboarding_is_never_hidden() {
+        let general = GeneralSettings { onboarding_completed: false, ..login_minimized() };
+        assert!(!should_start_hidden(true, &general));
+    }
+
+    #[test]
+    fn stale_autostart_entry_shows_the_hub_when_launch_at_login_is_off() {
+        let general = GeneralSettings { launch_at_login: false, ..login_minimized() };
+        assert!(!should_start_hidden(true, &general));
     }
 }

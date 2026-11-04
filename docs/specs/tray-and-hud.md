@@ -292,7 +292,7 @@ async fn open_hub(app: AppHandle) -> Result<(), String>;   // show + focus the H
 | `hudAnchor` | enum | `caret` · `bottomCenter` · `bottomRight` · `topCenter` | `caret` | Position strategy; `caret` falls back to `bottomCenter` when the caret point is unknown (Rule 11). |
 | `hudClickThrough` | bool | on / off | `true` | Make the pill mouse-transparent where the OS allows (Rule 2). Off keeps no-activate but lets the pill be hovered. |
 | `hudShowLanguageTag` | bool | on / off | `false` | Show the detected language tag (dimmed charcoal) on the pill. |
-| `startMinimizedToTray` | bool | on / off | `true` | Launch to tray with no window (the V1 default presence). |
+| `startMinimized` (`general`) | bool | on / off | `true` | A login launch (`--autostart`) goes to the tray with no window; manual launches and an unfinished onboarding always open the Hub. See [settings.md](settings.md) General. |
 | `playSoundOnStart` | bool | on / off | `false` | Optional cue on listening-start (unobtrusive-by-default — design-system §9a). |
 | `activeModel` | enum | downloaded model ids | smallest downloaded | The warm STT model; also settable from the tray submenu (Rule 7 / [speech-to-text.md](speech-to-text.md)). |
 

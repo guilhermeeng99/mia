@@ -184,6 +184,16 @@
     }
   }
 
+  async function setStartMinimized(value: boolean) {
+    if (!general) return;
+    try {
+      const s = await updateSettings({ general: { ...general, startMinimized: value } });
+      general = s.general;
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function setDictationSounds(value: boolean) {
     if (!general) return;
     try {
@@ -433,6 +443,16 @@
           label={$i18n.dictation.launchAtLogin}
           onchange={setLaunchAtLogin}
         />
+        {#if general.launchAtLogin}
+          <!-- Sub-option of launch-at-login: indented so it reads as dependent on it. -->
+          <div class="pl-8">
+            <Toggle
+              checked={general.startMinimized}
+              label={$i18n.dictation.startMinimized}
+              onchange={setStartMinimized}
+            />
+          </div>
+        {/if}
         <Toggle
           checked={general.dictationSounds}
           label={$i18n.dictation.dictationSounds}
